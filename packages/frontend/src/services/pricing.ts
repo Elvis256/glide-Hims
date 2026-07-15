@@ -25,7 +25,9 @@ export interface PricingRule {
   id: string;
   name: string;
   description?: string;
-  ruleType: 'insurance' | 'membership' | 'loyalty' | 'promotion' | 'volume' | 'time_based';
+  /** Mirrors backend PricingRuleType (pricing-rule.entity.ts). 'corporate' is a
+   *  real member that was missing here, and 'time_based' was invented. */
+  ruleType: 'insurance' | 'membership' | 'loyalty' | 'corporate' | 'promotion' | 'volume';
   discountType: 'percentage' | 'fixed_amount' | 'price_list';
   discountValue?: number;
   priority: number;
@@ -118,7 +120,9 @@ export interface BulkCreateInsurancePriceListDto {
 export interface CreatePricingRuleDto {
   name: string;
   description?: string;
-  ruleType: 'insurance' | 'membership' | 'loyalty' | 'promotion' | 'volume' | 'time_based';
+  /** Mirrors backend PricingRuleType (pricing-rule.entity.ts). 'corporate' is a
+   *  real member that was missing here, and 'time_based' was invented. */
+  ruleType: 'insurance' | 'membership' | 'loyalty' | 'corporate' | 'promotion' | 'volume';
   discountType: 'percentage' | 'fixed_amount' | 'price_list';
   discountValue?: number;
   priority?: number;

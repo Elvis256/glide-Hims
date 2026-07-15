@@ -37,7 +37,19 @@ import { printService } from '../../lib/print';
 import { usePrintFormat } from '../../lib/usePrintFormat';
 import PrintFormatSelector from '../../components/PrintFormatSelector';
 
-type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'overdue' | 'cancelled' | 'pending' | 'partial' | 'refunded';
+/** Mirrors backend InvoiceStatus (database/entities/invoice.entity.ts).
+ *  The old union invented 'sent'/'overdue'/'partial' and omitted the real
+ *  'partially_paid' and 'written_off'. Because statusConfig is keyed by this
+ *  type and read WITHOUT optional chaining, a genuinely partially-paid invoice
+ *  crashed the whole list on render. */
+type InvoiceStatus =
+  | 'draft'
+  | 'pending'
+  | 'partially_paid'
+  | 'paid'
+  | 'cancelled'
+  | 'refunded'
+  | 'written_off';
 type CustomerType = 'patient' | 'insurance' | 'corporate';
 
 interface Invoice {
@@ -57,14 +69,18 @@ interface Invoice {
 
 const statusConfig: Record<InvoiceStatus, { label: string; color: string; icon: React.ElementType }> = {
   draft: { label: 'Draft', color: 'bg-gray-100 text-gray-700', icon: FileText },
-  sent: { label: 'Sent', color: 'bg-blue-100 text-blue-700', icon: Send },
-  paid: { label: 'Paid', color: 'bg-green-100 text-green-700', icon: CheckCircle2 },
-  overdue: { label: 'Overdue', color: 'bg-red-100 text-red-700', icon: AlertCircle },
-  cancelled: { label: 'Cancelled', color: 'bg-gray-100 text-gray-500', icon: XCircle },
   pending: { label: 'Pending', color: 'bg-yellow-100 text-yellow-700', icon: Clock },
-  partial: { label: 'Partial', color: 'bg-orange-100 text-orange-700', icon: AlertCircle },
+  partially_paid: { label: 'Partially Paid', color: 'bg-orange-100 text-orange-700', icon: AlertCircle },
+  paid: { label: 'Paid', color: 'bg-green-100 text-green-700', icon: CheckCircle2 },
+  cancelled: { label: 'Cancelled', color: 'bg-gray-100 text-gray-500', icon: XCircle },
   refunded: { label: 'Refunded', color: 'bg-purple-100 text-purple-700', icon: XCircle },
+  written_off: { label: 'Written Off', color: 'bg-slate-100 text-slate-600', icon: XCircle },
 };
+
+/** Never let an unexpected status crash the list — statusConfig lookups were
+ *  unguarded and any status outside the union threw on `.icon`. */
+const configFor = (status: InvoiceStatus) =>
+  statusConfig[status] ?? { label: status, color: 'bg-gray-100 text-gray-700', icon: FileText };
 
 const customerTypeConfig: Record<CustomerType, { label: string; icon: React.ElementType }> = {
   patient: { label: 'Patient', icon: User },
@@ -277,7 +293,7 @@ export default function InvoicesPage() {
     const total = Number(invoice.amount) || subtotal;
     const paidAmount = Number((invoice as any).paidAmount) || 0;
     const balance = Number((invoice as any).balance) || (total - paidAmount);
-    const statusLabel = statusConfig[invoice.status]?.label || invoice.status;
+    const statusLabel = configFor(invoice.status).label;
     const isPaid = invoice.status === 'paid';
 
     const header = printService.buildHeader(inst, printService.getVariant(printFormat));
@@ -347,10 +363,20 @@ export default function InvoicesPage() {
   }, [searchQuery, customerTypeFilter, invoices]);
 
   const summaryStats = useMemo(() => {
+    const isOutstanding = (inv: Invoice) =>
+      inv.status === 'pending' || inv.status === 'partially_paid';
     const total = invoices.reduce((sum, inv) => sum + inv.amount, 0);
     const paid = invoices.filter((inv) => inv.status === 'paid').reduce((sum, inv) => sum + inv.amount, 0);
-    const pending = invoices.filter((inv) => inv.status === 'sent' || inv.status === 'pending').reduce((sum, inv) => sum + inv.amount, 0);
-    const overdue = invoices.filter((inv) => inv.status === 'overdue').reduce((sum, inv) => sum + inv.amount, 0);
+    // Outstanding = what is still owed, so use the balance rather than the full
+    // invoice amount — a partially-paid invoice is not wholly pending.
+    const pending = invoices
+      .filter(isOutstanding)
+      .reduce((sum, inv) => sum + (inv.balance ?? inv.amount), 0);
+    // 'overdue' is NOT a status — InvoiceStatus has no such member. It is
+    // derived: still owed, and past its due date.
+    const overdue = invoices
+      .filter((inv) => isOutstanding(inv) && inv.dueDate && new Date(inv.dueDate) < new Date())
+      .reduce((sum, inv) => sum + (inv.balance ?? inv.amount), 0);
     return { total, paid, pending, overdue };
   }, [invoices]);
 
@@ -517,7 +543,7 @@ export default function InvoicesPage() {
             </thead>
             <tbody className="divide-y">
               {filteredInvoices.map((invoice) => {
-                const StatusIcon = statusConfig[invoice.status].icon;
+                const StatusIcon = configFor(invoice.status).icon;
                 const TypeIcon = customerTypeConfig[invoice.customerType].icon;
                 return (
                   <tr key={invoice.id} className="hover:bg-gray-50">
@@ -547,9 +573,9 @@ export default function InvoicesPage() {
                     <td className="px-4 py-3 text-sm text-gray-600">{invoice.dueDate}</td>
                     <td className="px-4 py-3 text-right font-medium text-gray-900">{formatCurrency(invoice.amount)}</td>
                     <td className="px-4 py-3">
-                      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${statusConfig[invoice.status].color}`}>
+                      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${configFor(invoice.status).color}`}>
                         <StatusIcon className="w-3 h-3" />
-                        {statusConfig[invoice.status].label}
+                        {configFor(invoice.status).label}
                       </span>
                     </td>
                     <td className="px-4 py-3">
@@ -650,8 +676,8 @@ export default function InvoicesPage() {
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Status</p>
-                  <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${statusConfig[viewingInvoice.status].color}`}>
-                    {statusConfig[viewingInvoice.status].label}
+                  <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${configFor(viewingInvoice.status).color}`}>
+                    {configFor(viewingInvoice.status).label}
                   </span>
                 </div>
                 <div>

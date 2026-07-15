@@ -16,7 +16,17 @@ export interface Prescription {
     fullName: string;
   };
   items: PrescriptionItem[];
-  status: 'pending' | 'partial' | 'dispensed' | 'cancelled' | 'dispensing' | 'ready' | 'collected';
+  /** Mirrors backend PrescriptionStatus (prescription.entity.ts). The member is
+   *  'partially_dispensed'; the old 'partial' matched nothing, so partially
+   *  dispensed scripts fell out of the pharmacy queue's in-progress count. */
+  status:
+    | 'pending'
+    | 'dispensing'
+    | 'ready'
+    | 'collected'
+    | 'partially_dispensed'
+    | 'dispensed'
+    | 'cancelled';
   priority?: 'high' | 'normal' | 'low';
   notes?: string;
   createdAt: string;

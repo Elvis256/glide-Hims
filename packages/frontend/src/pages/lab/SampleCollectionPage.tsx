@@ -179,7 +179,9 @@ export default function SampleCollectionPage() {
       orderTime: new Date(order.createdAt || '').toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
       priority: (order.priority || 'routine') as 'stat' | 'urgent' | 'routine',
       specialInstructions: order.clinicalNotes || '',
-      collected: order.status === 'collected' || order.status === 'processing' || order.status === 'in_progress' || order.status === 'in-progress' || order.status === 'sample_collected',
+      // An order moves to in_progress once its sample has been collected —
+      // that is the only state the Order entity has for "work started".
+      collected: order.status === 'in_progress' || order.status === 'completed',
       collectedAt: order.collectedAt,
       collectedBy: order.collectedBy,
       barcode: order.sampleId,
