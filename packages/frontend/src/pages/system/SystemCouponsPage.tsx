@@ -3,7 +3,7 @@ import { Loader2, Plus, Trash2, Check, X, Tag, CheckCircle, Clock, Activity, Pen
 import { toast } from 'sonner';
 import api from '../../services/api';
 import SystemPagination from '../../components/SystemPagination';
-import { Coupon, fmtMoney, fmtDate, fmtDateTime, unwrap } from './saas/_shared';
+import { type Coupon, fmtMoney, fmtDate, fmtDateTime, unwrap } from './saas/_shared';
 
 type Filter = 'all' | 'active' | 'inactive' | 'expired' | 'exhausted';
 

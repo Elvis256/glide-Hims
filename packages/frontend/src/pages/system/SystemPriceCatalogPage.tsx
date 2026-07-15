@@ -3,7 +3,7 @@ import { Plus, Pencil, Trash2, Loader2, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '../../services/api';
 import SystemPagination from '../../components/SystemPagination';
-import { CatalogItem, fmtMoney, unwrap } from './saas/_shared';
+import { type CatalogItem, fmtMoney, unwrap } from './saas/_shared';
 
 export default function SystemPriceCatalogPage() {
   const [items, setItems] = useState<CatalogItem[]>([]);

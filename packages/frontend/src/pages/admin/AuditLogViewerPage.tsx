@@ -11,7 +11,7 @@ import {
   Activity,
   Users as UsersIcon,
 } from 'lucide-react';
-import { auditService, AuditLogEntry, AuditLogListParams } from '../../services/audit';
+import { auditService, type AuditLogEntry, type AuditLogListParams } from '../../services/audit';
 import { toast } from 'sonner';
 
 const ACTION_OPTIONS = [

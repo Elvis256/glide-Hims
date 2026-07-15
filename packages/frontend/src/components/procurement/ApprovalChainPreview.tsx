@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { AlertCircle, CheckCircle2, Loader2, Settings, Users } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import {
-  ApprovalChainPreviewResponse,
+  type ApprovalChainPreviewResponse,
   PreviewApprovalChainInput,
   previewApprovalChain,
 } from '../../services/orgApproval';

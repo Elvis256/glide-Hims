@@ -14,7 +14,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { formatCurrency } from '../../../lib/currency';
-import SearchableSelect, { SelectOption } from '../../../components/SearchableSelect';
+import SearchableSelect, { type SelectOption } from '../../../components/SearchableSelect';
 import { ApprovalChainPreview } from '../../../components/procurement/ApprovalChainPreview';
 import {
   CategoryContextBanner,

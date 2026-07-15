@@ -8,7 +8,7 @@ import {
   ShieldAlert,
   XCircle,
 } from 'lucide-react';
-import { criticalResultsService, CriticalResultAlert } from '../services/critical-results';
+import { criticalResultsService, type CriticalResultAlert } from '../services/critical-results';
 
 interface Props {
   resourceType: 'lab' | 'radiology';

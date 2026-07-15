@@ -3,7 +3,7 @@ import { RefreshCw, Loader2, Heart, AlertTriangle, Activity } from 'lucide-react
 import { toast } from 'sonner';
 import api from '../../services/api';
 import ConfirmDialog from '../../components/ConfirmDialog';
-import { ClientHealth, HealthStatus, HEALTH_STATUS_STYLES, unwrap } from './saas/_shared';
+import { type ClientHealth, type HealthStatus, HEALTH_STATUS_STYLES, unwrap } from './saas/_shared';
 
 export default function SystemClientHealthPage() {
   const [scores, setScores] = useState<ClientHealth[]>([]);

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, ChevronDown, ChevronUp, ShoppingCart, Package } from 'lucide-react';
-import { pharmacyService, LowStockAlert } from '../../services/pharmacy';
+import { pharmacyService, type LowStockAlert } from '../../services/pharmacy';
 
 export default function LowStockAlerts() {
   const [expanded, setExpanded] = useState(false);

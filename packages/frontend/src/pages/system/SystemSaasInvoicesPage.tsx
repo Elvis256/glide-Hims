@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import api from '../../services/api';
 import SystemPagination from '../../components/SystemPagination';
 import { exportToCsv } from '../../utils/csvExport';
-import { SaasInvoice, SaasPayment, INVOICE_STATUS_STYLES, VERIFICATION_STATUS_STYLES, VERIFICATION_STATUS_LABELS, fmtMoney, fmtDate, unwrap, PaymentVerificationStatus } from './saas/_shared';
+import { type SaasInvoice, type SaasPayment, INVOICE_STATUS_STYLES, VERIFICATION_STATUS_STYLES, VERIFICATION_STATUS_LABELS, fmtMoney, fmtDate, unwrap, type PaymentVerificationStatus } from './saas/_shared';
 
 const STATUSES = ['draft', 'open', 'paid', 'void', 'uncollectible'];
 

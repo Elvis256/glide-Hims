@@ -6,9 +6,9 @@
 import {
   previewApprovalChain as previewApprovalChainGeneric,
   getApprovalChain,
-  PreviewApprovalChainInput,
-  ApprovalChainPreviewResponse,
-  ResolvedApprovalChainRow,
+  type PreviewApprovalChainInput,
+  type ApprovalChainPreviewResponse,
+  type ResolvedApprovalChainRow,
 } from './approvals';
 
 export type {

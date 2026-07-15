@@ -4,7 +4,7 @@ import { RefreshCw, Loader2, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '../../services/api';
 import SystemPagination from '../../components/SystemPagination';
-import { Onboarding, OnboardingStatus, ONBOARDING_STATUS_STYLES, fmtDate, unwrap } from './saas/_shared';
+import { type Onboarding, type OnboardingStatus, ONBOARDING_STATUS_STYLES, fmtDate, unwrap } from './saas/_shared';
 
 const STATUSES: OnboardingStatus[] = ['not_started', 'in_progress', 'completed', 'blocked'];
 

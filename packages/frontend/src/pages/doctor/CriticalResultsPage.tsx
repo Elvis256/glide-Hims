@@ -3,8 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, RefreshCw, Clock, CheckCircle2 } from 'lucide-react';
 import {
   criticalResultsService,
-  CriticalResultAlert,
-  AcknowledgeCriticalResultPayload,
+  type CriticalResultAlert,
+  type AcknowledgeCriticalResultPayload,
 } from '../../services/critical-results';
 import CriticalResultAckModal from '../../components/CriticalResultAckModal';
 
