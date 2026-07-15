@@ -48,7 +48,7 @@ inline, log the rest. No view is done until its element table is complete.
 
 ## Blocks
 - [x] 1. Registration: PatientsPage, PatientDetail/Edit, QuickRegModal, PatientRegistrationPage*, OPDTokenPage*, appointments (View/Manage/Schedules), CallNextPatientPage* (*recently rebuilt — verify only) — ✅ e766979e 2026-07-14, functional map in docs/modules/01-registration.md; also covered PatientSearch/Documents/History (registration routes not owned by any later block)
-- [x] 2. Nursing: TriageQueuePage*, vitals pages, ward/nursing worklists (AdministerMeds, CarePlans, DressingLog, IVCannulation, Catheterization, FallRisk, IncidentReport, BloodSugar, DrugAllergies, AbnormalAlerts) — ✅ PENDING-COMMIT 2026-07-15, functional map in docs/modules/02-nursing.md; 34 pages reviewed, 21 permission gates added, 12 demo-mode fixes, VitalsPage field names fixed, MedSchedule crash fixed
+- [x] 2. Nursing: TriageQueuePage*, vitals pages, ward/nursing worklists (AdministerMeds, CarePlans, DressingLog, IVCannulation, Catheterization, FallRisk, IncidentReport, BloodSugar, DrugAllergies, AbnormalAlerts) — ✅ 7eab3742 2026-07-15, functional map in docs/modules/02-nursing.md; 34 pages reviewed, 21 permission gates added, 12 demo-mode fixes, VitalsPage field names fixed, MedSchedule crash fixed
 - [ ] 3. Doctors: NewConsultationPage* (document mode — deep verify), CallNextPage*, EncounterDetail, SOAPNotes, referrals (sent/received), diagnosis/ProblemList, follow-ups, certificates
 - [ ] 4. Diagnostics: LabPage, lab queue/results/QC, sample mgmt, radiology queue/reporting, critical results pages
 - [ ] 5. Pharmacy: PharmacyQueuePage, DispenseMedication, sales, stock/batches, controlled register, templates
