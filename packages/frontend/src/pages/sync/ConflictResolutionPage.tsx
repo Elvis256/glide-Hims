@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { syncService } from '../../services/sync';
+import { syncService, type SyncConflict } from '../../services/sync';
+import { useFacilityId } from '../../lib/facility';
 import {
   GitMerge,
   AlertTriangle,
@@ -18,48 +19,61 @@ import {
   Database,
 } from 'lucide-react';
 
-interface SyncConflict {
-  id: string;
-  entityType: string;
-  entityId: string;
-  facilityId: string;
-  clientId: string;
-  localVersion: Record<string, unknown>;
-  serverVersion: Record<string, unknown>;
-  conflictFields: string[];
-  createdAt: string;
-  status: 'PENDING' | 'RESOLVED';
-}
-
 export default function ConflictResolutionPage() {
   const queryClient = useQueryClient();
+  const facilityId = useFacilityId();
   const [expandedConflict, setExpandedConflict] = useState<string | null>(null);
   const [selectedResolutions, setSelectedResolutions] = useState<Record<string, Record<string, 'local' | 'server'>>>({});
 
   const { data: conflicts, isLoading } = useQuery({
-    queryKey: ['sync-conflicts'],
-    queryFn: () => syncService.getConflicts(),
+    queryKey: ['sync-conflicts', facilityId],
+    queryFn: () => syncService.getConflicts(facilityId!),
+    enabled: !!facilityId,
   });
 
+  /** Build the merged payload the backend requires for a MERGED resolution:
+   *  start from the server payload, then override each conflicting field with
+   *  whichever side the user picked. Previously the per-field choices were
+   *  collected and then thrown away — no payload was sent at all. */
+  const buildMergedPayload = (conflict: SyncConflict) => {
+    const choices = selectedResolutions[conflict.id] || {};
+    const merged: Record<string, any> = { ...conflict.serverPayload };
+    for (const field of conflict.conflictingFields) {
+      merged[field] =
+        choices[field] === 'local' ? conflict.clientPayload?.[field] : conflict.serverPayload?.[field];
+    }
+    return merged;
+  };
+
   const resolveConflictMutation = useMutation({
-    mutationFn: async ({ conflictId, resolution }: { conflictId: string; resolution: 'USE_LOCAL' | 'USE_SERVER' | 'MERGE' }) => {
-      const mapped = resolution === 'USE_LOCAL' ? 'local' : resolution === 'USE_SERVER' ? 'server' : 'merged';
-      await syncService.resolveConflict(conflictId, mapped);
+    mutationFn: async ({
+      conflictId,
+      resolution,
+      resolvedPayload,
+    }: {
+      conflictId: string;
+      resolution: 'client_wins' | 'server_wins' | 'merged';
+      resolvedPayload?: Record<string, any>;
+    }) => {
+      await syncService.resolveConflict(conflictId, resolution, resolvedPayload);
     },
     onSuccess: () => {
+      toast.success('Conflict resolved');
       queryClient.invalidateQueries({ queryKey: ['sync-conflicts'] });
     },
+    onError: (e: any) => toast.error(e.response?.data?.message || 'Failed to resolve conflict'),
   });
 
   const resolveAllMutation = useMutation({
-    mutationFn: async (resolution: 'USE_LOCAL' | 'USE_SERVER') => {
-      const mapped = resolution === 'USE_LOCAL' ? 'local' : 'server';
-      const pending = (conflicts || []).filter((c: any) => c.status === 'PENDING');
-      await Promise.all(pending.map((c: any) => syncService.resolveConflict(c.id, mapped)));
+    mutationFn: async (resolution: 'client_wins' | 'server_wins') => {
+      const pending = (conflicts || []).filter((c) => c.resolution === 'pending');
+      await Promise.all(pending.map((c) => syncService.resolveConflict(c.id, resolution)));
     },
     onSuccess: () => {
+      toast.success('Conflicts resolved');
       queryClient.invalidateQueries({ queryKey: ['sync-conflicts'] });
     },
+    onError: (e: any) => toast.error(e.response?.data?.message || 'Failed to resolve conflicts'),
   });
 
   const formatTimeAgo = (dateStr: string) => {
@@ -84,18 +98,23 @@ export default function ConflictResolutionPage() {
 
   const handleMergeResolve = (conflict: SyncConflict) => {
     const resolutions = selectedResolutions[conflict.id] || {};
-    const allFieldsResolved = conflict.conflictFields.every(field => resolutions[field]);
-    
+    const allFieldsResolved = conflict.conflictingFields.every(field => resolutions[field]);
+
     if (!allFieldsResolved) {
       toast.error('Please resolve all conflicting fields before merging');
       return;
     }
-    
-    resolveConflictMutation.mutate({ conflictId: conflict.id, resolution: 'MERGE' });
+
+    resolveConflictMutation.mutate({
+      conflictId: conflict.id,
+      resolution: 'merged',
+      resolvedPayload: buildMergedPayload(conflict),
+    });
   };
 
   const items = conflicts || [];
-  const pendingConflicts = items.filter(c => c.status === 'PENDING');
+  // 'pending' IS the unresolved state — there is no separate status column.
+  const pendingConflicts = items.filter(c => c.resolution === 'pending');
 
   if (isLoading) {
     return (
@@ -116,14 +135,14 @@ export default function ConflictResolutionPage() {
         {pendingConflicts.length > 0 && (
           <div className="flex items-center gap-3">
             <button
-              onClick={() => resolveAllMutation.mutate('USE_LOCAL')}
+              onClick={() => resolveAllMutation.mutate('client_wins')}
               disabled={resolveAllMutation.isPending}
               className="flex items-center gap-2 px-4 py-2 border rounded-lg hover:bg-gray-50"
             >
               Keep All Local
             </button>
             <button
-              onClick={() => resolveAllMutation.mutate('USE_SERVER')}
+              onClick={() => resolveAllMutation.mutate('server_wins')}
               disabled={resolveAllMutation.isPending}
               className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
             >
@@ -154,7 +173,7 @@ export default function ConflictResolutionPage() {
             <div>
               <p className="text-sm text-gray-600">Resolved Today</p>
               <p className="text-xl font-bold text-green-600">
-                {items.filter(c => c.status === 'RESOLVED').length}
+                {items.filter(c => c.resolution !== 'pending').length}
               </p>
             </div>
           </div>
@@ -191,7 +210,7 @@ export default function ConflictResolutionPage() {
                       {conflict.entityType.replace('_', ' ')} Conflict
                     </p>
                     <p className="text-sm text-gray-500">
-                      ID: {conflict.entityId} • {conflict.conflictFields.length} conflicting field(s)
+                      ID: {conflict.entityId} • {conflict.conflictingFields.length} conflicting field(s)
                     </p>
                   </div>
                 </div>
@@ -215,12 +234,12 @@ export default function ConflictResolutionPage() {
                         <span className="text-xs text-blue-600 ml-auto">Your device</span>
                       </div>
                       <div className="space-y-2">
-                        {conflict.conflictFields.map((field) => (
+                        {conflict.conflictingFields.map((field) => (
                           <div key={field} className="flex items-center justify-between">
                             <div>
                               <p className="text-sm font-medium text-gray-700 capitalize">{field}</p>
                               <p className="text-sm text-gray-600">
-                                {String(conflict.localVersion[field] || '—')}
+                                {String(conflict.clientPayload?.[field] ?? '—')}
                               </p>
                             </div>
                             <button
@@ -249,12 +268,12 @@ export default function ConflictResolutionPage() {
                         <span className="text-xs text-green-600 ml-auto">Cloud</span>
                       </div>
                       <div className="space-y-2">
-                        {conflict.conflictFields.map((field) => (
+                        {conflict.conflictingFields.map((field) => (
                           <div key={field} className="flex items-center justify-between">
                             <div>
                               <p className="text-sm font-medium text-gray-700 capitalize">{field}</p>
                               <p className="text-sm text-gray-600">
-                                {String(conflict.serverVersion[field] || '—')}
+                                {String(conflict.serverPayload?.[field] ?? '—')}
                               </p>
                             </div>
                             <button
@@ -279,14 +298,14 @@ export default function ConflictResolutionPage() {
                   {/* Resolution Actions */}
                   <div className="flex items-center justify-end gap-3 pt-4 border-t">
                     <button
-                      onClick={() => resolveConflictMutation.mutate({ conflictId: conflict.id, resolution: 'USE_LOCAL' })}
+                      onClick={() => resolveConflictMutation.mutate({ conflictId: conflict.id, resolution: 'client_wins' })}
                       disabled={resolveConflictMutation.isPending}
                       className="px-4 py-2 border rounded-lg hover:bg-gray-100"
                     >
                       Keep All Local
                     </button>
                     <button
-                      onClick={() => resolveConflictMutation.mutate({ conflictId: conflict.id, resolution: 'USE_SERVER' })}
+                      onClick={() => resolveConflictMutation.mutate({ conflictId: conflict.id, resolution: 'server_wins' })}
                       disabled={resolveConflictMutation.isPending}
                       className="px-4 py-2 border rounded-lg hover:bg-gray-100"
                     >

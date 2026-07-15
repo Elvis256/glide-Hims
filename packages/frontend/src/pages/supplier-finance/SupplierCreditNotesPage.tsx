@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { formatCurrency } from '../../lib/currency';
-import { supplierFinanceService } from '../../services/supplier-finance';
+import { supplierFinanceService, type CreditNote } from '../../services/supplier-finance';
+import { useFacilityId } from '../../lib/facility';
 import {
   Receipt,
   Search,
@@ -18,28 +20,15 @@ import {
   Link,
 } from 'lucide-react';
 
-interface CreditNote {
-  id: string;
-  noteNumber: string;
-  noteType: 'CREDIT' | 'DEBIT';
-  supplierId: string;
-  supplierName: string;
-  facilityId: string;
-  amount: number;
-  currency: string;
-  reason: string;
-  grnNumber?: string;
-  invoiceNumber?: string;
-  status: 'DRAFT' | 'PENDING_APPROVAL' | 'APPROVED' | 'APPLIED' | 'CANCELLED';
-  appliedToVoucher?: string;
-  appliedAmount?: number;
-  createdBy: string;
-  approvedBy?: string;
-  createdAt: string;
-}
+// Values must match backend CreditNoteStatus/CreditNoteType exactly
+// (supplier-credit-note.entity.ts). The uppercase set this page used matched
+// nothing, so every total read 0 and every badge fell through to grey.
+const statuses = ['All', 'draft', 'pending_approval', 'approved', 'applied', 'cancelled'];
+const noteTypes = ['All', 'credit_note', 'debit_note'];
 
-const statuses = ['All', 'DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'APPLIED', 'CANCELLED'];
-const noteTypes = ['All', 'CREDIT', 'DEBIT'];
+const titleize = (v: string) => v.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+/** decimal columns arrive as strings from TypeORM. */
+const num = (v: number | string | undefined) => Number(v ?? 0) || 0;
 
 export default function SupplierCreditNotesPage() {
   const queryClient = useQueryClient();
@@ -50,10 +39,16 @@ export default function SupplierCreditNotesPage() {
   const [viewingNote, setViewingNote] = useState<CreditNote | null>(null);
   const [showApplyModal, setShowApplyModal] = useState(false);
   const [applyingNote, setApplyingNote] = useState<CreditNote | null>(null);
+  const [applyVoucherId, setApplyVoucherId] = useState('');
+  const [applyAmount, setApplyAmount] = useState('');
+
+  const facilityId = useFacilityId();
 
   const { data: creditNotes, isLoading } = useQuery({
-    queryKey: ['credit-notes'],
-    queryFn: () => supplierFinanceService.creditNotes.list(),
+    queryKey: ['credit-notes', facilityId],
+    // facilityId is required — the backend filters on it unconditionally.
+    queryFn: () => supplierFinanceService.creditNotes.list({ facilityId: facilityId! }),
+    enabled: !!facilityId,
   });
 
   const approveMutation = useMutation({
@@ -63,13 +58,30 @@ export default function SupplierCreditNotesPage() {
     },
   });
 
+  // Payment vouchers this note can be applied against — same supplier, and the
+  // backend only permits applying to a voucher that is not yet paid.
+  const { data: vouchers = [] } = useQuery({
+    queryKey: ['supplier-vouchers-for-apply', applyingNote?.supplierId],
+    queryFn: () =>
+      supplierFinanceService.payments.list({
+        facilityId,
+        supplierId: applyingNote!.supplierId,
+      }),
+    enabled: !!applyingNote?.supplierId && !!facilityId,
+  });
+
   const applyMutation = useMutation({
-    mutationFn: ({ id }: { id: string; voucherId: string; amount: number }) => supplierFinanceService.creditNotes.apply(id),
+    mutationFn: ({ id, voucherId, amount }: { id: string; voucherId: string; amount: number }) =>
+      supplierFinanceService.creditNotes.apply(id, voucherId, amount),
     onSuccess: () => {
+      toast.success('Credit note applied');
       queryClient.invalidateQueries({ queryKey: ['credit-notes'] });
       setShowApplyModal(false);
       setApplyingNote(null);
+      setApplyVoucherId('');
+      setApplyAmount('');
     },
+    onError: (e: any) => toast.error(e.response?.data?.message || 'Failed to apply credit note'),
   });
 
   const createMutation = useMutation({
@@ -83,10 +95,12 @@ export default function SupplierCreditNotesPage() {
   const items = creditNotes || [];
 
   const filteredNotes = items.filter((note) => {
-    const matchesSearch = 
-      note.noteNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      note.supplierName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      note.reason.toLowerCase().includes(searchTerm.toLowerCase());
+    const q = searchTerm.toLowerCase();
+    const matchesSearch =
+      !q ||
+      note.noteNumber?.toLowerCase().includes(q) ||
+      note.supplier?.name?.toLowerCase().includes(q) ||
+      note.reason?.toLowerCase().includes(q);
     const matchesStatus = selectedStatus === 'All' || note.status === selectedStatus;
     const matchesType = selectedType === 'All' || note.noteType === selectedType;
     return matchesSearch && matchesStatus && matchesType;
@@ -94,19 +108,23 @@ export default function SupplierCreditNotesPage() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'DRAFT': return 'bg-gray-100 text-gray-700';
-      case 'PENDING_APPROVAL': return 'bg-yellow-100 text-yellow-700';
-      case 'APPROVED': return 'bg-blue-100 text-blue-700';
-      case 'APPLIED': return 'bg-green-100 text-green-700';
-      case 'CANCELLED': return 'bg-red-100 text-red-700';
+      case 'draft': return 'bg-gray-100 text-gray-700';
+      case 'pending_approval': return 'bg-yellow-100 text-yellow-700';
+      case 'approved': return 'bg-blue-100 text-blue-700';
+      case 'applied': return 'bg-green-100 text-green-700';
+      case 'cancelled': return 'bg-red-100 text-red-700';
       default: return 'bg-gray-100 text-gray-700';
     }
   };
 
-  const totalCredits = items.filter(n => n.noteType === 'CREDIT' && n.status !== 'CANCELLED').reduce((sum, n) => sum + n.amount, 0);
-  const totalDebits = items.filter(n => n.noteType === 'DEBIT' && n.status !== 'CANCELLED').reduce((sum, n) => sum + n.amount, 0);
-  const pendingApproval = items.filter(n => n.status === 'PENDING_APPROVAL').length;
-  const unapplied = items.filter(n => n.status === 'APPROVED').length;
+  const totalCredits = items
+    .filter(n => n.noteType === 'credit_note' && n.status !== 'cancelled')
+    .reduce((sum, n) => sum + num(n.totalAmount), 0);
+  const totalDebits = items
+    .filter(n => n.noteType === 'debit_note' && n.status !== 'cancelled')
+    .reduce((sum, n) => sum + num(n.totalAmount), 0);
+  const pendingApproval = items.filter(n => n.status === 'pending_approval').length;
+  const unapplied = items.filter(n => n.status === 'approved').length;
 
   if (isLoading) {
     return (
@@ -202,8 +220,8 @@ export default function SupplierCreditNotesPage() {
                 onClick={() => setSelectedType(type)}
                 className={`px-3 py-1 rounded-full text-sm ${
                   selectedType === type
-                    ? type === 'CREDIT' ? 'bg-green-600 text-white' :
-                      type === 'DEBIT' ? 'bg-red-600 text-white' :
+                    ? type === 'credit_note' ? 'bg-green-600 text-white' :
+                      type === 'debit_note' ? 'bg-red-600 text-white' :
                       'bg-gray-800 text-white'
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                 }`}
@@ -252,29 +270,29 @@ export default function SupplierCreditNotesPage() {
                   <div>
                     <p className="font-medium text-gray-900">{note.noteNumber}</p>
                     <p className="text-xs text-gray-500">
-                      {note.grnNumber ? `GRN: ${note.grnNumber}` : note.invoiceNumber ? `INV: ${note.invoiceNumber}` : '—'}
+                      {note.supplierInvoiceNumber ? `INV: ${note.supplierInvoiceNumber}` : note.grnId ? 'From GRN' : '—'}
                     </p>
                   </div>
                 </td>
                 <td className="px-4 py-3">
-                  <span className={`flex items-center gap-1 ${note.noteType === 'CREDIT' ? 'text-green-600' : 'text-red-600'}`}>
-                    {note.noteType === 'CREDIT' ? (
+                  <span className={`flex items-center gap-1 ${note.noteType === 'credit_note' ? 'text-green-600' : 'text-red-600'}`}>
+                    {note.noteType === 'credit_note' ? (
                       <ArrowDownCircle className="w-4 h-4" />
                     ) : (
                       <ArrowUpCircle className="w-4 h-4" />
                     )}
-                    {note.noteType}
+                    {titleize(note.noteType || '')}
                   </span>
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
                     <Building2 className="w-4 h-4 text-gray-400" />
-                    <span className="text-sm text-gray-700">{note.supplierName}</span>
+                    <span className="text-sm text-gray-700">{note.supplier?.name || '—'}</span>
                   </div>
                 </td>
                 <td className="px-4 py-3">
-                  <span className={`font-medium ${note.noteType === 'CREDIT' ? 'text-green-600' : 'text-red-600'}`}>
-                    {note.noteType === 'CREDIT' ? '-' : '+'}{formatCurrency(note.amount, { currencyCode: note.currency as any })}
+                  <span className={`font-medium ${note.noteType === 'credit_note' ? 'text-green-600' : 'text-red-600'}`}>
+                    {note.noteType === 'credit_note' ? '-' : '+'}{formatCurrency(num(note.totalAmount))}
                   </span>
                 </td>
                 <td className="px-4 py-3">
@@ -296,7 +314,7 @@ export default function SupplierCreditNotesPage() {
                     >
                       <Eye className="w-4 h-4 text-gray-500" />
                     </button>
-                    {note.status === 'PENDING_APPROVAL' && (
+                    {note.status === 'pending_approval' && (
                       <button
                         onClick={() => approveMutation.mutate(note.id)}
                         className="px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700"
@@ -304,7 +322,7 @@ export default function SupplierCreditNotesPage() {
                         Approve
                       </button>
                     )}
-                    {note.status === 'APPROVED' && note.noteType === 'CREDIT' && (
+                    {note.status === 'approved' && note.noteType === 'credit_note' && (
                       <button
                         onClick={() => {
                           setApplyingNote(note);
@@ -345,33 +363,38 @@ export default function SupplierCreditNotesPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-sm text-gray-500">Type</p>
-                  <span className={`font-medium ${viewingNote.noteType === 'CREDIT' ? 'text-green-600' : 'text-red-600'}`}>
-                    {viewingNote.noteType} NOTE
+                  <span className={`font-medium ${viewingNote.noteType === 'credit_note' ? 'text-green-600' : 'text-red-600'}`}>
+                    {titleize(viewingNote.noteType || '')}
                   </span>
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Amount</p>
-                  <p className="font-medium">{formatCurrency(viewingNote.amount, { currencyCode: viewingNote.currency as any })}</p>
+                  <p className="font-medium">{formatCurrency(num(viewingNote.totalAmount))}</p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Supplier</p>
-                  <p className="font-medium">{viewingNote.supplierName}</p>
+                  <p className="font-medium">{viewingNote.supplier?.name || '—'}</p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Status</p>
                   <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(viewingNote.status)}`}>
-                    {viewingNote.status.replace('_', ' ')}
+                    {titleize(viewingNote.status || '')}
                   </span>
                 </div>
               </div>
               <div>
                 <p className="text-sm text-gray-500">Reason</p>
-                <p className="font-medium">{viewingNote.reason}</p>
+                <p className="font-medium">{titleize(viewingNote.reason || '')}</p>
+                {viewingNote.reasonDetails && (
+                  <p className="text-sm text-gray-600 mt-1">{viewingNote.reasonDetails}</p>
+                )}
               </div>
-              {viewingNote.appliedToVoucher && (
+              {/* The entity tracks applied/balance amounts, not a voucher ref. */}
+              {num(viewingNote.appliedAmount) > 0 && (
                 <div className="bg-green-50 border border-green-200 rounded-lg p-3">
                   <p className="text-sm text-green-700">
-                    Applied to {viewingNote.appliedToVoucher} • {formatCurrency(viewingNote.appliedAmount!, { currencyCode: viewingNote.currency as any })}
+                    Applied: {formatCurrency(num(viewingNote.appliedAmount))} • Balance:{' '}
+                    {formatCurrency(num(viewingNote.balanceAmount))}
                   </p>
                 </div>
               )}
@@ -401,26 +424,49 @@ export default function SupplierCreditNotesPage() {
               <div className="bg-gray-50 rounded-lg p-3">
                 <p className="text-sm text-gray-600">Applying:</p>
                 <p className="font-medium">{applyingNote.noteNumber}</p>
-                <p className="text-green-600 font-medium">{formatCurrency(applyingNote.amount, { currencyCode: applyingNote.currency as any })}</p>
+                <p className="text-green-600 font-medium">
+                  Available balance: {formatCurrency(num(applyingNote.balanceAmount))}
+                </p>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Payment Voucher</label>
-                <select className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Payment Voucher <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={applyVoucherId}
+                  onChange={(e) => setApplyVoucherId(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
                   <option value="">Select voucher</option>
-                  <option value="PV-2024-001">PV-2024-001 - UGX 5,500,000</option>
-                  <option value="PV-2024-002">PV-2024-002 - UGX 12,000,000</option>
+                  {vouchers.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.voucherNumber} — {formatCurrency(num(v.netAmount))}
+                    </option>
+                  ))}
                 </select>
+                {vouchers.length === 0 && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    No payment vouchers for this supplier.
+                  </p>
+                )}
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Amount to Apply</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Amount to Apply <span className="text-red-500">*</span>
+                </label>
                 <input
                   type="number"
-                  defaultValue={applyingNote.amount}
-                  max={applyingNote.amount}
+                  value={applyAmount}
+                  onChange={(e) => setApplyAmount(e.target.value)}
+                  max={num(applyingNote.balanceAmount)}
+                  min={0}
                   className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                 />
+                <p className="text-xs text-gray-500 mt-1">
+                  Cannot exceed the note's balance of {formatCurrency(num(applyingNote.balanceAmount))}.
+                </p>
               </div>
             </div>
 
@@ -429,8 +475,20 @@ export default function SupplierCreditNotesPage() {
                 Cancel
               </button>
               <button
-                onClick={() => applyMutation.mutate({ id: applyingNote.id, voucherId: '', amount: applyingNote.amount })}
-                disabled={applyMutation.isPending}
+                onClick={() =>
+                  applyMutation.mutate({
+                    id: applyingNote.id,
+                    voucherId: applyVoucherId,
+                    amount: Number(applyAmount),
+                  })
+                }
+                disabled={
+                  applyMutation.isPending ||
+                  !applyVoucherId ||
+                  !applyAmount ||
+                  Number(applyAmount) <= 0 ||
+                  Number(applyAmount) > num(applyingNote.balanceAmount)
+                }
                 className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
               >
                 {applyMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}

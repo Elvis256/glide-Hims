@@ -1,17 +1,33 @@
 import api from './api';
 
+/** Mirrors backend ConflictResolution (database/entities/sync-conflict.entity.ts).
+ *  'pending' IS the unresolved state — the entity has no separate status column. */
+export type ConflictResolution = 'pending' | 'client_wins' | 'server_wins' | 'merged' | 'manual';
+
+/** Mirrors the backend SyncConflict entity. The previous shape here
+ *  (localData/serverData/conflictFields/status/deviceId, resolution
+ *  'local'|'server'|'merged') matched no column on it. */
 export interface SyncConflict {
   id: string;
+  tenantId?: string;
+  facilityId: string;
   entityType: string;
   entityId: string;
-  localData: Record<string, any>;
-  serverData: Record<string, any>;
   conflictType: string;
-  deviceId: string;
-  status: 'unresolved' | 'resolved';
-  resolvedBy?: string;
+  clientVersion: number;
+  serverVersion: number;
+  clientTimestamp: number;
+  serverTimestamp: number;
+  clientPayload: Record<string, any>;
+  serverPayload: Record<string, any>;
+  basePayload?: Record<string, any>;
+  conflictingFields: string[];
+  suggestedMerge?: Record<string, any>;
+  resolution: ConflictResolution;
+  resolvedPayload?: Record<string, any>;
+  resolvedById?: string;
   resolvedAt?: string;
-  resolution?: 'local' | 'server' | 'merged';
+  resolutionNotes?: string;
   createdAt: string;
 }
 
@@ -43,12 +59,23 @@ export const syncService = {
     const response = await api.get('/sync/pull', { params });
     return response.data;
   },
-  getConflicts: async (): Promise<SyncConflict[]> => {
-    const response = await api.get('/sync/conflicts');
-    return response.data?.data || response.data || [];
+  // facilityId is a REQUIRED query param on GET /sync/conflicts.
+  getConflicts: async (facilityId: string, clientId?: string): Promise<SyncConflict[]> => {
+    const response = await api.get('/sync/conflicts', {
+      params: { facilityId, ...(clientId ? { clientId } : {}) },
+    });
+    return Array.isArray(response.data) ? response.data : [];
   },
-  resolveConflict: async (id: string, resolution: 'local' | 'server' | 'merged', mergedData?: any): Promise<void> => {
-    await api.put(`/sync/conflicts/${id}/resolve`, { resolution, mergedData });
+  // Body must match ResolveConflictDto: { resolution, resolvedPayload?, notes? }.
+  // resolution is validated with @IsEnum(ConflictResolution) — 'local'/'server'
+  // are not members and were rejected with a 400.
+  resolveConflict: async (
+    id: string,
+    resolution: ConflictResolution,
+    resolvedPayload?: Record<string, any>,
+    notes?: string,
+  ): Promise<void> => {
+    await api.put(`/sync/conflicts/${id}/resolve`, { resolution, resolvedPayload, notes });
   },
   getStatus: async (): Promise<SyncStatus> => {
     const response = await api.get('/sync/status');

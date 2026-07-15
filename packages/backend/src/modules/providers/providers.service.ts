@@ -203,16 +203,32 @@ export class ProvidersService {
     });
   }
 
-  async checkLicenseExpiry(daysAhead: number = 30, tenantId?: string): Promise<Provider[]> {
+  /**
+   * Active providers whose licence expires within `daysAhead`.
+   *
+   * `includeExpired` also returns those whose licence has ALREADY lapsed. The
+   * default (upcoming only) is right for reminder crons, but a credentialing
+   * screen must surface lapsed licences — an active provider practising on an
+   * expired licence is precisely the case you cannot afford to hide.
+   */
+  async checkLicenseExpiry(
+    daysAhead: number = 30,
+    tenantId?: string,
+    includeExpired = false,
+  ): Promise<Provider[]> {
     const tid = requireTenantId(tenantId);
     const futureDate = new Date();
     futureDate.setDate(futureDate.getDate() + daysAhead);
 
     const qb = this.providerRepository
       .createQueryBuilder('provider')
-      .where('provider.licenseExpiry <= :futureDate', { futureDate })
-      .andWhere('provider.licenseExpiry >= :today', { today: new Date() })
+      .where('provider.licenseExpiry IS NOT NULL')
+      .andWhere('provider.licenseExpiry <= :futureDate', { futureDate })
       .andWhere('provider.status = :status', { status: ProviderStatus.ACTIVE });
+
+    if (!includeExpired) {
+      qb.andWhere('provider.licenseExpiry >= :today', { today: new Date() });
+    }
 
     qb.andWhere('provider.tenant_id = :tenantId', { tenantId: tid });
 

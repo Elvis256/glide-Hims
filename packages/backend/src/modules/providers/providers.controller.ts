@@ -78,8 +78,17 @@ export class ProvidersController {
   @AuthWithPermissions('providers.read')
   @ApiOperation({ summary: 'Get providers with expiring licenses' })
   @ApiQuery({ name: 'daysAhead', required: false })
-  async checkLicenseExpiry(@Query('daysAhead') daysAhead?: number, @Request() req?: any) {
-    return this.providersService.checkLicenseExpiry(daysAhead || 30, req?.user?.tenantId);
+  @ApiQuery({ name: 'includeExpired', required: false })
+  async checkLicenseExpiry(
+    @Query('daysAhead') daysAhead?: number,
+    @Request() req?: any,
+    @Query('includeExpired') includeExpired?: string,
+  ) {
+    return this.providersService.checkLicenseExpiry(
+      daysAhead ? Number(daysAhead) : 30,
+      req?.user?.tenantId,
+      includeExpired === 'true',
+    );
   }
 
   @Get('user/:userId')

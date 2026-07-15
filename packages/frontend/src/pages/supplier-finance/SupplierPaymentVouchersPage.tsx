@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { formatCurrency } from '../../lib/currency';
-import { supplierFinanceService } from '../../services/supplier-finance';
+import { supplierFinanceService, type PaymentVoucher } from '../../services/supplier-finance';
 import {
   FileText,
   Search,
@@ -21,29 +21,15 @@ import {
   CreditCard,
 } from 'lucide-react';
 
-interface PaymentVoucher {
-  id: string;
-  voucherNumber: string;
-  supplierId: string;
-  supplierName: string;
-  facilityId: string;
-  amount: number;
-  currency: string;
-  paymentMethod: 'BANK_TRANSFER' | 'CHEQUE' | 'CASH' | 'MOBILE_MONEY';
-  status: 'DRAFT' | 'PENDING_APPROVAL' | 'APPROVED' | 'PAID' | 'CANCELLED';
-  invoiceNumbers: string[];
-  dueDate: string;
-  paidAt?: string;
-  bankReference?: string;
-  chequeNumber?: string;
-  notes?: string;
-  createdBy: string;
-  approvedBy?: string;
-  createdAt: string;
-}
+// Values must match backend PaymentVoucherStatus/PaymentMethod exactly
+// (supplier-payment.entity.ts) — the uppercase set matched nothing, so every
+// total read 0 and the row action buttons never appeared.
+const statuses = ['All', 'draft', 'pending_approval', 'approved', 'paid', 'cancelled'];
+const paymentMethods = ['bank_transfer', 'cheque', 'cash', 'mobile_money', 'credit_card'];
 
-const statuses = ['All', 'DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'PAID', 'CANCELLED'];
-const paymentMethods = ['BANK_TRANSFER', 'CHEQUE', 'CASH', 'MOBILE_MONEY'];
+const titleize = (v: string) => v.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+/** decimal columns arrive as strings from TypeORM. */
+const num = (v: number | string | undefined) => Number(v ?? 0) || 0;
 
 export default function SupplierPaymentVouchersPage() {
   const queryClient = useQueryClient();
@@ -89,27 +75,29 @@ export default function SupplierPaymentVouchersPage() {
   const items = vouchers || [];
 
   const filteredVouchers = items.filter((voucher) => {
-    const matchesSearch = 
-      voucher.voucherNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      voucher.supplierName.toLowerCase().includes(searchTerm.toLowerCase());
+    const q = searchTerm.toLowerCase();
+    const matchesSearch =
+      !q ||
+      voucher.voucherNumber?.toLowerCase().includes(q) ||
+      voucher.supplier?.name?.toLowerCase().includes(q);
     const matchesStatus = selectedStatus === 'All' || voucher.status === selectedStatus;
     return matchesSearch && matchesStatus;
   });
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'DRAFT': return 'bg-gray-100 text-gray-700';
-      case 'PENDING_APPROVAL': return 'bg-yellow-100 text-yellow-700';
-      case 'APPROVED': return 'bg-blue-100 text-blue-700';
-      case 'PAID': return 'bg-green-100 text-green-700';
-      case 'CANCELLED': return 'bg-red-100 text-red-700';
+      case 'draft': return 'bg-gray-100 text-gray-700';
+      case 'pending_approval': return 'bg-yellow-100 text-yellow-700';
+      case 'approved': return 'bg-blue-100 text-blue-700';
+      case 'paid': return 'bg-green-100 text-green-700';
+      case 'cancelled': return 'bg-red-100 text-red-700';
       default: return 'bg-gray-100 text-gray-700';
     }
   };
 
-  const totalPending = items.filter(v => v.status === 'PENDING_APPROVAL').reduce((sum, v) => sum + v.amount, 0);
-  const totalApproved = items.filter(v => v.status === 'APPROVED').reduce((sum, v) => sum + v.amount, 0);
-  const totalPaid = items.filter(v => v.status === 'PAID').reduce((sum, v) => sum + v.amount, 0);
+  const totalPending = items.filter(v => v.status === 'pending_approval').reduce((sum, v) => sum + num(v.netAmount), 0);
+  const totalApproved = items.filter(v => v.status === 'approved').reduce((sum, v) => sum + num(v.netAmount), 0);
+  const totalPaid = items.filter(v => v.status === 'paid').reduce((sum, v) => sum + num(v.netAmount), 0);
 
   if (isLoading) {
     return (
@@ -225,7 +213,7 @@ export default function SupplierPaymentVouchersPage() {
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Supplier</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Amount</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Method</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Due Date</th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Payment Date</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Status</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Actions</th>
             </tr>
@@ -236,18 +224,18 @@ export default function SupplierPaymentVouchersPage() {
                 <td className="px-4 py-3">
                   <div>
                     <p className="font-medium text-gray-900">{voucher.voucherNumber}</p>
-                    <p className="text-xs text-gray-500">{voucher.invoiceNumbers.join(', ')}</p>
+                    <p className="text-xs text-gray-500">{voucher.items?.map((i) => i.invoiceNumber).filter(Boolean).join(', ') || '—'}</p>
                   </div>
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
                     <Building2 className="w-4 h-4 text-gray-400" />
-                    <span className="text-sm text-gray-700">{voucher.supplierName}</span>
+                    <span className="text-sm text-gray-700">{voucher.supplier?.name || '—'}</span>
                   </div>
                 </td>
                 <td className="px-4 py-3">
                   <span className="font-medium text-gray-900">
-                    {formatCurrency(voucher.amount, { currencyCode: voucher.currency as any })}
+                    {formatCurrency(num(voucher.netAmount))}
                   </span>
                 </td>
                 <td className="px-4 py-3">
@@ -255,7 +243,7 @@ export default function SupplierPaymentVouchersPage() {
                 </td>
                 <td className="px-4 py-3">
                   <span className="text-sm text-gray-700">
-                    {new Date(voucher.dueDate).toLocaleDateString()}
+                    {voucher.paymentDate ? new Date(voucher.paymentDate).toLocaleDateString() : '—'}
                   </span>
                 </td>
                 <td className="px-4 py-3">
@@ -272,7 +260,7 @@ export default function SupplierPaymentVouchersPage() {
                     >
                       <Eye className="w-4 h-4 text-gray-500" />
                     </button>
-                    {voucher.status === 'DRAFT' && (
+                    {voucher.status === 'draft' && (
                       <button
                         onClick={() => submitMutation.mutate(voucher.id)}
                         className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
@@ -280,7 +268,7 @@ export default function SupplierPaymentVouchersPage() {
                         Submit
                       </button>
                     )}
-                    {voucher.status === 'PENDING_APPROVAL' && (
+                    {voucher.status === 'pending_approval' && (
                       <button
                         onClick={() => approveMutation.mutate(voucher.id)}
                         className="px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700"
@@ -288,7 +276,7 @@ export default function SupplierPaymentVouchersPage() {
                         Approve
                       </button>
                     )}
-                    {voucher.status === 'APPROVED' && (
+                    {voucher.status === 'approved' && (
                       <button
                         onClick={() => processMutation.mutate(voucher.id)}
                         className="px-2 py-1 text-xs bg-purple-600 text-white rounded hover:bg-purple-700"
@@ -326,29 +314,29 @@ export default function SupplierPaymentVouchersPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-sm text-gray-500">Supplier</p>
-                  <p className="font-medium">{viewingVoucher.supplierName}</p>
+                  <p className="font-medium">{viewingVoucher.supplier?.name || '—'}</p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Amount</p>
-                  <p className="font-medium">{formatCurrency(viewingVoucher.amount, { currencyCode: viewingVoucher.currency as any })}</p>
+                  <p className="font-medium">{formatCurrency(num(viewingVoucher.netAmount))}</p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Payment Method</p>
                   <p className="font-medium">{viewingVoucher.paymentMethod.replace('_', ' ')}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500">Due Date</p>
-                  <p className="font-medium">{new Date(viewingVoucher.dueDate).toLocaleDateString()}</p>
+                  <p className="text-sm text-gray-500">Payment Date</p>
+                  <p className="font-medium">{viewingVoucher.paymentDate ? new Date(viewingVoucher.paymentDate).toLocaleDateString() : '—'}</p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Status</p>
                   <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(viewingVoucher.status)}`}>
-                    {viewingVoucher.status.replace('_', ' ')}
+                    {titleize(viewingVoucher.status || '')}
                   </span>
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Invoices</p>
-                  <p className="font-medium">{viewingVoucher.invoiceNumbers.join(', ')}</p>
+                  <p className="font-medium">{viewingVoucher.items?.map((i) => i.invoiceNumber).filter(Boolean).join(', ') || '—'}</p>
                 </div>
               </div>
               {viewingVoucher.paidAt && (
