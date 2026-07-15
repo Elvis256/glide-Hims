@@ -535,7 +535,10 @@ export default function NursingNotesPage() {
   };
 
   const handleSave = () => {
-    if (!admission?.id) return;
+    if (!admission?.id) {
+      toast.error('Patient must be admitted before adding nursing notes');
+      return;
+    }
     
     let content = noteContent;
     

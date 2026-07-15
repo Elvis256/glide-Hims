@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -18,7 +18,8 @@ import {
   Loader2,
 } from 'lucide-react';
 import { patientsService } from '../../services/patients';
-import { ipdService, type CreateNursingNoteDto } from '../../services/ipd';
+import { ipdService } from '../../services/ipd';
+import { nursingService, type CreateBloodGlucoseDto } from '../../services/nursing';
 import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
 
@@ -112,11 +113,33 @@ export default function BloodSugarPage() {
     enabled: !!selectedPatient?.id,
   });
 
-  // Create nursing note mutation
+  // Fetch glucose readings from backend
+  const { data: glucoseData } = useQuery({
+    queryKey: ['nursing-glucose', admission?.id],
+    queryFn: () => nursingService.glucose.list({ admissionId: admission!.id }),
+    enabled: !!admission?.id,
+  });
+
+  // Hydrate local readings from API
+  React.useEffect(() => {
+    if (glucoseData?.length) {
+      setReadings(glucoseData.map(g => ({
+        id: g.id,
+        value: Number(g.value),
+        time: new Date(g.createdAt).toTimeString().slice(0, 5),
+        date: new Date(g.createdAt).toISOString().split('T')[0],
+        timing: g.timing as BloodSugarReading['timing'],
+        insulinGiven: g.insulinGiven ? { type: g.insulinGiven.type, units: g.insulinGiven.dose } : undefined,
+        notes: g.notes,
+      })));
+    }
+  }, [glucoseData]);
+
+  // Create glucose reading mutation
   const createNoteMutation = useMutation({
-    mutationFn: (data: CreateNursingNoteDto) => ipdService.nursingNotes.create(data),
+    mutationFn: (dto: CreateBloodGlucoseDto) => nursingService.glucose.create(dto),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['nursing-notes'] });
+      queryClient.invalidateQueries({ queryKey: ['nursing-glucose', admission?.id] });
       toast.success('Blood sugar reading saved');
     },
     onError: (err: any) => {
@@ -203,20 +226,15 @@ export default function BloodSugarPage() {
       return;
     }
 
-    setReadings((prev) => [reading, ...prev]);
-
-    // Save to backend
-    {
-      const content = `Blood Glucose: ${newReading.value} mg/dL (${newReading.timing})${
-        newReading.giveInsulin ? `. Insulin given: ${newReading.insulinType} ${newReading.insulinUnits}u` : ''
-      }${newReading.notes ? '. ' + newReading.notes : ''}`;
-      
-      createNoteMutation.mutate({
-        admissionId: admission.id,
-        type: 'observation',
-        content,
-      });
-    }
+    createNoteMutation.mutate({
+      admissionId: admission.id,
+      value: parseInt(newReading.value),
+      timing: newReading.timing,
+      insulinGiven: (newReading.giveInsulin && newReading.insulinType && newReading.insulinUnits)
+        ? { type: newReading.insulinType, dose: parseInt(newReading.insulinUnits), unit: 'units' }
+        : undefined,
+      notes: newReading.notes || undefined,
+    });
     
     setNewReading({
       value: '',

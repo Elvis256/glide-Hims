@@ -35,6 +35,7 @@ import {
   Ban,
 } from 'lucide-react';
 import { ipdService, type MedicationAdministration, type Ward, type Admission, type AdministerMedicationDto } from '../../services/ipd';
+import { allergiesService } from '../../services/allergies';
 import PermissionGate, { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
 import { asList } from '../../utils/unwrapResponse';
@@ -191,6 +192,29 @@ export default function MedicationSchedulePage() {
     refetchInterval: AUTO_REFRESH_INTERVAL,
   });
 
+  // Fetch allergies for all admitted patients
+  const { data: allergiesMap = new Map() } = useQuery({
+    queryKey: ['patient-allergies-map', asList(admissionsData).map(a => a.patientId).sort().join(',')],
+    queryFn: async () => {
+      const admissions = asList(admissionsData);
+      const patientIds = [...new Set(admissions.map(a => a.patientId).filter(Boolean))];
+      const map = new Map<string, string[]>();
+      await Promise.all(
+        patientIds.map(async (pid) => {
+          try {
+            const list = await allergiesService.list(pid);
+            map.set(pid, list.filter(a => a.status === 'active').map(a => a.allergen));
+          } catch {
+            map.set(pid, []);
+          }
+        })
+      );
+      return map;
+    },
+    enabled: !!asList(admissionsData)?.length,
+    staleTime: 5 * 60 * 1000,
+  });
+
   // Manual refresh handler
   const handleRefresh = useCallback(() => {
     refetchAdmissions();
@@ -246,13 +270,13 @@ export default function MedicationSchedulePage() {
           scheduledTime: med.scheduledTime,
           status: med.status,
           priority: 'routine',
-          prescribedBy: 'Dr. Attending',
+          prescribedBy: 'N/A',
           startDate: med.createdAt,
           specialInstructions: med.notes,
           isControlled,
           isIV,
           isPRN,
-          allergies: [],
+          allergies: allergiesMap.get(admission.patientId) || [],
           administrationHistory: med.administeredTime ? [{
             time: med.administeredTime,
             status: med.status,

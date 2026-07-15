@@ -23,7 +23,6 @@ import {
   Loader2,
   AlertTriangle,
   Clock,
-  FileText,
   ChevronDown,
   ChevronUp,
   Table,
@@ -184,10 +183,24 @@ export default function VitalsHistoryPage() {
       result = result.filter(v => new Date(v.createdAt) <= to);
     }
     
+    if (vitalTypeFilter !== 'all') {
+      result = result.filter(v => {
+        switch (vitalTypeFilter) {
+          case 'temperature': return v.temperature != null;
+          case 'pulse': return v.pulse != null;
+          case 'bp': return v.bpSystolic != null || v.bpDiastolic != null;
+          case 'respiratoryRate': return v.respiratoryRate != null;
+          case 'oxygenSaturation': return v.oxygenSaturation != null;
+          case 'painScale': return v.painScale != null;
+          default: return true;
+        }
+      });
+    }
+
     if (abnormalOnly) {
       result = result.filter(hasAnyAbnormal);
     }
-    
+
     if (recordedByFilter) {
       result = result.filter(v => v.recordedBy?.fullName === recordedByFilter);
     }
@@ -234,7 +247,7 @@ export default function VitalsHistoryPage() {
     });
     
     return result;
-  }, [vitalsData, dateFrom, dateTo, abnormalOnly, recordedByFilter, sortField, sortDirection]);
+  }, [vitalsData, dateFrom, dateTo, vitalTypeFilter, abnormalOnly, recordedByFilter, sortField, sortDirection]);
 
   const paginatedVitals = useMemo(() => {
     const start = (currentPage - 1) * ITEMS_PER_PAGE;
@@ -326,17 +339,34 @@ export default function VitalsHistoryPage() {
     setCurrentPage(1);
   };
 
-  const handleExportPDF = useCallback(() => {
-    toast.success('Generating PDF...');
-    setTimeout(() => toast.success('PDF downloaded successfully'), 1000);
+  const handleExportCSV = useCallback(() => {
+    if (!filteredVitals.length) {
+      toast.error('No vitals to export');
+      return;
+    }
+    const headers = ['Date', 'Temperature', 'Pulse', 'BP Systolic', 'BP Diastolic', 'Respiratory Rate', 'SpO2', 'Pain Scale', 'Recorded By'];
+    const rows = filteredVitals.map(v => [
+      new Date(v.createdAt).toLocaleString(),
+      v.temperature ?? '',
+      v.pulse ?? '',
+      v.bpSystolic ?? '',
+      v.bpDiastolic ?? '',
+      v.respiratoryRate ?? '',
+      v.oxygenSaturation ?? '',
+      v.painScale ?? '',
+      v.recordedBy?.fullName ?? '',
+    ]);
+    const csv = [headers, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `vitals-history-${selectedPatient?.mrn || 'export'}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success('CSV downloaded');
     setShowExportMenu(false);
-  }, []);
-
-  const handleExportExcel = useCallback(() => {
-    toast.success('Generating Excel file...');
-    setTimeout(() => toast.success('Excel file downloaded successfully'), 1000);
-    setShowExportMenu(false);
-  }, []);
+  }, [filteredVitals, selectedPatient]);
 
   const handlePrint = useCallback(() => {
     const el = document.getElementById('vitals-history-content');
@@ -422,18 +452,11 @@ export default function VitalsHistoryPage() {
             {showExportMenu && (
               <div className="absolute right-0 mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-20">
                 <button
-                  onClick={handleExportPDF}
-                  className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                >
-                  <FileText className="w-4 h-4" />
-                  Export to PDF
-                </button>
-                <button
-                  onClick={handleExportExcel}
+                  onClick={handleExportCSV}
                   className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
                 >
                   <FileSpreadsheet className="w-4 h-4" />
-                  Export to Excel
+                  Export to CSV
                 </button>
                 <button
                   onClick={handlePrint}

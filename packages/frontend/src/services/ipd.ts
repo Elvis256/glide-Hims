@@ -208,6 +208,10 @@ export const ipdService = {
       const response = await api.patch<Ward>(`/ipd/wards/${id}`, data);
       return response.data;
     },
+    getHandover: async (id: string): Promise<any> => {
+      const response = await api.get(`/ipd/wards/${id}/handover`);
+      return response.data;
+    },
   },
 
   // Beds

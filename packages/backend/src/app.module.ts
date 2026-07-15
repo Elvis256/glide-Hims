@@ -28,6 +28,7 @@ import { InventoryModule } from './modules/inventory/inventory.module';
 import { CatalogModule } from './modules/catalog/catalog.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { IpdModule } from './modules/ipd/ipd.module';
+import { NursingModule } from './modules/nursing/nursing.module';
 import { LabModule } from './modules/lab/lab.module';
 import { EmergencyModule } from './modules/emergency/emergency.module';
 import { SurgeryModule } from './modules/surgery/surgery.module';
@@ -178,6 +179,9 @@ import { envValidationSchema } from './config/env.validation';
 
     // IPD/Ward Management (Phase 2)
     IpdModule,
+
+    // Nursing Documentation (Phase 2b)
+    NursingModule,
 
     // Laboratory (Phase 3)
     LabModule,

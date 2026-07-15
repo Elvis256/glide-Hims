@@ -33,7 +33,8 @@ import {
   BarChart3,
 } from 'lucide-react';
 import { patientsService } from '../../services/patients';
-import { ipdService, type CreateNursingNoteDto } from '../../services/ipd';
+import { ipdService } from '../../services/ipd';
+import { nursingService } from '../../services/nursing';
 import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
 import { printService } from '../../lib/print';
@@ -382,18 +383,19 @@ export default function CarePlansPage() {
     enabled: !!selectedPatient?.id,
   });
 
-  // Fetch nursing notes for the patient's admission (as care plans)
-  const { data: nursingNotes, isLoading: notesLoading } = useQuery({
-    queryKey: ['nursing-notes', admission?.id],
-    queryFn: () => ipdService.nursingNotes.list(admission!.id),
+  // Fetch care plans from backend
+  const { data: backendCarePlans = [], isLoading: notesLoading } = useQuery({
+    queryKey: ['nursing-care-plans', admission?.id],
+    queryFn: () => nursingService.carePlans.list({ admissionId: admission!.id }),
     enabled: !!admission?.id,
   });
 
-  // Create nursing note mutation for care plans
+  // Create care plan mutation
   const createNoteMutation = useMutation({
-    mutationFn: (data: CreateNursingNoteDto) => ipdService.nursingNotes.create(data),
+    mutationFn: (dto: { diagnosis: string; priority?: string; notes?: string; goals?: { description: string }[]; interventions?: { description: string; frequency?: string }[] }) =>
+      nursingService.carePlans.create({ admissionId: admission!.id, ...dto }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['nursing-notes'] });
+      queryClient.invalidateQueries({ queryKey: ['nursing-care-plans', admission?.id] });
       setSaved(true);
       setShowAddModal(false);
       setTimeout(() => setSaved(false), 2000);
@@ -415,42 +417,31 @@ export default function CarePlansPage() {
     }));
   }, [apiPatients, searchTerm]);
 
-  // Transform nursing notes to care plans format and combine with demo plans
+  // Transform backend care plans to component format and combine with local plans
   const carePlans = useMemo((): CarePlan[] => {
-    const apiPlans: CarePlan[] = [];
-    if (nursingNotes) {
-      nursingNotes
-        .filter(note => note.type === 'assessment' || note.type === 'progress')
-        .forEach(note => {
-          apiPlans.push({
-            id: note.id,
-            patientId: selectedPatient?.id || '',
-            nursingDiagnosis: note.content.split('.')[0] || note.content,
-            relatedTo: '',
-            asEvidencedBy: '',
-            goals: note.content.includes('Goals:') 
-              ? note.content.split('Goals:')[1]?.split('Interventions:')[0]?.split(',').map((g, idx) => ({ id: `g-${idx}`, description: g.trim(), isSmart: false })) || [] 
-              : [],
-            interventions: note.content.includes('Interventions:') 
-              ? note.content.split('Interventions:')[1]?.split(',').map((i, idx) => ({
-                  id: `int-${idx}`,
-                  description: i.trim(),
-                  category: 'therapeutic' as const,
-                  frequency: 'daily' as const,
-                  status: 'pending' as const,
-                })) || [] 
-              : [],
-            evaluations: [],
-            status: 'active' as const,
-            priority: 'medium' as const,
-            startDate: new Date(note.createdAt).toISOString().split('T')[0],
-            targetDate: new Date(new Date(note.createdAt).getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-            updatedDate: new Date(note.createdAt).toISOString().split('T')[0],
-            progress: 0,
-            outcomeCriteria: '',
-          });
-        });
-    }
+    const apiPlans: CarePlan[] = backendCarePlans.map(bp => ({
+      id: bp.id,
+      patientId: selectedPatient?.id || '',
+      nursingDiagnosis: bp.diagnosis,
+      relatedTo: '',
+      asEvidencedBy: '',
+      goals: bp.goals?.map(g => ({ id: g.id, description: g.description, isSmart: false })) || [],
+      interventions: bp.interventions?.map(i => ({
+        id: i.id,
+        description: i.description,
+        category: 'therapeutic' as const,
+        frequency: (i.frequency || 'daily') as any,
+        status: 'pending' as const,
+      })) || [],
+      evaluations: [],
+      status: (bp.status || 'active') as any,
+      priority: (bp.priority || 'medium') as any,
+      startDate: new Date(bp.createdAt).toISOString().split('T')[0],
+      targetDate: new Date(new Date(bp.createdAt).getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      updatedDate: new Date(bp.createdAt).toISOString().split('T')[0],
+      progress: 0,
+      outcomeCriteria: bp.notes || '',
+    }));
     return [...apiPlans, ...demoCarePlans.filter(p => p.patientId === selectedPatient?.id)];
   }, [nursingNotes, selectedPatient, demoCarePlans]);
 
@@ -701,17 +692,12 @@ export default function CarePlansPage() {
       return;
     }
 
-    if (editingPlan) {
-      setDemoCarePlans(prev => prev.map(p => p.id === editingPlan.id ? newPlan : p));
-    } else {
-      setDemoCarePlans(prev => [...prev, newPlan]);
-    }
-
-    const content = `Care Plan - ${formData.nursingDiagnosis}. Related to: ${formData.relatedTo}. Goals: ${formData.goals.map(g => g.description).join(', ')}. Interventions: ${formData.interventions.map(i => i.description).join(', ')}. Target: ${formData.targetDate}`;
     createNoteMutation.mutate({
-      admissionId: admission.id,
-      type: 'assessment',
-      content,
+      diagnosis: formData.nursingDiagnosis,
+      priority: formData.priority,
+      notes: [formData.relatedTo && `Related to: ${formData.relatedTo}`, formData.outcomeCriteria].filter(Boolean).join('. ') || undefined,
+      goals: formData.goals.map(g => ({ description: g.description })),
+      interventions: formData.interventions.map(i => ({ description: i.description, frequency: i.frequency })),
     });
   }, [selectedPatient, formData, editingPlan, admission, createNoteMutation]);
 
