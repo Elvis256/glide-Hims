@@ -91,9 +91,28 @@ export const referralsService = {
     return response.data;
   },
 
-  // Get incoming referrals for current facility
-  getIncoming: async (): Promise<Referral[]> => {
-    const response = await api.get<Referral[]>('/referrals/incoming');
+  // Get incoming referrals for current facility.
+  // Omit `status` for the full inbound list; pass one to filter. The backend
+  // used to hardcode PENDING here, which made accepted referrals vanish.
+  getIncoming: async (status?: ReferralStatus): Promise<Referral[]> => {
+    const response = await api.get<Referral[]>('/referrals/incoming', {
+      params: status ? { status } : undefined,
+    });
+    return Array.isArray(response.data) ? response.data : [];
+  },
+
+  // Accept an incoming referral (receiving facility only)
+  accept: async (
+    id: string,
+    data: { appointmentDate?: string; appointmentTime?: string; notes?: string } = {},
+  ): Promise<Referral> => {
+    const response = await api.post<Referral>(`/referrals/${id}/accept`, data);
+    return response.data;
+  },
+
+  // Reject an incoming referral (receiving facility only)
+  reject: async (id: string, rejectionReason: string): Promise<Referral> => {
+    const response = await api.post<Referral>(`/referrals/${id}/reject`, { rejectionReason });
     return response.data;
   },
 
@@ -124,9 +143,12 @@ export const referralsService = {
     return response.data;
   },
 
-  // Mark a referral as completed
-  complete: async (id: string): Promise<Referral> => {
-    const response = await api.post<Referral>(`/referrals/${id}/complete`);
+  // Mark a referral as completed (receiving facility only)
+  complete: async (
+    id: string,
+    data: { feedbackNotes?: string; destinationEncounterId?: string } = {},
+  ): Promise<Referral> => {
+    const response = await api.post<Referral>(`/referrals/${id}/complete`, data);
     return response.data;
   },
 
