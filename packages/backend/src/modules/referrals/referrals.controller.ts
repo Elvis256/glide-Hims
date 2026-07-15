@@ -22,6 +22,7 @@ import {
 import { RequireModule } from '../auth/decorators/module.decorator';
 import { RequireFacilityAccess } from '../auth/decorators/facility-access.decorator';
 import { ModuleGuard } from '../auth/guards/module.guard';
+import { ReferralStatus } from '../../database/entities/referral.entity';
 
 @UseGuards(ModuleGuard)
 @RequireModule('doctors')
@@ -47,9 +48,9 @@ export class ReferralsController {
 
   @Get('incoming')
   @AuthWithPermissions('referrals.read')
-  async getIncoming(@Request() req: any) {
+  async getIncoming(@Request() req: any, @Query('status') status?: ReferralStatus) {
     const facilityId = req.user.facilityId || req.headers['x-facility-id'];
-    return this.referralsService.getIncomingReferrals(facilityId, req.user?.tenantId);
+    return this.referralsService.getIncomingReferrals(facilityId, req.user?.tenantId, status);
   }
 
   @Get('outgoing')

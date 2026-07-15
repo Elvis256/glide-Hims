@@ -134,10 +134,24 @@ export class ReferralsService {
     });
   }
 
-  async getIncomingReferrals(facilityId: string, tenantId?: string): Promise<Referral[]> {
+  /**
+   * Referrals addressed TO this facility.
+   *
+   * `status` is a filter, NOT a hardcoded PENDING. Pinning it to PENDING meant a
+   * referral vanished from the receiving facility's list the instant they
+   * accepted it — so it could never be worked or completed, and the whole
+   * inbound half of the workflow dead-ended at ACCEPTED. (Same "vanishing
+   * worklist" class as the labour board and surgery day list.)
+   */
+  async getIncomingReferrals(
+    facilityId: string,
+    tenantId?: string,
+    status?: ReferralStatus,
+  ): Promise<Referral[]> {
     const tid = requireTenantId(tenantId);
-    const where: any = { toFacilityId: facilityId, status: ReferralStatus.PENDING };
+    const where: any = { toFacilityId: facilityId };
     where.tenantId = tid;
+    if (status) where.status = status;
 
     return this.referralRepository.find({
       where,
