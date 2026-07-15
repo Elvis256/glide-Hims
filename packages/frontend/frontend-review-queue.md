@@ -48,7 +48,7 @@ inline, log the rest. No view is done until its element table is complete.
 
 ## Blocks
 - [x] 1. Registration: PatientsPage, PatientDetail/Edit, QuickRegModal, PatientRegistrationPage*, OPDTokenPage*, appointments (View/Manage/Schedules), CallNextPatientPage* (*recently rebuilt — verify only) — ✅ e766979e 2026-07-14, functional map in docs/modules/01-registration.md; also covered PatientSearch/Documents/History (registration routes not owned by any later block)
-- [ ] 2. Nursing: TriageQueuePage*, vitals pages, ward/nursing worklists (AdministerMeds, CarePlans, DressingLog, IVCannulation, Catheterization, FallRisk, IncidentReport, BloodSugar, DrugAllergies, AbnormalAlerts)
+- [x] 2. Nursing: TriageQueuePage*, vitals pages, ward/nursing worklists (AdministerMeds, CarePlans, DressingLog, IVCannulation, Catheterization, FallRisk, IncidentReport, BloodSugar, DrugAllergies, AbnormalAlerts) — ✅ PENDING-COMMIT 2026-07-15, functional map in docs/modules/02-nursing.md; 34 pages reviewed, 21 permission gates added, 12 demo-mode fixes, VitalsPage field names fixed, MedSchedule crash fixed
 - [ ] 3. Doctors: NewConsultationPage* (document mode — deep verify), CallNextPage*, EncounterDetail, SOAPNotes, referrals (sent/received), diagnosis/ProblemList, follow-ups, certificates
 - [ ] 4. Diagnostics: LabPage, lab queue/results/QC, sample mgmt, radiology queue/reporting, critical results pages
 - [ ] 5. Pharmacy: PharmacyQueuePage, DispenseMedication, sales, stock/batches, controlled register, templates
@@ -97,3 +97,30 @@ P1 deferred:
 - QuickRegModal registers gender='other' + DOB=today placeholders (data quality); axios error message not backend message.
 - ViewAppointmentsPage stats derive from fetched page (limit 100) not /appointments/stats.
 - appointments UI lacks confirm/no-show quick actions (backend transitions exist).
+
+### Block 2 — Nursing (2026-07-15)
+P0s fixed inline (frontend built to /tmp, build verified):
+- VitalsPage.tsx: fantasy field names (bloodPressureSystolic→bpSystolic, bloodPressureDiastolic→bpDiastolic, heartRate→pulse, painScore→painScale) — BP and pulse were ALWAYS blank, saves silently ignored. Now uses vitalsService instead of raw api calls. Added permission gate + error toast on mutation failure.
+- MedicationSchedulePage.tsx: undefined `medications` variable → crash on "5 Rights Verification" button. Fixed to `schedule` (the correct useMemo variable).
+- AbnormalAlertsPage.tsx: called `GET /vitals` which DOESN'T EXIST — entire page failed silently. Removed broken endpoint call. Acknowledge/Resolve stubs now show "coming soon" toast instead of console.log.
+- Demo-mode silent success on 12 pages: PainAssessment, FallRisk, IVCannulation, Catheterization, WoundAssessment, PatientEducation, BloodSugar, ObservationChart, IntakeOutput (3 locations), IncidentReport, CarePlans, DressingLog — all showed "success" when no admission existed without actually saving data. Now show `toast.error('Patient must be admitted to record this data')`.
+- Permission gates added to 21 pages that had NO access control: VitalTrends, PainAssessment, FallRisk, MedicationChart, DrugAllergies, DressingLog, WoundProgress, IVCannulation, Catheterization, SpecimenCollection, ProcedureLog, PatientEducation, PatientMonitor, BloodSugar, ObservationChart, NursingDailyReport, ShiftSummary, IncidentReport, WorkloadStats, CarePlans, VitalsPage.
+
+P1 deferred:
+- Wound management (3 pages: WoundAssessment, DressingLog, WoundProgress) — no wound entity on backend; pages are structurally non-functional (wound list always empty, progress chart always empty, Add Entry button never shows).
+- Care plans, I/O, blood sugar, observations — data stored only in React state (lost on refresh); no backend entities for these domains.
+- VitalTrendsPage: manual useEffect fetching (should be useQuery); SVG chart division-by-zero with single data point.
+- VitalsHistoryPage: fake Export PDF/Excel buttons (show success toast but never generate files); vitalTypeFilter dropdown has no effect (filter never applied).
+- MedicationSchedulePage: prescribedBy hardcoded to "Dr. Attending"; allergies always empty; controlled substance detected by drug name string matching.
+- AdministerMedsPage: empty MRN bypasses patient verification; allergy/vitals/NPO panels never populated from upstream.
+- ShiftHandoverPage: patient vitals hardcoded (36.8/78/120/80/16/98); admission.priority is fantasy field — all patients appear "stable".
+- Report pages (Daily/Shift/Workload): fantasy stats fields (proceduresToday/medicationsToday/criticalAlerts all undefined→0); fabricated workload data (procedures = patients*0.5); date pickers not wired to queries.
+- SpecimenCollectionPage: sends fake orderId/labTestId to labService.samples.collect(); most form fields not sent to API.
+- ProcedureLogPage: pipe-delimited note parsing breaks on notes containing |.
+- NursingNotesPage: silent fail (no error toast) when saving without admission.
+- IncidentReportPage: Save Draft + Email buttons are stubs; reference numbers are fake.
+- WardManagementPage: Notes/Transfer/Discharge buttons dead (no onClick); ward creation uses facilities[0].id (wrong in multi-facility); no permission gate.
+- IPDNursingNotesPage: field name drift (noteType vs type, recordedBy vs nurse); Edit/Administer buttons dead; no permission gate.
+
+Architectural finding:
+- **Nursing notes as universal backend**: every specialized page serializes structured data into a single text field on a nursing note. No queryable structure, no historical retrieval, dashboards compute from session-local state only. Backend has one endpoint (POST /ipd/nursing-notes) serving all use cases. Proper implementation needs dedicated entities for care plans, I/O, blood sugar, observations, wound management, incident reports.

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -17,6 +17,8 @@ import {
 import { patientsService, type Patient as ApiPatient } from '../../services/patients';
 import { ipdService } from '../../services/ipd';
 import { asList } from '../../utils/unwrapResponse';
+import { usePermissions } from '../../components/PermissionGate';
+import AccessDenied from '../../components/AccessDenied';
 
 interface Patient {
   id: string;
@@ -62,16 +64,18 @@ const statusConfig = {
 
 export default function WoundProgressPage() {
   const navigate = useNavigate();
+  const { hasPermission } = usePermissions();
+  const canAccess = hasPermission('nursing.read');
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [selectedWound, setSelectedWound] = useState<Wound | null>(null);
 
   // Debounce search term
-  useState(() => {
+  useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(searchTerm), 300);
     return () => clearTimeout(timer);
-  });
+  }, [searchTerm]);
 
   // Search patients via API
   const { data: patientsData, isLoading: searchLoading } = useQuery({
@@ -118,6 +122,8 @@ export default function WoundProgressPage() {
     // Parse wound measurements from notes if available
     return [];
   }, [selectedWound, nursingNotes]);
+
+  if (!canAccess) return <AccessDenied />;
 
   const calculateReduction = () => {
     if (progressData.length < 2) return null;

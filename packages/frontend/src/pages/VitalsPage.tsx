@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
-import api from '../services/api';
+import { toast } from 'sonner';
+import { vitalsService, type VitalRecord } from '../services/vitals';
+import { usePermissions } from '../components/PermissionGate';
+import AccessDenied from '../components/AccessDenied';
 import {
   Plus,
   Loader2,
@@ -17,36 +20,6 @@ import {
   TrendingDown,
   Minus,
 } from 'lucide-react';
-
-interface Vital {
-  id: string;
-  encounterId: string;
-  temperature?: number;
-  temperatureUnit?: 'C' | 'F';
-  bloodPressureSystolic?: number;
-  bloodPressureDiastolic?: number;
-  heartRate?: number;
-  respiratoryRate?: number;
-  oxygenSaturation?: number;
-  weight?: number;
-  weightUnit?: 'kg' | 'lb';
-  height?: number;
-  heightUnit?: 'cm' | 'in';
-  bmi?: number;
-  painScore?: number;
-  notes?: string;
-  recordedById: string;
-  createdAt: string;
-}
-
-interface VitalHistory {
-  date: string;
-  temperature?: number;
-  systolic?: number;
-  diastolic?: number;
-  heartRate?: number;
-  oxygenSaturation?: number;
-}
 
 const VitalCard = ({ 
   icon: Icon, 
@@ -98,63 +71,64 @@ export default function VitalsPage() {
   const [searchParams] = useSearchParams();
   const encounterId = searchParams.get('encounterId');
   const patientId = searchParams.get('patientId');
-  
+  const { hasPermission } = usePermissions();
+
   const queryClient = useQueryClient();
   const [showModal, setShowModal] = useState(false);
+
+  const canRead = hasPermission('vitals.read');
+  const canCreate = hasPermission('vitals.create');
 
   // Fetch vitals for encounter
   const { data: vitals, isLoading } = useQuery({
     queryKey: ['vitals', encounterId],
-    queryFn: async () => {
-      if (!encounterId) return null;
-      const response = await api.get(`/vitals/encounter/${encounterId}/latest`);
-      return response.data as Vital;
-    },
-    enabled: !!encounterId,
+    queryFn: () => vitalsService.getLatestByEncounter(encounterId!),
+    enabled: !!encounterId && canRead,
   });
 
   // Fetch patient vital history
   const { data: vitalHistory } = useQuery({
     queryKey: ['vital-history', patientId],
-    queryFn: async () => {
-      if (!patientId) return [];
-      const response = await api.get(`/vitals/patient/${patientId}/history`);
-      return response.data as Vital[];
-    },
-    enabled: !!patientId,
+    queryFn: () => vitalsService.getPatientHistory(patientId!),
+    enabled: !!patientId && canRead,
   });
 
   // Record vitals mutation
   const vitalsMutation = useMutation({
-    mutationFn: (data: Partial<Vital>) => api.post('/vitals', data),
+    mutationFn: (data: Parameters<typeof vitalsService.create>[0]) => vitalsService.create(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['vitals'] });
       queryClient.invalidateQueries({ queryKey: ['vital-history'] });
       setShowModal(false);
+      toast.success('Vitals recorded');
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || 'Failed to record vitals');
     },
   });
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
-    
+
     vitalsMutation.mutate({
       encounterId: encounterId || formData.get('encounterId') as string,
       temperature: Number(formData.get('temperature')) || undefined,
-      temperatureUnit: 'C',
-      bloodPressureSystolic: Number(formData.get('systolic')) || undefined,
-      bloodPressureDiastolic: Number(formData.get('diastolic')) || undefined,
-      heartRate: Number(formData.get('heartRate')) || undefined,
+      bpSystolic: Number(formData.get('systolic')) || undefined,
+      bpDiastolic: Number(formData.get('diastolic')) || undefined,
+      pulse: Number(formData.get('heartRate')) || undefined,
       respiratoryRate: Number(formData.get('respiratoryRate')) || undefined,
       oxygenSaturation: Number(formData.get('oxygenSaturation')) || undefined,
       weight: Number(formData.get('weight')) || undefined,
-      weightUnit: 'kg',
       height: Number(formData.get('height')) || undefined,
-      heightUnit: 'cm',
-      painScore: Number(formData.get('painScore')) || undefined,
+      painScale: Number(formData.get('painScore')) || undefined,
       notes: formData.get('notes') as string,
     });
   };
+
+  if (!canRead) {
+    return <AccessDenied />;
+  }
 
   if (!encounterId && !patientId) {
     return (
@@ -187,13 +161,13 @@ export default function VitalsPage() {
             {encounterId ? `Encounter: ${encounterId.slice(0, 8)}...` : `Patient: ${patientId?.slice(0, 8)}...`}
           </p>
         </div>
-        <button
+        {canCreate && <button
           onClick={() => setShowModal(true)}
           className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
         >
           <Plus className="h-4 w-4 mr-2" />
           Record Vitals
-        </button>
+        </button>}
       </div>
 
       {/* Current Vitals Grid */}
@@ -215,8 +189,8 @@ export default function VitalsPage() {
             <VitalCard
               icon={Heart}
               label="Blood Pressure"
-              value={vitals?.bloodPressureSystolic && vitals?.bloodPressureDiastolic 
-                ? `${vitals.bloodPressureSystolic}/${vitals.bloodPressureDiastolic}` 
+              value={vitals?.bpSystolic && vitals?.bpDiastolic
+                ? `${vitals.bpSystolic}/${vitals.bpDiastolic}`
                 : undefined}
               unit="mmHg"
               normalRange="90-120/60-80"
@@ -225,7 +199,7 @@ export default function VitalsPage() {
             <VitalCard
               icon={Activity}
               label="Heart Rate"
-              value={vitals?.heartRate}
+              value={vitals?.pulse}
               unit="bpm"
               normalRange="60-100"
               color="border-pink-500"
@@ -271,7 +245,7 @@ export default function VitalsPage() {
           </div>
 
           {/* Pain Score */}
-          {vitals?.painScore !== undefined && (
+          {vitals?.painScale !== undefined && (
             <div className="bg-white rounded-lg shadow p-4">
               <h3 className="text-sm font-medium text-gray-700 mb-2">Pain Score (0-10)</h3>
               <div className="flex items-center space-x-1">
@@ -279,7 +253,7 @@ export default function VitalsPage() {
                   <div
                     key={score}
                     className={`w-8 h-8 rounded flex items-center justify-center text-sm font-medium ${
-                      vitals.painScore === score
+                      vitals.painScale === score
                         ? score <= 3
                           ? 'bg-green-500 text-white'
                           : score <= 6
@@ -323,12 +297,12 @@ export default function VitalsPage() {
                       {v.temperature ? `${v.temperature}°C` : '-'}
                     </td>
                     <td className="px-4 py-2 text-sm text-gray-500">
-                      {v.bloodPressureSystolic && v.bloodPressureDiastolic 
-                        ? `${v.bloodPressureSystolic}/${v.bloodPressureDiastolic}` 
+                      {v.bpSystolic && v.bpDiastolic
+                        ? `${v.bpSystolic}/${v.bpDiastolic}`
                         : '-'}
                     </td>
                     <td className="px-4 py-2 text-sm text-gray-500">
-                      {v.heartRate ?? '-'}
+                      {v.pulse ?? '-'}
                     </td>
                     <td className="px-4 py-2 text-sm text-gray-500">
                       {v.respiratoryRate ?? '-'}

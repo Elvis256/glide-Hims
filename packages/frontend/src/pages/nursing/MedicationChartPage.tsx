@@ -15,6 +15,8 @@ import {
 } from 'lucide-react';
 import { patientsService } from '../../services/patients';
 import { ipdService } from '../../services/ipd';
+import { usePermissions } from '../../components/PermissionGate';
+import AccessDenied from '../../components/AccessDenied';
 
 interface MedicationEntry {
   id: string;
@@ -53,6 +55,8 @@ const timeSlots = ['06:00', '08:00', '10:00', '12:00', '14:00', '16:00', '18:00'
 
 export default function MedicationChartPage() {
   const navigate = useNavigate();
+  const { hasPermission } = usePermissions();
+  const canAccess = hasPermission('nursing.read');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
@@ -105,6 +109,8 @@ export default function MedicationChartPage() {
       notes: med.notes,
     }));
   }, [medications]);
+
+  if (!canAccess) return <AccessDenied />;
 
   const getMedsForTime = (time: string) => {
     return medChart.filter((m) => m.time === time);

@@ -508,8 +508,8 @@ export default function RecordVitalsPage() {
       setVitals({
         temperature: last.temperature?.toString() || '',
         pulse: last.pulse?.toString() || '',
-        bpSystolic: last.bloodPressureSystolic?.toString() || '',
-        bpDiastolic: last.bloodPressureDiastolic?.toString() || '',
+        bpSystolic: last.bpSystolic?.toString() || '',
+        bpDiastolic: last.bpDiastolic?.toString() || '',
         respiratoryRate: last.respiratoryRate?.toString() || '',
         oxygenSaturation: last.oxygenSaturation?.toString() || '',
         weight: last.weight?.toString() || '',

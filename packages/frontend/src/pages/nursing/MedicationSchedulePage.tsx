@@ -829,7 +829,7 @@ export default function MedicationSchedulePage() {
                   navigate('/nursing/meds/administer', { 
                     state: { 
                       medication: selectedMed,
-                      nextMedication: medications.find(m => m.id !== selectedMed.id && m.status === 'scheduled')
+                      nextMedication: schedule.find(m => m.id !== selectedMed.id && m.status === 'scheduled')
                     } 
                   });
                 }}

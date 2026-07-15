@@ -16,6 +16,8 @@ import {
 import { ipdService } from '../../services/ipd';
 import { hrService } from '../../services/hr';
 import { asList } from '../../utils/unwrapResponse';
+import { usePermissions } from '../../components/PermissionGate';
+import AccessDenied from '../../components/AccessDenied';
 
 interface StaffWorkload {
   id: string;
@@ -49,6 +51,8 @@ const dateRanges = [
 
 export default function WorkloadStatsPage() {
   const navigate = useNavigate();
+  const { hasPermission } = usePermissions();
+  const canAccess = hasPermission('nursing.read');
   const [dateRange, setDateRange] = useState('7d');
   const [startDate, setStartDate] = useState(() => {
     const date = new Date();
@@ -126,6 +130,8 @@ export default function WorkloadStatsPage() {
       averageAcuity: 3,
     };
   }, [ipdStats, nursingStaffData]);
+
+  if (!canAccess) return <AccessDenied />;
 
   const maxProcedureCount = Math.max(...procedureStats.map((p) => p.count), 1);
 

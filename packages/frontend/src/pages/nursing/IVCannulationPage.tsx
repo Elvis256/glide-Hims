@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   ArrowLeft,
   Syringe,
@@ -13,6 +14,8 @@ import {
 } from 'lucide-react';
 import { patientsService } from '../../services/patients';
 import { ipdService, type CreateNursingNoteDto } from '../../services/ipd';
+import { usePermissions } from '../../components/PermissionGate';
+import AccessDenied from '../../components/AccessDenied';
 
 interface Patient {
   id: string;
@@ -84,6 +87,8 @@ const complications = [
 export default function IVCannulationPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { hasPermission } = usePermissions();
+  const canAccess = hasPermission('nursing.create');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [saved, setSaved] = useState(false);
@@ -121,6 +126,9 @@ export default function IVCannulationPage() {
   // Create nursing note mutation
   const createNoteMutation = useMutation({
     mutationFn: (data: CreateNursingNoteDto) => ipdService.nursingNotes.create(data),
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || 'Failed to save — please retry');
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['nursing-notes'] });
       setSaved(true);
@@ -141,10 +149,11 @@ export default function IVCannulationPage() {
 
   const saving = createNoteMutation.isPending;
 
+  if (!canAccess) return <AccessDenied />;
+
   const handleSave = () => {
     if (!admission?.id) {
-      // Still show success for demo purposes
-      setSaved(true);
+      toast.error('Patient must be admitted to record this data');
       return;
     }
 

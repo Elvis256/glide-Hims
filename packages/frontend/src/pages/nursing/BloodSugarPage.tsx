@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   ArrowLeft,
   Droplets,
@@ -18,6 +19,8 @@ import {
 } from 'lucide-react';
 import { patientsService } from '../../services/patients';
 import { ipdService, type CreateNursingNoteDto } from '../../services/ipd';
+import { usePermissions } from '../../components/PermissionGate';
+import AccessDenied from '../../components/AccessDenied';
 
 interface Patient {
   id: string;
@@ -72,6 +75,8 @@ const insulinTypes = [
 ];
 
 export default function BloodSugarPage() {
+  const { hasPermission } = usePermissions();
+  const canAccess = hasPermission('nursing.create');
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
@@ -112,6 +117,10 @@ export default function BloodSugarPage() {
     mutationFn: (data: CreateNursingNoteDto) => ipdService.nursingNotes.create(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['nursing-notes'] });
+      toast.success('Blood sugar reading saved');
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || 'Failed to save — please retry');
     },
   });
 
@@ -168,6 +177,8 @@ export default function BloodSugarPage() {
     };
   }, [readings]);
 
+  if (!canAccess) return <AccessDenied />;
+
   const handleSaveReading = () => {
     if (!newReading.value) return;
     
@@ -187,10 +198,15 @@ export default function BloodSugarPage() {
       };
     }
     
+    if (!admission?.id) {
+      toast.error('Patient must be admitted to record this data');
+      return;
+    }
+
     setReadings((prev) => [reading, ...prev]);
-    
-    // Save to backend if we have an admission
-    if (admission?.id) {
+
+    // Save to backend
+    {
       const content = `Blood Glucose: ${newReading.value} mg/dL (${newReading.timing})${
         newReading.giveInsulin ? `. Insulin given: ${newReading.insulinType} ${newReading.insulinUnits}u` : ''
       }${newReading.notes ? '. ' + newReading.notes : ''}`;

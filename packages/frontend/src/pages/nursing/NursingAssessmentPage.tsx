@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   ArrowLeft,
   ClipboardCheck,
@@ -329,6 +330,7 @@ export default function NursingAssessmentPage() {
   const createNoteMutation = useMutation({
     mutationFn: (data: CreateNursingNoteDto) => ipdService.nursingNotes.create(data),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['nursing-notes'] }); setSaved(true); },
+    onError: (err: any) => { toast.error(err?.response?.data?.message || 'Failed to save assessment — please retry'); },
   });
 
   const saving = createNoteMutation.isPending;

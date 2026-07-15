@@ -1,6 +1,7 @@
-import { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   ArrowLeft,
   TestTube,
@@ -16,6 +17,8 @@ import { patientsService, type Patient as ApiPatient } from '../../services/pati
 import { labService, type CollectSampleDto } from '../../services/lab';
 import { useFacilityId } from '../../lib/facility';
 import { asList } from '../../utils/unwrapResponse';
+import { usePermissions } from '../../components/PermissionGate';
+import AccessDenied from '../../components/AccessDenied';
 
 interface Patient {
   id: string;
@@ -93,16 +96,18 @@ export default function SpecimenCollectionPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const facilityId = useFacilityId();
+  const { hasPermission } = usePermissions();
+  const canAccess = hasPermission('nursing.create');
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [saved, setSaved] = useState(false);
 
   // Debounce search term
-  useState(() => {
+  useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(searchTerm), 300);
     return () => clearTimeout(timer);
-  });
+  }, [searchTerm]);
 
   // Search patients via API
   const { data: patientsData, isLoading: searchLoading } = useQuery({
@@ -121,6 +126,9 @@ export default function SpecimenCollectionPage() {
     onSuccess: () => {
       setSaved(true);
       queryClient.invalidateQueries({ queryKey: ['lab', 'samples'] });
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || 'Failed to log specimen — please retry');
     },
   });
 
@@ -143,6 +151,8 @@ export default function SpecimenCollectionPage() {
     if (!searchTerm || searchTerm.length < 2) return [];
     return patients;
   }, [searchTerm, patients]);
+
+  if (!canAccess) return <AccessDenied />;
 
   const handleTestToggle = (test: string) => {
     setFormData((prev) => ({
