@@ -4,9 +4,9 @@ import { Loader2, Printer, Ban, ArrowLeft, ExternalLink, Plus, AlertTriangle, Ch
 import api from '../../services/api';
 import { toast } from 'sonner';
 import {
-  SaasInvoice, SaasPayment, PaymentProof, INVOICE_STATUS_STYLES, VERIFICATION_STATUS_STYLES,
+  type SaasInvoice, type SaasPayment, type PaymentProof, INVOICE_STATUS_STYLES, VERIFICATION_STATUS_STYLES,
   VERIFICATION_STATUS_LABELS, fmtMoney, fmtDate, fmtDateTime, unwrap,
-  PaymentVerificationStatus,
+  type PaymentVerificationStatus,
 } from './saas/_shared';
 
 interface PaymentWithRefund extends SaasPayment {

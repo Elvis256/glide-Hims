@@ -1,7 +1,7 @@
 import React, { useRef, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Encounter, Prescription, LabResult } from '../../types/clinical';
+import { type Encounter, type Prescription, type LabResult } from '../../types/clinical';
 import {
   Printer,
   FileText,

@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { AlertTriangle, X } from 'lucide-react';
 import {
-  CriticalResultAlert,
-  AcknowledgeCriticalResultPayload,
+  type CriticalResultAlert,
+  type AcknowledgeCriticalResultPayload,
 } from '../services/critical-results';
 
 interface Props {

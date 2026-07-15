@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Loader2, RefreshCw, AlertTriangle, CheckCircle, CreditCard, Printer, Download, Plus, Trash2, Star } from 'lucide-react';
 import api from '../services/api';
 import { safeRedirect } from '../lib/safeRedirect';
-import { fmtMoney, fmtDate, INVOICE_STATUS_STYLES, SUB_STATUS_STYLES, unwrap, SaasInvoice, Subscription, SaasPayment } from './system/saas/_shared';
+import { fmtMoney, fmtDate, INVOICE_STATUS_STYLES, SUB_STATUS_STYLES, unwrap, type SaasInvoice, type Subscription, type SaasPayment } from './system/saas/_shared';
 import { toast } from 'sonner';
 
 interface PaymentMethod {

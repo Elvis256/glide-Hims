@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, Check, Loader2, Rocket, SkipForward, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '../../services/api';
-import { Onboarding, OnboardingItem, OnboardingPhase, ONBOARDING_STATUS_STYLES, fmtDate, unwrap } from './saas/_shared';
+import { type Onboarding, type OnboardingItem, type OnboardingPhase, ONBOARDING_STATUS_STYLES, fmtDate, unwrap } from './saas/_shared';
 
 const PHASE_LABELS: Record<OnboardingPhase, string> = {
   setup: 'Setup',

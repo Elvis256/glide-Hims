@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import api from '../../services/api';
 import SystemPagination from '../../components/SystemPagination';
 import { exportToCsv } from '../../utils/csvExport';
-import { Plan, Subscription, SubStatus, SUB_STATUS_STYLES, fmtMoney, fmtDate, unwrap } from './saas/_shared';
+import { type Plan, type Subscription, type SubStatus, SUB_STATUS_STYLES, fmtMoney, fmtDate, unwrap } from './saas/_shared';
 
 const STATUSES: SubStatus[] = ['trial', 'active', 'past_due', 'paused', 'cancelled', 'churned'];
 

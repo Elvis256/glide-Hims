@@ -4,7 +4,7 @@ import { RefreshCw, Loader2, Eye, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '../../services/api';
 import SystemPagination from '../../components/SystemPagination';
-import { Contract, ContractStatus, CONTRACT_STATUS_STYLES, fmtMoney, fmtDate, unwrap } from './saas/_shared';
+import { type Contract, type ContractStatus, CONTRACT_STATUS_STYLES, fmtMoney, fmtDate, unwrap } from './saas/_shared';
 
 const STATUSES: ContractStatus[] = ['draft', 'pending_signature', 'active', 'expired', 'terminated'];
 

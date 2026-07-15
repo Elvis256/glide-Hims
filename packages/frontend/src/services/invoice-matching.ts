@@ -40,6 +40,10 @@ export interface InvoiceMatch {
   approvedById?: string;
   approvedBy?: { id: string; fullName: string };
   approvedAt?: string;
+  /** Set by the Override & Approve workflow for a FLAGGED match. */
+  overrideReason?: string;
+  overriddenById?: string;
+  overriddenAt?: string;
   items: InvoiceMatchItem[];
   createdAt: string;
   updatedAt: string;

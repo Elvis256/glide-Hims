@@ -13,7 +13,7 @@ import {
   Image as ImageIcon,
   User as UserIcon,
 } from 'lucide-react';
-import { auditService, AuditLogEntry } from '../services/audit';
+import { auditService, type AuditLogEntry } from '../services/audit';
 
 interface Props {
   patientId: string;

@@ -4,7 +4,7 @@ import { Loader2, ArrowLeft, Pause, Play, Ban, KeyRound, RefreshCw, FileText, Do
 import { toast } from 'sonner';
 import api from '../../services/api';
 import ConfirmDialog from '../../components/ConfirmDialog';
-import { Plan, Subscription, SaasInvoice, SaasPayment, INVOICE_STATUS_STYLES, SUB_STATUS_STYLES, fmtMoney, fmtDate, fmtDateTime, unwrap } from './saas/_shared';
+import { type Plan, type Subscription, type SaasInvoice, type SaasPayment, INVOICE_STATUS_STYLES, SUB_STATUS_STYLES, fmtMoney, fmtDate, fmtDateTime, unwrap } from './saas/_shared';
 
 interface SubDetail extends Subscription {
   invoices: SaasInvoice[];

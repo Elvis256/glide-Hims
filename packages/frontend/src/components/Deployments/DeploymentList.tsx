@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { deploymentApi, Deployment } from '../../services/deploymentApi';
+import { deploymentApi, type Deployment } from '../../services/deploymentApi';
 
 export const DeploymentList: React.FC<{ tenantId: string }> = ({ tenantId }) => {
   const [deployments, setDeployments] = useState<Deployment[]>([]);

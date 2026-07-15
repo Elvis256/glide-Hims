@@ -3,7 +3,7 @@ import { Loader2, Plus, Edit2, Trash2, Eye, EyeOff, Check, X } from 'lucide-reac
 import { toast } from 'sonner';
 import api from '../../services/api';
 import SystemPagination from '../../components/SystemPagination';
-import { Plan, fmtMoney, unwrap } from './saas/_shared';
+import { type Plan, fmtMoney, unwrap } from './saas/_shared';
 
 const EMPTY: Partial<Plan> = {
   code: '', name: '', description: '', tier: 'professional',

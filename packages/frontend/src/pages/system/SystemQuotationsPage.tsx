@@ -4,7 +4,7 @@ import { Plus, RefreshCw, Loader2, Eye, FileText, ExternalLink } from 'lucide-re
 import { toast } from 'sonner';
 import api from '../../services/api';
 import SystemPagination from '../../components/SystemPagination';
-import { Quotation, QuotationStatus, QUOTATION_STATUS_STYLES, fmtMoney, fmtDate, unwrap } from './saas/_shared';
+import { type Quotation, type QuotationStatus, QUOTATION_STATUS_STYLES, fmtMoney, fmtDate, unwrap } from './saas/_shared';
 
 const STATUSES: QuotationStatus[] = ['draft', 'sent', 'accepted', 'rejected', 'expired', 'superseded'];
 

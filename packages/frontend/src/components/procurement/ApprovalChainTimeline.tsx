@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { CheckCircle2, Clock, Loader2, Users, XCircle } from 'lucide-react';
 import {
-  ResolvedApprovalChainRow,
+  type ResolvedApprovalChainRow,
   getPurchaseOrderApprovalChain,
   getPurchaseRequestApprovalChain,
 } from '../../services/orgApproval';

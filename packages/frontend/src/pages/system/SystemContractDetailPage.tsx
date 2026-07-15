@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, Check, X, Loader2, FileText, Calendar, Users, Globe, Receipt } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '../../services/api';
-import { Contract, CONTRACT_STATUS_STYLES, fmtMoney, fmtDate, unwrap } from './saas/_shared';
+import { type Contract, CONTRACT_STATUS_STYLES, fmtMoney, fmtDate, unwrap } from './saas/_shared';
 
 export default function SystemContractDetailPage() {
   const { id } = useParams<{ id: string }>();
