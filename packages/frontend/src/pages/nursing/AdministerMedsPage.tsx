@@ -313,7 +313,11 @@ export default function AdministerMedsPage() {
     const mrnToCheck = scannedMRN.trim().toUpperCase();
     const expectedMRN = medication.patientMrn.toUpperCase();
     
-    if (mrnToCheck === expectedMRN || mrnToCheck === '') {
+    if (!mrnToCheck) {
+      toast.error('Please scan or enter the patient MRN');
+      return;
+    }
+    if (mrnToCheck === expectedMRN) {
       setPatientVerified(true);
       toast.success('Patient verified');
     } else {

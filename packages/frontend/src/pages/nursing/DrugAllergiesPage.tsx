@@ -12,7 +12,6 @@ import {
   Trash2,
   Save,
   CheckCircle,
-  ShieldOff,
   ShieldCheck,
 } from 'lucide-react';
 import { patientsService, type Patient as ApiPatient } from '../../services/patients';
@@ -580,7 +579,7 @@ export default function DrugAllergiesPage() {
                               </div>
                             </div>
                             <div className="flex items-center gap-1">
-                              {inactive ? (
+                              {inactive && (
                                 <button
                                   title="Reactivate"
                                   onClick={() => reactivateMutation.mutate(allergy.id)}
@@ -588,15 +587,6 @@ export default function DrugAllergiesPage() {
                                   className="p-2 text-gray-400 hover:text-teal-600 hover:bg-teal-50 rounded-lg disabled:opacity-50"
                                 >
                                   <ShieldCheck className="w-4 h-4" />
-                                </button>
-                              ) : (
-                                <button
-                                  title="Inactivate"
-                                  onClick={() => inactivateMutation.mutate(allergy.id)}
-                                  disabled={inactivateMutation.isPending}
-                                  className="p-2 text-gray-400 hover:text-orange-600 hover:bg-orange-50 rounded-lg disabled:opacity-50"
-                                >
-                                  <ShieldOff className="w-4 h-4" />
                                 </button>
                               )}
                               <button

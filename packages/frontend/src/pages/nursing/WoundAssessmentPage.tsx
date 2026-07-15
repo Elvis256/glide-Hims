@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useCallback } from 'react';
+import { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -56,7 +56,8 @@ import {
   Shield,
 } from 'lucide-react';
 import { patientsService } from '../../services/patients';
-import { ipdService, type CreateNursingNoteDto } from '../../services/ipd';
+import { ipdService } from '../../services/ipd';
+import { nursingService, type CreateWoundAssessmentDto } from '../../services/nursing';
 import { usePermissions } from '../../components/PermissionGate';
 
 interface Patient {
@@ -606,11 +607,49 @@ export default function WoundAssessmentPage() {
     enabled: !!selectedPatient?.id,
   });
 
-  // Create nursing note mutation
+  // Fetch wound assessments from backend
+  const { data: woundsData } = useQuery({
+    queryKey: ['nursing-wounds', admission?.id],
+    queryFn: () => nursingService.wounds.list({ admissionId: admission!.id }),
+    enabled: !!admission?.id,
+  });
+
+  // Hydrate patientWounds from API data
+  useEffect(() => {
+    if (woundsData?.length) {
+      setPatientWounds(woundsData.map(w => ({
+        id: w.id,
+        location: w.location,
+        type: w.woundType,
+        stage: w.stage,
+        startDate: new Date(w.createdAt).toISOString().split('T')[0],
+        status: 'active' as const,
+        depth: w.depth ? String(w.depth) : '',
+        length: w.length ? String(w.length) : '',
+        width: w.width ? String(w.width) : '',
+        area: (Number(w.length || 0) * Number(w.width || 0)),
+        woundBed: w.woundBed ? {
+          granulation: String(w.woundBed.granulation || 0),
+          slough: String(w.woundBed.slough || 0),
+          eschar: '0',
+          epithelial: String(w.woundBed.epithelial || 0),
+        } : undefined,
+        exudateAmount: w.exudate?.amount || '',
+        exudateType: w.exudate?.type || '',
+        odor: '',
+        periwound: w.periwoundSkin ? [w.periwoundSkin] : [],
+        infectionSigns: [],
+        painLevel: '',
+        dressingType: w.treatment || '',
+      })));
+    }
+  }, [woundsData]);
+
+  // Create wound assessment mutation
   const createNoteMutation = useMutation({
-    mutationFn: (data: CreateNursingNoteDto) => ipdService.nursingNotes.create(data),
+    mutationFn: (dto: CreateWoundAssessmentDto) => nursingService.wounds.create(dto),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['nursing-notes'] });
+      queryClient.invalidateQueries({ queryKey: ['nursing-wounds', admission?.id] });
       toast.success('Wound assessment saved successfully');
       setSaved(true);
     },
@@ -719,14 +758,40 @@ export default function WoundAssessmentPage() {
       return;
     }
 
-    createNoteMutation.mutate({
+    const dto: CreateWoundAssessmentDto = {
       admissionId: admission.id,
-      type: 'assessment',
-      content: `Wound Assessment: ${woundDetails}`,
-      vitals: {
-        painLevel: assessment.painLevel ? parseInt(assessment.painLevel) : undefined,
-      },
-    });
+      location: assessment.woundLocation,
+      woundType: assessment.woundType,
+      stage: assessment.stage || undefined,
+      length: parseFloat(assessment.length) || undefined,
+      width: parseFloat(assessment.width) || undefined,
+      depth: parseFloat(assessment.depth) || undefined,
+      woundBed: woundBedTotal === 100 ? {
+        granulation: parseInt(assessment.woundBed.granulation) || 0,
+        slough: parseInt(assessment.woundBed.slough) || 0,
+        necrotic: parseInt(assessment.woundBed.eschar) || 0,
+        epithelial: parseInt(assessment.woundBed.epithelial) || 0,
+      } : undefined,
+      exudate: (assessment.exudateAmount || assessment.exudateType) ? {
+        amount: assessment.exudateAmount,
+        type: assessment.exudateType,
+      } : undefined,
+      periwoundSkin: assessment.periwound.length > 0 ? assessment.periwound.join(', ') : undefined,
+      treatment: [
+        assessment.dressingType,
+        assessment.changeFrequency && `Change: ${assessment.changeFrequency}`,
+        assessment.specialTreatments.length > 0 && `Special: ${assessment.specialTreatments.join(', ')}`,
+      ].filter(Boolean).join('; ') || undefined,
+      notes: [
+        assessment.painLevel && `Pain: ${assessment.painLevel}/10`,
+        assessment.odor && assessment.odor !== 'none' && `Odor: ${assessment.odor}`,
+        assessment.infectionSigns.length > 0 && `Infection signs: ${assessment.infectionSigns.join(', ')}`,
+        assessment.consults.length > 0 && `Consults: ${assessment.consults.join(', ')}`,
+        assessment.notes,
+      ].filter(Boolean).join('. ') || undefined,
+    };
+
+    createNoteMutation.mutate(dto);
   };
 
   const handleReset = () => {

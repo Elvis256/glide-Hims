@@ -372,13 +372,13 @@ export default function VitalTrendsPage() {
                       strokeWidth="2"
                       points={chartData
                         .map((d, i) => {
-                          const x = (i / (chartData.length - 1)) * 100;
+                          const x = chartData.length <= 1 ? 50 : (i / (chartData.length - 1)) * 100;
                           const y = 100 - scaleValue(d.value);
                           return `${x}%,${y}%`;
                         })
                         .join(' ')}
                     />
-                    
+
                     {/* Secondary line for BP */}
                     {selectedVital === 'bp' && (
                       <polyline
@@ -389,17 +389,17 @@ export default function VitalTrendsPage() {
                         opacity="0.6"
                         points={chartData
                           .map((d, i) => {
-                            const x = (i / (chartData.length - 1)) * 100;
+                            const x = chartData.length <= 1 ? 50 : (i / (chartData.length - 1)) * 100;
                             const y = 100 - scaleValue(d.value2!);
                             return `${x}%,${y}%`;
                           })
                           .join(' ')}
                       />
                     )}
-                    
+
                     {/* Data points */}
                     {chartData.map((d, i) => {
-                      const x = (i / (chartData.length - 1)) * 100;
+                      const x = chartData.length <= 1 ? 50 : (i / (chartData.length - 1)) * 100;
                       const y = 100 - scaleValue(d.value);
                       return (
                         <circle

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -15,7 +15,8 @@ import {
   Loader2,
 } from 'lucide-react';
 import { patientsService } from '../../services/patients';
-import { ipdService, type CreateNursingNoteDto } from '../../services/ipd';
+import { ipdService } from '../../services/ipd';
+import { nursingService, type CreateNeuroObservationDto } from '../../services/nursing';
 import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
 
@@ -145,14 +146,44 @@ export default function ObservationChartPage() {
     enabled: !!selectedPatient?.id,
   });
 
-  // Create nursing note mutation
+  // Fetch neuro observations from backend
+  const { data: neuroData } = useQuery({
+    queryKey: ['nursing-neuro', admission?.id],
+    queryFn: () => nursingService.neuro.list({ admissionId: admission!.id }),
+    enabled: !!admission?.id,
+  });
+
+  // Hydrate local observations from API
+  React.useEffect(() => {
+    if (neuroData?.length) {
+      setObservations(neuroData.map(n => ({
+        id: n.id,
+        time: new Date(n.createdAt).toTimeString().slice(0, 5),
+        consciousness: n.avpu,
+        gcsEye: n.gcsEye || 0,
+        gcsVerbal: n.gcsVerbal || 0,
+        gcsMotor: n.gcsMotor || 0,
+        pupilLeft: { size: parseInt(n.pupilLeftSize || '3'), reactive: n.pupilLeftReaction !== 'non-reactive' },
+        pupilRight: { size: parseInt(n.pupilRightSize || '3'), reactive: n.pupilRightReaction !== 'non-reactive' },
+        limbMovement: {
+          leftArm: n.limbLeftArm || 'Normal',
+          rightArm: n.limbRightArm || 'Normal',
+          leftLeg: n.limbLeftLeg || 'Normal',
+          rightLeg: n.limbRightLeg || 'Normal',
+        },
+        notes: n.notes,
+      })));
+    }
+  }, [neuroData]);
+
+  // Create neuro observation mutation
   const createNoteMutation = useMutation({
-    mutationFn: (data: CreateNursingNoteDto) => ipdService.nursingNotes.create(data),
+    mutationFn: (dto: CreateNeuroObservationDto) => nursingService.neuro.create(dto),
     onError: (err: any) => {
       toast.error(err?.response?.data?.message || 'Failed to save — please retry');
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['nursing-notes'] });
+      queryClient.invalidateQueries({ queryKey: ['nursing-neuro', admission?.id] });
       setSaved(true);
     },
   });
@@ -204,22 +235,21 @@ export default function ObservationChartPage() {
       },
       notes: newObs.notes || undefined,
     };
-    setObservations((prev) => [entry, ...prev]);
-
-    const gcs = newObs.gcsEye + newObs.gcsVerbal + newObs.gcsMotor;
-    const obsDetails = [
-      `Time: ${newObs.time}`,
-      `AVPU: ${newObs.consciousness}`,
-      `GCS: ${gcs}/15 (E${newObs.gcsEye}V${newObs.gcsVerbal}M${newObs.gcsMotor})`,
-      `Pupils: L ${newObs.pupilLeftSize}mm ${newObs.pupilLeftReactive ? 'reactive' : 'non-reactive'}, R ${newObs.pupilRightSize}mm ${newObs.pupilRightReactive ? 'reactive' : 'non-reactive'}`,
-      `Limbs: LA-${newObs.leftArm}, RA-${newObs.rightArm}, LL-${newObs.leftLeg}, RL-${newObs.rightLeg}`,
-      newObs.notes && `Notes: ${newObs.notes}`,
-    ].filter(Boolean).join('. ');
-
     createNoteMutation.mutate({
       admissionId: admission.id,
-      type: 'assessment',
-      content: `Neurological Observation: ${obsDetails}`,
+      avpu: newObs.consciousness,
+      gcsEye: newObs.gcsEye,
+      gcsVerbal: newObs.gcsVerbal,
+      gcsMotor: newObs.gcsMotor,
+      pupilLeftSize: `${newObs.pupilLeftSize}mm`,
+      pupilLeftReaction: newObs.pupilLeftReactive ? 'reactive' : 'non-reactive',
+      pupilRightSize: `${newObs.pupilRightSize}mm`,
+      pupilRightReaction: newObs.pupilRightReactive ? 'reactive' : 'non-reactive',
+      limbLeftArm: newObs.leftArm,
+      limbRightArm: newObs.rightArm,
+      limbLeftLeg: newObs.leftLeg,
+      limbRightLeg: newObs.rightLeg,
+      notes: newObs.notes || undefined,
     });
   };
 

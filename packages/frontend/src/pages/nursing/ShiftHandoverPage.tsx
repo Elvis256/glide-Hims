@@ -199,21 +199,37 @@ export default function ShiftHandoverPage() {
     enabled: !!selectedWard,
   });
 
+  // Fetch real handover data (vitals, allergies, notes) for selected ward
+  const { data: handoverData } = useQuery({
+    queryKey: ['ward-handover', selectedWard],
+    queryFn: () => ipdService.wards.getHandover(selectedWard),
+    enabled: !!selectedWard,
+  });
+
+  // Index handover data by admissionId for fast lookup
+  const handoverByAdmission = useMemo(() => {
+    const map = new Map<string, any>();
+    if (Array.isArray(handoverData)) {
+      handoverData.forEach((h: any) => { if (h.admissionId) map.set(h.admissionId, h); });
+    }
+    return map;
+  }, [handoverData]);
+
   // Transform admissions to handover patients
   const wardPatients = useMemo((): PatientHandover[] => {
     if (!asList(admissionsData).length) return [];
-    
+
     return asList(admissionsData).map((admission): PatientHandover => {
       const existing = patientSBAR[admission.id];
+      const ho = handoverByAdmission.get(admission.id);
       const acuity = admission.priority === 'high' ? 'critical' : admission.priority === 'medium' ? 'unstable' : 'stable';
-      
-      // Generate flags based on admission data (deterministic based on index)
+
+      // Generate flags based on admission data
       const flags: PatientFlag[] = [];
       if (admission.priority === 'high') flags.push('high_fall_risk');
-      // Add flags based on admission type for demo purposes
       if (admission.type === 'emergency') flags.push('isolation');
       if (admission.priority === 'high' && admission.type === 'emergency') flags.push('npo');
-      
+
       return {
         id: admission.patient?.id || admission.id,
         admissionId: admission.id,
@@ -231,21 +247,21 @@ export default function ShiftHandoverPage() {
         assessment: existing?.assessment || 'Current condition assessment pending',
         recommendation: existing?.recommendation || 'Continue current plan of care',
         pendingOrders: admission.priority === 'high' ? 3 : admission.priority === 'medium' ? 1 : 0,
-        dueMedications: [],
-        allergies: [],
+        dueMedications: ho?.medications?.map((m: any) => m.drugName).filter(Boolean) || [],
+        allergies: ho?.allergies?.map((a: any) => a.allergen).filter(Boolean) || [],
         codeStatus: 'Full Code',
         changesThisShift: [],
-        recentVitals: {
-          temperature: 36.8,
-          pulse: 78,
-          bpSystolic: 120,
-          bpDiastolic: 80,
-          respiratoryRate: 16,
-          oxygenSaturation: 98,
-        },
+        recentVitals: ho?.recentVitals ? {
+          temperature: ho.recentVitals.temperature,
+          pulse: ho.recentVitals.pulse,
+          bpSystolic: ho.recentVitals.bpSystolic,
+          bpDiastolic: ho.recentVitals.bpDiastolic,
+          respiratoryRate: ho.recentVitals.respiratoryRate,
+          oxygenSaturation: ho.recentVitals.oxygenSaturation,
+        } : undefined,
       };
     });
-  }, [admissionsData, patientSBAR]);
+  }, [admissionsData, patientSBAR, handoverByAdmission]);
 
   // Create nursing note mutation
   const createNoteMutation = useMutation({

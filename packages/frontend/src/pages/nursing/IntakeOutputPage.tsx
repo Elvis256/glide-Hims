@@ -46,7 +46,8 @@ import {
 } from 'recharts';
 import { toast } from 'sonner';
 import { patientsService } from '../../services/patients';
-import { ipdService, type CreateNursingNoteDto } from '../../services/ipd';
+import { ipdService } from '../../services/ipd';
+import { nursingService, type CreateIntakeOutputDto } from '../../services/nursing';
 import PermissionGate, { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
 
@@ -170,7 +171,7 @@ export default function IntakeOutputPage() {
   
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
-  const [entries, setEntries] = useState<IOEntry[]>([]);
+  const [entries, setEntries] = useState<IOEntry[]>([]); // local fallback, hydrated from API
   const [showAddForm, setShowAddForm] = useState(false);
   const [addType, setAddType] = useState<'intake' | 'output'>('intake');
   const [activeTab, setActiveTab] = useState<'dashboard' | 'chart' | 'visualization'>('dashboard');
@@ -217,11 +218,35 @@ export default function IntakeOutputPage() {
     enabled: !!selectedPatient?.id,
   });
 
-  // Create nursing note mutation for I/O recording
+  // Fetch I/O entries from backend
+  const { data: ioData } = useQuery({
+    queryKey: ['nursing-io', admission?.id],
+    queryFn: () => nursingService.io.list({ admissionId: admission!.id }),
+    enabled: !!admission?.id,
+  });
+
+  // Hydrate local entries from API data
+  useEffect(() => {
+    if (ioData?.length) {
+      setEntries(ioData.map(e => ({
+        id: e.id,
+        time: new Date(e.timestamp).toTimeString().slice(0, 5),
+        timestamp: new Date(e.timestamp),
+        type: e.type,
+        category: e.category,
+        amount: Number(e.amount),
+        notes: e.notes,
+        characteristics: e.characteristics as IOEntry['characteristics'],
+        recordedBy: e.recordedBy?.fullName,
+      })));
+    }
+  }, [ioData]);
+
+  // Create I/O entry mutation (saves to dedicated table)
   const createNoteMutation = useMutation({
-    mutationFn: (data: CreateNursingNoteDto) => ipdService.nursingNotes.create(data),
+    mutationFn: (dto: CreateIntakeOutputDto) => nursingService.io.create(dto),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['nursing-notes'] });
+      queryClient.invalidateQueries({ queryKey: ['nursing-io', admission?.id] });
       toast.success('I/O entry recorded successfully');
     },
     onError: () => {
@@ -368,7 +393,7 @@ export default function IntakeOutputPage() {
   // Auto-refresh every minute
   useEffect(() => {
     const interval = setInterval(() => {
-      queryClient.invalidateQueries({ queryKey: ['nursing-notes'] });
+      queryClient.invalidateQueries({ queryKey: ['nursing-io'] });
     }, 60000);
     return () => clearInterval(interval);
   }, [queryClient]);
@@ -403,17 +428,17 @@ export default function IntakeOutputPage() {
       return;
     }
 
-    setEntries((prev) => [...prev, entry].sort((a, b) => a.time.localeCompare(b.time)));
-
-    const ioData = addType === 'intake'
-      ? { oralIntake: parseInt(newEntry.amount) }
-      : { urineOutput: parseInt(newEntry.amount) };
-
     createNoteMutation.mutate({
       admissionId: admission.id,
-      type: 'observation',
-      content: `${addType === 'intake' ? 'Intake' : 'Output'}: ${newEntry.category}${newEntry.subCategory ? ` (${newEntry.subCategory})` : ''} - ${newEntry.amount}ml${newEntry.notes ? '. ' + newEntry.notes : ''}`,
-      intakeOutput: ioData,
+      timestamp: timestamp.toISOString(),
+      type: addType,
+      category: newEntry.category,
+      amount: parseInt(newEntry.amount),
+      unit: 'ml',
+      characteristics: (addType === 'output' && (newEntry.category === 'Urine' || newEntry.category === 'Stool'))
+        ? newEntry.characteristics
+        : undefined,
+      notes: newEntry.notes || undefined,
     });
 
     setNewEntry({
@@ -451,17 +476,14 @@ export default function IntakeOutputPage() {
       return;
     }
 
-    setEntries((prev) => [...prev, entry].sort((a, b) => a.time.localeCompare(b.time)));
-
-    const ioData = action.type === 'intake'
-      ? { oralIntake: action.amount }
-      : { urineOutput: action.amount };
-
     createNoteMutation.mutate({
       admissionId: admission.id,
-      type: 'observation',
-      content: `${action.type === 'intake' ? 'Intake' : 'Output'}: ${action.label} - ${action.amount}ml`,
-      intakeOutput: ioData,
+      timestamp: now.toISOString(),
+      type: action.type,
+      category: action.category,
+      amount: action.amount,
+      unit: 'ml',
+      notes: `Quick action: ${action.label}`,
     });
   }, [admission?.id, createNoteMutation]);
 
@@ -485,26 +507,30 @@ export default function IntakeOutputPage() {
       return;
     }
 
-    setEntries((prev) => [...prev, entry].sort((a, b) => a.time.localeCompare(b.time)));
-
-    const ioData = selectedQuickAction.type === 'intake'
-      ? { oralIntake: quickActionAmount }
-      : { urineOutput: quickActionAmount };
-
     createNoteMutation.mutate({
       admissionId: admission.id,
-      type: 'observation',
-      content: `${selectedQuickAction.type === 'intake' ? 'Intake' : 'Output'}: ${selectedQuickAction.label} - ${quickActionAmount}ml`,
-      intakeOutput: ioData,
+      timestamp: now.toISOString(),
+      type: selectedQuickAction.type,
+      category: selectedQuickAction.category,
+      amount: quickActionAmount,
+      unit: 'ml',
+      notes: `Quick action: ${selectedQuickAction.label}`,
     });
 
     setSelectedQuickAction(null);
     setQuickActionAmount(0);
   }, [selectedQuickAction, quickActionAmount, admission?.id, createNoteMutation]);
 
+  const deleteEntryMutation = useMutation({
+    mutationFn: (id: string) => nursingService.io.remove(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['nursing-io', admission?.id] });
+      toast.success('Entry deleted');
+    },
+    onError: () => toast.error('Failed to delete entry'),
+  });
   const handleDeleteEntry = (id: string) => {
-    setEntries((prev) => prev.filter((e) => e.id !== id));
-    toast.success('Entry deleted');
+    deleteEntryMutation.mutate(id);
   };
 
   const toggleHourExpand = (hour: string) => {

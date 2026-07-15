@@ -37,7 +37,8 @@ import {
   File,
 } from 'lucide-react';
 import { patientsService } from '../../services/patients';
-import { ipdService, type CreateNursingNoteDto } from '../../services/ipd';
+import { ipdService } from '../../services/ipd';
+import { nursingService, type CreateIncidentReportDto } from '../../services/nursing';
 import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
 import { printService } from '../../lib/print';
@@ -269,11 +270,25 @@ export default function IncidentReportPage() {
     enabled: !!selectedPatient?.id,
   });
 
-  // Create nursing note mutation
+  // Fetch existing incident reports
+  const { data: incidentsList = [] } = useQuery({
+    queryKey: ['nursing-incidents'],
+    queryFn: () => nursingService.incidents.list(),
+  });
+
+  // Fetch incident stats for dashboard
+  const { data: incidentStats } = useQuery({
+    queryKey: ['nursing-incidents-stats'],
+    queryFn: () => nursingService.incidents.stats(),
+  });
+
+  // Create incident report mutation
   const createNoteMutation = useMutation({
-    mutationFn: (data: CreateNursingNoteDto) => ipdService.nursingNotes.create(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['nursing-notes'] });
+    mutationFn: (dto: CreateIncidentReportDto) => nursingService.incidents.create(dto),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['nursing-incidents'] });
+      queryClient.invalidateQueries({ queryKey: ['nursing-incidents-stats'] });
+      setSubmittedRefNumber(result.reportNumber);
       setSaved(true);
       toast.success('Incident report submitted successfully');
     },
@@ -460,37 +475,47 @@ export default function IncidentReportPage() {
   };
 
   const handleConfirmedSubmit = () => {
-    const refNumber = `INC-${new Date().getFullYear()}-${Date.now().toString().slice(-4).padStart(4, '0')}`;
-    setSubmittedRefNumber(refNumber);
-    
-    if (!admission?.id) {
-      toast.error('Patient must be admitted to record this data');
+    if (!formData.incidentType || !formData.description || !formData.severityLevel) {
+      toast.error('Please fill in all required fields');
       setShowConfirmDialog(false);
       return;
     }
 
-    const incidentDetails = [
-      formData.incidentType && `Type: ${incidentTypes.find(t => t.value === formData.incidentType)?.label}`,
-      formData.date && `Date: ${formData.date}`,
-      formData.time && `Time: ${formData.time}`,
-      formData.department && `Department: ${formData.department}`,
-      formData.room && `Room: ${formData.room}`,
-      formData.severityLevel && `Severity: ${severityLevels.find(s => s.value === formData.severityLevel)?.label}`,
-      formData.description && `Description: ${formData.description}`,
-      formData.immediateActions && `Immediate Actions: ${formData.immediateActions}`,
-      formData.contributingFactors.length > 0 && `Contributing Factors: ${formData.contributingFactors.join(', ')}`,
-    ].filter(Boolean).join('. ');
+    const incidentDate = new Date(`${formData.date}T${formData.time || '00:00'}`);
+    const witnesses = formData.witnesses
+      ?.filter((w: any) => w?.name?.trim())
+      .map((w: any) => ({ name: w.name, role: w.role })) || [];
 
     createNoteMutation.mutate({
-      admissionId: admission.id,
-      type: 'incident',
-      content: `Incident Report: ${incidentDetails}`,
+      patientId: selectedPatient?.id || undefined,
+      type: formData.incidentType,
+      severity: formData.severityLevel,
+      status: 'submitted',
+      description: formData.description,
+      location: [formData.department, formData.room].filter(Boolean).join(' - ') || undefined,
+      incidentDate: incidentDate.toISOString(),
+      immediateAction: formData.immediateActions || undefined,
+      witnesses: witnesses.length > 0 ? witnesses : undefined,
     });
     setShowConfirmDialog(false);
   };
 
   const handleSaveAsDraft = () => {
-    toast.success('Incident report saved as draft');
+    if (!formData.incidentType || !formData.description) {
+      toast.error('Please fill in type and description before saving as draft');
+      return;
+    }
+    const incidentDate = new Date(`${formData.date}T${formData.time || '00:00'}`);
+    createNoteMutation.mutate({
+      patientId: selectedPatient?.id || undefined,
+      type: formData.incidentType,
+      severity: formData.severityLevel || 'minor',
+      status: 'draft',
+      description: formData.description,
+      location: [formData.department, formData.room].filter(Boolean).join(' - ') || undefined,
+      incidentDate: incidentDate.toISOString(),
+      immediateAction: formData.immediateActions || undefined,
+    });
   };
 
   const handlePrint = () => {
@@ -500,7 +525,7 @@ export default function IncidentReportPage() {
   };
 
   const handleEmail = () => {
-    toast.success('Email sent to supervisor');
+    toast.info('Email notifications not yet configured');
   };
 
   const handleReset = () => {
