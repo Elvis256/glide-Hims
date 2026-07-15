@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import api from '../services/api';
 
 interface FollowUp {
@@ -45,6 +47,7 @@ const typeLabels: Record<string, string> = {
 };
 
 export default function FollowUpsPage() {
+  const navigate = useNavigate();
   const [followUps, setFollowUps] = useState<FollowUp[]>([]);
   const [todaysAppointments, setTodaysAppointments] = useState<FollowUp[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,15 +63,19 @@ export default function FollowUpsPage() {
     try {
       if (activeView === 'today') {
         const response = await api.get('/follow-ups/today');
-        setTodaysAppointments(response.data);
+        const items = Array.isArray(response.data) ? response.data : response.data?.data || [];
+        setTodaysAppointments(items);
       } else {
         const response = await api.get('/follow-ups');
-        setFollowUps(response.data);
+        const items = Array.isArray(response.data) ? response.data : response.data?.data || [];
+        setFollowUps(items);
       }
       const statsResponse = await api.get('/follow-ups/stats');
-      setStats(statsResponse.data);
+      const statsData = statsResponse.data?.data || statsResponse.data || {};
+      setStats(statsData);
     } catch (error) {
       console.error('Failed to load follow-ups:', error);
+      toast.error('Failed to load follow-up appointments');
     } finally {
       setLoading(false);
     }
@@ -80,6 +87,7 @@ export default function FollowUpsPage() {
       loadData();
     } catch (error) {
       console.error('Failed to check in:', error);
+      toast.error('Failed to check in patient');
     }
   };
 
@@ -89,19 +97,12 @@ export default function FollowUpsPage() {
       loadData();
     } catch (error) {
       console.error('Failed to complete:', error);
+      toast.error('Failed to complete appointment');
     }
   };
 
-  const reschedule = async (id: string) => {
-    const newDate = prompt('Enter new date (YYYY-MM-DD):');
-    if (newDate) {
-      try {
-        await api.post(`/follow-ups/${id}/reschedule`, { newDate });
-        loadData();
-      } catch (error) {
-        console.error('Failed to reschedule:', error);
-      }
-    }
+  const reschedule = async (_id: string) => {
+    toast.info('Reschedule from the patient encounter page');
   };
 
   const markMissed = async (id: string) => {
@@ -110,6 +111,7 @@ export default function FollowUpsPage() {
       loadData();
     } catch (error) {
       console.error('Failed to mark as missed:', error);
+      toast.error('Failed to mark appointment as missed');
     }
   };
 
@@ -122,7 +124,10 @@ export default function FollowUpsPage() {
           <h1 className="text-2xl font-bold text-gray-800">Follow-up Appointments</h1>
           <p className="text-gray-600">Manage scheduled follow-up visits</p>
         </div>
-        <button className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
+        <button
+          onClick={() => navigate('/doctor/follow-ups/new')}
+          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+        >
           + Schedule Follow-up
         </button>
       </div>

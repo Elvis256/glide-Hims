@@ -438,8 +438,8 @@ function formatVitals(vitals: VitalRecord): string {
   const parts: string[] = [];
   if (vitals.temperature) parts.push(`Temp: ${vitals.temperature}°C`);
   if (vitals.pulse) parts.push(`HR: ${vitals.pulse} bpm`);
-  if (vitals.bloodPressureSystolic && vitals.bloodPressureDiastolic) {
-    parts.push(`BP: ${vitals.bloodPressureSystolic}/${vitals.bloodPressureDiastolic} mmHg`);
+  if (vitals.bpSystolic && vitals.bpDiastolic) {
+    parts.push(`BP: ${vitals.bpSystolic}/${vitals.bpDiastolic} mmHg`);
   }
   if (vitals.respiratoryRate) parts.push(`RR: ${vitals.respiratoryRate}/min`);
   if (vitals.oxygenSaturation) parts.push(`SpO2: ${vitals.oxygenSaturation}%`);
@@ -467,11 +467,11 @@ function checkVitalAbnormalities(vitals: VitalRecord): { field: string; value: n
       abnormalities.push({ field: 'Heart Rate', value: vitals.pulse, severity: 'warning' });
     }
   }
-  if (vitals.bloodPressureSystolic) {
-    if (vitals.bloodPressureSystolic >= 180 || vitals.bloodPressureSystolic < 90) {
-      abnormalities.push({ field: 'Systolic BP', value: vitals.bloodPressureSystolic, severity: 'critical' });
-    } else if (vitals.bloodPressureSystolic >= 140 || vitals.bloodPressureSystolic < 100) {
-      abnormalities.push({ field: 'Systolic BP', value: vitals.bloodPressureSystolic, severity: 'warning' });
+  if (vitals.bpSystolic) {
+    if (vitals.bpSystolic >= 180 || vitals.bpSystolic < 90) {
+      abnormalities.push({ field: 'Systolic BP', value: vitals.bpSystolic, severity: 'critical' });
+    } else if (vitals.bpSystolic >= 140 || vitals.bpSystolic < 100) {
+      abnormalities.push({ field: 'Systolic BP', value: vitals.bpSystolic, severity: 'warning' });
     }
   }
   if (vitals.oxygenSaturation) {
@@ -1494,10 +1494,10 @@ export default function SOAPNotesPage() {
                                 <p className="font-medium">{encounterVitals.pulse} bpm</p>
                               </div>
                             )}
-                            {encounterVitals.bloodPressureSystolic && (
-                              <div className={`p-2 rounded ${encounterVitals.bloodPressureSystolic >= 140 ? 'bg-amber-50 border border-amber-200' : 'bg-white border'}`}>
+                            {encounterVitals.bpSystolic && (
+                              <div className={`p-2 rounded ${encounterVitals.bpSystolic >= 140 ? 'bg-amber-50 border border-amber-200' : 'bg-white border'}`}>
                                 <p className="text-xs text-gray-500">BP</p>
-                                <p className="font-medium">{encounterVitals.bloodPressureSystolic}/{encounterVitals.bloodPressureDiastolic}</p>
+                                <p className="font-medium">{encounterVitals.bpSystolic}/{encounterVitals.bpDiastolic}</p>
                               </div>
                             )}
                             {encounterVitals.oxygenSaturation && (

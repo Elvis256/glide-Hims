@@ -187,7 +187,7 @@ export default function NewReferralPage() {
         referredToSpecialty: referralType === 'internal' ? selectedProviderName : undefined,
         externalFacilityName: referralType === 'external' ? externalFacility : undefined,
         externalFacilityAddress: referralType === 'external' ? externalAddress : undefined,
-        preferredDate: preferredDate || undefined,
+        appointmentDate: preferredDate || undefined,
       });
     },
     onSuccess: () => {

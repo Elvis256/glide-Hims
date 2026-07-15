@@ -40,25 +40,36 @@ export const clinicalNotesService = {
   // Create a clinical note
   create: async (data: CreateClinicalNoteDto): Promise<ClinicalNote> => {
     const response = await api.post('/clinical-notes', data);
-    return response.data;
+    const result = response.data;
+    return (result as any)?.data || result;
   },
 
   // Get clinical notes for an encounter
   getByEncounter: async (encounterId: string): Promise<ClinicalNote[]> => {
     const response = await api.get(`/clinical-notes/encounter/${encounterId}`);
-    return response.data || [];
+    const data = response.data;
+    return Array.isArray(data) ? data : (data?.data || []);
+  },
+
+  // Get patient clinical notes history
+  getPatientHistory: async (patientId: string): Promise<ClinicalNote[]> => {
+    const response = await api.get(`/clinical-notes/patient/${patientId}/history`);
+    const data = response.data;
+    return Array.isArray(data) ? data : (data?.data || []);
   },
 
   // Get a single clinical note
   getById: async (id: string): Promise<ClinicalNote> => {
     const response = await api.get(`/clinical-notes/${id}`);
-    return response.data;
+    const data = response.data;
+    return (data as any)?.data || data;
   },
 
   // Update a clinical note
   update: async (id: string, data: UpdateClinicalNoteDto): Promise<ClinicalNote> => {
     const response = await api.patch(`/clinical-notes/${id}`, data);
-    return response.data;
+    const result = response.data;
+    return (result as any)?.data || result;
   },
 
   // Delete a clinical note

@@ -54,7 +54,8 @@ export default function ClinicalNotesPage() {
     queryFn: async () => {
       if (!encounterId) return [];
       const response = await api.get(`/clinical-notes/encounter/${encounterId}`);
-      return response.data as ClinicalNote[];
+      const result = response.data;
+      return Array.isArray(result) ? result : ((result as any)?.data || []) as ClinicalNote[];
     },
     enabled: !!encounterId,
   });
@@ -65,7 +66,8 @@ export default function ClinicalNotesPage() {
     queryFn: async () => {
       if (!patientId) return [];
       const response = await api.get(`/clinical-notes/patient/${patientId}/history`);
-      return response.data as ClinicalNote[];
+      const result = response.data;
+      return Array.isArray(result) ? result : ((result as any)?.data || []) as ClinicalNote[];
     },
     enabled: !!patientId && !encounterId,
   });

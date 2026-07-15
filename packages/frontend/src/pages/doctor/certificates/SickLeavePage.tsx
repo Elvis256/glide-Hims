@@ -159,7 +159,7 @@ export default function SickLeavePage() {
 
   const handleEmailEmployer = () => {
     if (employerEmail) {
-      toast.success(`Email would be sent to: ${employerEmail}`);
+      toast.info('Email to employer not yet configured');
     }
   };
 

@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import api from '../services/api';
 
 interface Referral {
@@ -39,11 +41,11 @@ const priorityColors: Record<string, string> = {
 };
 
 export default function ReferralsPage() {
+  const navigate = useNavigate();
   const [referrals, setReferrals] = useState<Referral[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'incoming' | 'outgoing'>('incoming');
   const [selectedReferral, setSelectedReferral] = useState<Referral | null>(null);
-  const [_showModal, setShowModal] = useState(false);
 
   useEffect(() => {
     loadReferrals();
@@ -57,43 +59,22 @@ export default function ReferralsPage() {
       setReferrals(response.data);
     } catch (error) {
       console.error('Failed to load referrals:', error);
+      toast.error('Failed to load referrals');
     } finally {
       setLoading(false);
     }
   };
 
-  const acceptReferral = async (id: string) => {
-    const appointmentDate = prompt('Enter appointment date (YYYY-MM-DD):');
-    if (appointmentDate) {
-      try {
-        await api.post(`/referrals/${id}/accept`, { appointmentDate });
-        loadReferrals();
-      } catch (error) {
-        console.error('Failed to accept referral:', error);
-      }
-    }
+  const acceptReferral = async (_id: string) => {
+    toast.info('Accept referral: use the detailed referral view to set an appointment date');
   };
 
-  const rejectReferral = async (id: string) => {
-    const reason = prompt('Enter rejection reason:');
-    if (reason) {
-      try {
-        await api.post(`/referrals/${id}/reject`, { rejectionReason: reason });
-        loadReferrals();
-      } catch (error) {
-        console.error('Failed to reject referral:', error);
-      }
-    }
+  const rejectReferral = async (_id: string) => {
+    toast.info('Reject referral: use the detailed referral view to provide a rejection reason');
   };
 
-  const completeReferral = async (id: string) => {
-    const notes = prompt('Enter feedback notes (optional):') || '';
-    try {
-      await api.post(`/referrals/${id}/complete`, { feedbackNotes: notes });
-      loadReferrals();
-    } catch (error) {
-      console.error('Failed to complete referral:', error);
-    }
+  const completeReferral = async (_id: string) => {
+    toast.info('Complete referral: use the detailed referral view to add feedback notes');
   };
 
   return (
@@ -104,7 +85,7 @@ export default function ReferralsPage() {
           <p className="text-gray-600">Manage patient referrals between facilities</p>
         </div>
         <button
-          onClick={() => setShowModal(true)}
+          onClick={() => navigate('/doctor/referrals/new')}
           className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
         >
           + New Referral

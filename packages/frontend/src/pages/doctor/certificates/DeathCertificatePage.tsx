@@ -213,7 +213,7 @@ export default function DeathCertificatePage() {
   };
 
   const handleSubmitToRegistry = () => {
-    toast.success('Death certificate would be submitted to the registry.');
+    toast.info('Registry submission not yet configured');
   };
 
   const getMannerColor = (manner: MannerOfDeath) => {
