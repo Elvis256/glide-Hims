@@ -1229,7 +1229,7 @@ export default function NewConsultationPage() {
         try {
           await ordersService.create({
             encounterId,
-            orderType: 'imaging',
+            orderType: 'radiology',
             priority: 'routine',
             testCodes: imagingItems.map(item => ({
               code: (item.details?.testCode as string) || '',
@@ -1329,7 +1329,7 @@ export default function NewConsultationPage() {
           }
           if (!hasPendingImaging) {
             hasPendingImaging = existingOrders.some(
-              (o) => o.orderType === 'imaging' && (o.status === 'pending' || o.status === 'in_progress'),
+              (o) => o.orderType === 'radiology' && (o.status === 'pending' || o.status === 'in_progress'),
             );
           }
           if (!hasPendingRx) {

@@ -90,7 +90,9 @@ export interface PayrollRun {
   month: number;
   year: number;
   employeeCount: number;
-  status: 'draft' | 'processing' | 'completed' | 'paid' | 'cancelled';
+  /** Mirrors backend PayrollStatus (payroll-run.entity.ts). 'approved' was
+   *  missing, so the Approve step's button never rendered. */
+  status: 'draft' | 'approved' | 'processing' | 'completed' | 'paid' | 'cancelled';
   totalGross: number;
   totalDeductions: number;
   totalNet: number;

@@ -109,7 +109,14 @@ export interface LabOrder {
   };
   tests: LabOrderTest[];
   priority?: 'routine' | 'urgent' | 'stat';
-  status: 'pending' | 'sample_collected' | 'processing' | 'completed' | 'cancelled' | 'collected' | 'verified' | 'validated' | 'released' | 'in-progress';
+  /** A lab order IS an Order row — orders.list passes `order.status` straight
+   *  through — so this is backend OrderStatus (order.entity.ts) and nothing
+   *  else. The old union invented sample_collected/collected/verified/
+   *  validated/released and a HYPHENATED 'in-progress', none of which the API
+   *  can ever return; the real value is 'in_progress' with an underscore.
+   *  Sample-level state lives on lab_samples (SampleStatus), and result-level
+   *  state on lab_results (validated/released) — different entities. */
+  status: 'pending' | 'in_progress' | 'completed' | 'cancelled';
   clinicalNotes?: string;
   orderedBy?: string;
   assignedTo?: string;

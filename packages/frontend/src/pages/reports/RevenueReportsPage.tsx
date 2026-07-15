@@ -175,9 +175,8 @@ export default function RevenueReportsPage() {
         periodStart = new Date(customFrom);
       } else if (dateRange === 'year') {
         periodStart = new Date(now.getFullYear(), 0, 1);
-      } else if (dateRange === 'quarter') {
-        const quarterMonth = Math.floor(now.getMonth() / 3) * 3;
-        periodStart = new Date(now.getFullYear(), quarterMonth, 1);
+        // No 'quarter' branch: DateRange has no such member and the range
+        // picker never offers it, so it was unreachable.
       } else if (dateRange === 'month') {
         periodStart = new Date(now.getFullYear(), now.getMonth(), 1);
       } else if (dateRange === 'week') {

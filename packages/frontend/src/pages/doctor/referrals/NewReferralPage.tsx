@@ -110,7 +110,7 @@ export default function NewReferralPage() {
       return (docs || []).map(d => ({
         id: d.id,
         name: d.documentName || d.originalFilename || 'Untitled',
-        type: (d.category === 'lab_result' ? 'lab' : d.category === 'imaging' ? 'imaging' : 'report') as 'lab' | 'imaging' | 'report',
+        type: (d.category === 'lab_report' ? 'lab' : d.category === 'imaging' ? 'imaging' : 'report') as 'lab' | 'imaging' | 'report',
         date: d.documentDate || d.createdAt || '',
       }));
     },

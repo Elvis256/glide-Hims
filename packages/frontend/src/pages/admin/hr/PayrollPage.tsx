@@ -5,6 +5,7 @@ import { DollarSign, Users, Calendar, FileText, Download, Plus, Loader2, Play, E
 import { hrService, type PayrollRun, type Payslip, type Employee } from '../../../services/hr';
 import { facilitiesService } from '../../../services';
 import { formatCurrency } from '../../../lib/currency';
+import { confirmDialog } from '../../../components/ConfirmDialog';
 import { useInstitutionInfo } from '../../../lib/useInstitutionInfo';
 import { generatePayslipPDF } from '../../../utils/hr-pdf-generator';
 
@@ -369,10 +370,20 @@ export default function PayrollPage() {
                             </button>
                           </>
                         )}
-                        {run.status === 'completed' && run.status !== 'paid' && (
+                        {/* `&& run.status !== 'paid'` was redundant — a run cannot
+                            be both completed and paid. */}
+                        {run.status === 'completed' && (
                           <button
-                            onClick={() => {
-                              if (confirm('Reset this payroll run to draft? This will delete all generated payslips.')) {
+                            onClick={async () => {
+                              if (
+                                await confirmDialog({
+                                  title: 'Reset payroll run?',
+                                  message:
+                                    'This will reset the run to draft and delete all generated payslips.',
+                                  confirmLabel: 'Reset',
+                                  variant: 'danger',
+                                })
+                              ) {
                                 resetMutation.mutate(run.id);
                               }
                             }}

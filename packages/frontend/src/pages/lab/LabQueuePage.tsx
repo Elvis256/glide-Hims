@@ -97,7 +97,10 @@ export default function LabQueuePage() {
     staleTime: 60000,
   });
   const technicians = (allProviders || []).filter(
-    (p) => p.providerType === 'lab_technologist' && p.status === 'active'
+    // ProviderType member is 'lab_technician' — 'lab_technologist' matched
+    // nothing, so the technician list was always empty and lab orders could
+    // never be assigned.
+    (p) => p.providerType === 'lab_technician' && p.status === 'active'
   );
   const currentUserTechName = currentUser
     ? [currentUser.firstName, currentUser.lastName].filter(Boolean).join(' ') || currentUser.email || ''
