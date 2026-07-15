@@ -20,30 +20,34 @@ import {
   Check,
   AlertTriangle,
 } from 'lucide-react';
-import { providersService } from '../../services/providers';
+import { providersService, type Provider, type ProviderType } from '../../services/providers';
 
-interface Provider {
-  id: string;
-  userId: string;
-  providerType: 'DOCTOR' | 'NURSE' | 'LAB_TECHNICIAN' | 'PHARMACIST' | 'RADIOLOGIST' | 'SURGEON';
-  specialty: string;
-  licenseNumber: string;
-  licenseExpiryDate: string;
-  qualifications: string[];
-  departmentId: string;
-  departmentName: string;
-  facilityId: string;
-  status: 'ACTIVE' | 'INACTIVE' | 'ON_LEAVE' | 'SUSPENDED';
-  user: {
-    fullName: string;
-    email: string;
-    phone: string;
-  };
-  createdAt: string;
-}
+// Values must match the backend enums exactly (provider.entity.ts): the API
+// validates with @IsEnum and forbidNonWhitelisted, so 'DOCTOR'/'ACTIVE' were
+// rejected with a 400 rather than simply matching nothing.
+const providerTypes: Array<'All' | ProviderType> = [
+  'All',
+  'physician',
+  'surgeon',
+  'nurse',
+  'midwife',
+  'pharmacist',
+  'lab_technician',
+  'radiologist',
+  'clinical_officer',
+  'specialist',
+  'consultant',
+];
+const statuses: Array<'All' | Provider['status']> = [
+  'All',
+  'active',
+  'inactive',
+  'on_leave',
+  'suspended',
+  'terminated',
+];
 
-const providerTypes = ['All', 'DOCTOR', 'SURGEON', 'NURSE', 'LAB_TECHNICIAN', 'PHARMACIST', 'RADIOLOGIST'];
-const statuses = ['All', 'ACTIVE', 'INACTIVE', 'ON_LEAVE', 'SUSPENDED'];
+const titleize = (v: string) => v.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
 export default function ProviderDirectoryPage() {
   const queryClient = useQueryClient();
@@ -56,7 +60,13 @@ export default function ProviderDirectoryPage() {
 
   const { data: providers, isLoading } = useQuery({
     queryKey: ['providers', searchTerm, selectedType, selectedStatus],
-    queryFn: () => providersService.list({ search: searchTerm, type: selectedType !== 'All' ? selectedType : undefined, status: selectedStatus !== 'All' ? selectedStatus : undefined }),
+    queryFn: () =>
+      providersService.list({
+        search: searchTerm || undefined,
+        // ProviderSearchDto has no `type` key — sending it 400'd the whole list.
+        providerType: selectedType !== 'All' ? (selectedType as ProviderType) : undefined,
+        status: selectedStatus !== 'All' ? (selectedStatus as Provider['status']) : undefined,
+      }),
   });
 
   const createMutation = useMutation({
@@ -81,10 +91,15 @@ export default function ProviderDirectoryPage() {
   const items = providers || [];
 
   const filteredProviders = items.filter((provider) => {
-    const matchesSearch = 
-      provider.user.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      provider.licenseNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      provider.specialty.toLowerCase().includes(searchTerm.toLowerCase());
+    // provider.fullName is the column; provider.user is a NULLABLE relation
+    // (userId is optional), so reading user.fullName crashed for any provider
+    // without a linked user account.
+    const q = searchTerm.toLowerCase();
+    const matchesSearch =
+      !q ||
+      provider.fullName?.toLowerCase().includes(q) ||
+      provider.licenseNumber?.toLowerCase().includes(q) ||
+      provider.specialty?.toLowerCase().includes(q);
     const matchesType = selectedType === 'All' || provider.providerType === selectedType;
     const matchesStatus = selectedStatus === 'All' || provider.status === selectedStatus;
     return matchesSearch && matchesType && matchesStatus;
@@ -92,18 +107,21 @@ export default function ProviderDirectoryPage() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'ACTIVE': return 'bg-green-100 text-green-700';
-      case 'INACTIVE': return 'bg-gray-100 text-gray-700';
-      case 'ON_LEAVE': return 'bg-yellow-100 text-yellow-700';
-      case 'SUSPENDED': return 'bg-red-100 text-red-700';
+      case 'active': return 'bg-green-100 text-green-700';
+      case 'inactive': return 'bg-gray-100 text-gray-700';
+      case 'on_leave': return 'bg-yellow-100 text-yellow-700';
+      case 'suspended': return 'bg-red-100 text-red-700';
+      case 'terminated': return 'bg-red-100 text-red-700';
       default: return 'bg-gray-100 text-gray-700';
     }
   };
 
   const getTypeIcon = (type: string) => {
     switch (type) {
-      case 'DOCTOR':
-      case 'SURGEON':
+      case 'physician':
+      case 'surgeon':
+      case 'specialist':
+      case 'consultant':
         return <Stethoscope className="w-4 h-4" />;
       default:
         return <UserCheck className="w-4 h-4" />;
@@ -166,7 +184,7 @@ export default function ProviderDirectoryPage() {
             <div>
               <p className="text-sm text-gray-600">Active</p>
               <p className="text-xl font-bold text-green-600">
-                {items.filter(p => p.status === 'ACTIVE').length}
+                {items.filter(p => p.status === 'active').length}
               </p>
             </div>
           </div>
@@ -179,7 +197,7 @@ export default function ProviderDirectoryPage() {
             <div>
               <p className="text-sm text-gray-600">License Expiring</p>
               <p className="text-xl font-bold text-orange-600">
-                {items.filter(p => isLicenseExpiringSoon(p.licenseExpiryDate)).length}
+                {items.filter(p => isLicenseExpiringSoon(p.licenseExpiry)).length}
               </p>
             </div>
           </div>
@@ -192,7 +210,7 @@ export default function ProviderDirectoryPage() {
             <div>
               <p className="text-sm text-gray-600">License Expired</p>
               <p className="text-xl font-bold text-red-600">
-                {items.filter(p => isLicenseExpired(p.licenseExpiryDate)).length}
+                {items.filter(p => isLicenseExpired(p.licenseExpiry)).length}
               </p>
             </div>
           </div>
@@ -281,14 +299,16 @@ export default function ProviderDirectoryPage() {
                       {getTypeIcon(provider.providerType)}
                     </div>
                     <div>
-                      <p className="font-medium text-gray-900">{provider.user.fullName}</p>
-                      <p className="text-xs text-gray-500">{provider.user.email}</p>
+                      <p className="font-medium text-gray-900">{provider.fullName}</p>
+                      <p className="text-xs text-gray-500">
+                        {provider.email || provider.user?.email || '—'}
+                      </p>
                     </div>
                   </div>
                 </td>
                 <td className="px-4 py-3">
                   <span className="text-sm text-gray-700">
-                    {provider.providerType.replace('_', ' ')}
+                    {titleize(provider.providerType || '')}
                   </span>
                 </td>
                 <td className="px-4 py-3">
@@ -297,22 +317,22 @@ export default function ProviderDirectoryPage() {
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-1 text-sm text-gray-700">
                     <Building2 className="w-4 h-4 text-gray-400" />
-                    {provider.departmentName}
+                    {provider.department?.name}
                   </div>
                 </td>
                 <td className="px-4 py-3">
                   <div>
                     <p className="text-sm text-gray-700">{provider.licenseNumber}</p>
                     <p className={`text-xs ${
-                      isLicenseExpired(provider.licenseExpiryDate)
+                      isLicenseExpired(provider.licenseExpiry)
                         ? 'text-red-600'
-                        : isLicenseExpiringSoon(provider.licenseExpiryDate)
+                        : isLicenseExpiringSoon(provider.licenseExpiry)
                         ? 'text-orange-600'
                         : 'text-gray-500'
                     }`}>
-                      Expires: {new Date(provider.licenseExpiryDate).toLocaleDateString()}
-                      {isLicenseExpired(provider.licenseExpiryDate) && ' (EXPIRED)'}
-                      {isLicenseExpiringSoon(provider.licenseExpiryDate) && ' (EXPIRING SOON)'}
+                      Expires: {new Date(provider.licenseExpiry).toLocaleDateString()}
+                      {isLicenseExpired(provider.licenseExpiry) && ' (EXPIRED)'}
+                      {isLicenseExpiringSoon(provider.licenseExpiry) && ' (EXPIRING SOON)'}
                     </p>
                   </div>
                 </td>
@@ -332,13 +352,13 @@ export default function ProviderDirectoryPage() {
                     </button>
                     <button
                       onClick={() => {
-                        const newStatus = provider.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
+                        const newStatus = provider.status === 'active' ? 'inactive' : 'active';
                         updateStatusMutation.mutate({ id: provider.id, status: newStatus });
                       }}
                       className="p-1 hover:bg-gray-100 rounded"
-                      title={provider.status === 'ACTIVE' ? 'Deactivate' : 'Activate'}
+                      title={provider.status === 'active' ? 'Deactivate' : 'Activate'}
                     >
-                      {provider.status === 'ACTIVE' ? (
+                      {provider.status === 'active' ? (
                         <X className="w-4 h-4 text-red-500" />
                       ) : (
                         <Check className="w-4 h-4 text-green-500" />

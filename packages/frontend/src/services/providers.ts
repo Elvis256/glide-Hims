@@ -1,40 +1,63 @@
 import api from './api';
 
+/** Mirrors backend ProviderType (database/entities/provider.entity.ts).
+ *  There is no 'doctor' member — a physician is 'physician'. */
+export type ProviderType =
+  | 'physician'
+  | 'surgeon'
+  | 'nurse'
+  | 'midwife'
+  | 'pharmacist'
+  | 'lab_technician'
+  | 'radiologist'
+  | 'physiotherapist'
+  | 'dentist'
+  | 'clinical_officer'
+  | 'specialist'
+  | 'consultant'
+  | 'intern'
+  | 'other';
+
 export interface Provider {
   id: string;
   userId?: string;
-  firstName: string;
-  lastName: string;
+  /** The provider's own name column — always present.
+   *  `user` is a nullable relation (userId is optional), so read fullName. */
   fullName: string;
-  providerType: string;
+  title?: string;
+  user?: { id: string; fullName?: string; email?: string; phone?: string } | null;
+  providerType: ProviderType;
   specialty?: string;
+  subSpecialty?: string;
   licenseNumber?: string;
   licenseExpiry?: string;
-  npi?: string;
+  qualifications?: { degree: string; institution: string; year: number }[];
   phone?: string;
   email?: string;
-  status: 'active' | 'inactive' | 'suspended';
+  /** Mirrors backend ProviderStatus — was missing on_leave/terminated. */
+  status: 'active' | 'inactive' | 'on_leave' | 'suspended' | 'terminated';
+  registrationNumber?: string;
+  regulatoryBody?: string;
   facilityId?: string;
   departmentId?: string;
+  department?: { id: string; name: string };
   createdAt?: string;
 }
 
-export interface ProviderCredential {
-  id: string;
-  providerId: string;
-  credentialType: string;
-  credentialNumber: string;
-  issuingAuthority: string;
-  issueDate: string;
-  expiryDate: string;
-  status: 'active' | 'expired' | 'pending_renewal';
-  verificationStatus?: 'verified' | 'unverified' | 'pending';
-}
-
 export const providersService = {
-  list: async (params?: Record<string, any>): Promise<Provider[]> => {
+  /** Params must match backend ProviderSearchDto exactly — the API runs
+   *  forbidNonWhitelisted, so an unknown key (e.g. `type`) 400s the request. */
+  list: async (params?: {
+    search?: string;
+    facilityId?: string;
+    departmentId?: string;
+    providerType?: ProviderType;
+    specialty?: string;
+    status?: Provider['status'];
+    canPrescribe?: boolean;
+  }): Promise<Provider[]> => {
     const response = await api.get('/providers', { params });
-    return response.data?.data || response.data || [];
+    return Array.isArray(response.data) ? response.data : response.data?.data || [];
   },
   getById: async (id: string): Promise<Provider> => {
     const response = await api.get(`/providers/${id}`);
@@ -59,8 +82,13 @@ export const providersService = {
     const response = await api.get('/providers/specialties');
     return response.data;
   },
-  getLicenseExpiry: async (): Promise<ProviderCredential[]> => {
-    const response = await api.get('/providers/license-expiry');
-    return response.data?.data || response.data || [];
+  /** Active providers whose licence expires within `daysAhead`.
+   *  Returns Provider[] — there is no provider_credentials table; licence data
+   *  lives on the provider itself. */
+  getLicenseExpiry: async (daysAhead = 30, includeExpired = true): Promise<Provider[]> => {
+    const response = await api.get('/providers/license-expiry', {
+      params: { daysAhead, includeExpired },
+    });
+    return Array.isArray(response.data) ? response.data : [];
   },
 };

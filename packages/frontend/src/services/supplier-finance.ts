@@ -65,26 +65,35 @@ export interface CreatePaymentVoucherDto {
   }[];
 }
 
+/** Mirrors backend SupplierCreditNote entity. Amount columns are `decimal`, so
+ *  TypeORM returns them as STRINGS — coerce with Number() before arithmetic. */
 export interface CreditNote {
   id: string;
   noteNumber: string;
   noteType: 'credit_note' | 'debit_note';
   supplierId: string;
+  /** Joined by listCreditNotes. */
   supplier?: { id: string; name: string };
   facilityId: string;
   noteDate: string;
   supplierInvoiceNumber?: string;
+  grnId?: string;
   reason: string;
   reasonDetails?: string;
-  subtotalAmount: number;
-  taxAmount: number;
-  totalAmount: number;
-  appliedAmount: number;
-  balanceAmount: number;
+  subtotalAmount: number | string;
+  taxAmount: number | string;
+  totalAmount: number | string;
+  appliedAmount: number | string;
+  balanceAmount: number | string;
   status: 'draft' | 'pending_approval' | 'approved' | 'applied' | 'cancelled';
-  createdBy?: { id: string; fullName: string };
-  approvedBy?: { id: string; fullName: string };
+  /** UUID columns, NOT relations. The createdByUser/approvedByUser relations
+   *  exist on the entity but listCreditNotes does not join them. */
+  createdBy: string;
+  approvedBy?: string;
+  createdByUser?: { id: string; fullName: string };
+  approvedByUser?: { id: string; fullName: string };
   approvedAt?: string;
+  notes?: string;
   items: any[];
   createdAt: string;
 }
@@ -145,9 +154,19 @@ export const supplierFinanceService = {
     },
   },
   creditNotes: {
-    list: async (params?: Record<string, any>): Promise<CreditNote[]> => {
+    // facilityId is REQUIRED — listCreditNotes filters on it unconditionally.
+    list: async (params: {
+      facilityId: string;
+      noteType?: CreditNote['noteType'];
+      status?: CreditNote['status'];
+      supplierId?: string;
+      startDate?: string;
+      endDate?: string;
+      page?: number;
+      limit?: number;
+    }): Promise<CreditNote[]> => {
       const response = await api.get('/supplier-finance/credit-notes', { params });
-      return response.data?.data || response.data || [];
+      return Array.isArray(response.data) ? response.data : response.data?.data || [];
     },
     getById: async (id: string): Promise<CreditNote> => {
       const response = await api.get(`/supplier-finance/credit-notes/${id}`);
@@ -160,8 +179,9 @@ export const supplierFinanceService = {
     approve: async (id: string): Promise<void> => {
       await api.post(`/supplier-finance/credit-notes/${id}/approve`);
     },
-    apply: async (id: string): Promise<void> => {
-      await api.post(`/supplier-finance/credit-notes/${id}/apply`);
+    // ApplyCreditNoteDto requires both fields — posting an empty body 400s.
+    apply: async (id: string, paymentVoucherId: string, amount: number): Promise<void> => {
+      await api.post(`/supplier-finance/credit-notes/${id}/apply`, { paymentVoucherId, amount });
     },
     cancel: async (id: string): Promise<void> => {
       await api.post(`/supplier-finance/credit-notes/${id}/cancel`);
