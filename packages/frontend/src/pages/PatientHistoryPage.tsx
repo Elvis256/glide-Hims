@@ -292,12 +292,12 @@ export default function PatientHistoryPage() {
       return {
         id: enc.id,
         encounterId: enc.id,
-        date: enc.visitDate || enc.createdAt,
+        date: enc.startTime || enc.createdAt,
         visitNumber: enc.visitNumber || '-',
         type: enc.type || 'opd',
-        department: enc.department || 'General',
-        doctor: enc.doctor?.fullName || 'Not Assigned',
-        doctorId: enc.doctorId,
+        department: enc.department?.name || 'General',
+        doctor: enc.attendingProvider?.fullName || 'Not Assigned',
+        doctorId: enc.attendingProviderId,
         chiefComplaint: enc.chiefComplaint || '-',
         diagnoses: [], // Would need diagnoses service
         prescriptionsCount: visitPrescriptions.length,

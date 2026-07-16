@@ -18,7 +18,7 @@ import {
 interface Registration {
   id: string;
   ancNumber: string;
-  patient: { id: string; firstName: string; lastName: string; mrn: string };
+  patient: { id: string; fullName: string; mrn: string };
   gravida: number;
   para: number;
   lmpDate: string;
@@ -204,7 +204,7 @@ export default function MaternityPage() {
                   >
                     <div>
                       <div className="font-medium">
-                        {l.registration?.patient?.firstName} {l.registration?.patient?.lastName}
+                        {l.registration?.patient?.fullName}
                       </div>
                       <div className="text-sm text-gray-500">
                         ANC: {l.registration?.ancNumber} • Admitted: {formatDate(l.admissionTime)}
@@ -264,7 +264,7 @@ export default function MaternityPage() {
                     </div>
                     <div>
                       <div className="font-medium">
-                        {r.patient?.firstName} {r.patient?.lastName}
+                        {r.patient?.fullName}
                       </div>
                       <div className="text-sm text-gray-500">
                         ANC: {r.ancNumber} • G{r.gravida}P{r.para}
@@ -323,7 +323,7 @@ export default function MaternityPage() {
                 >
                   <div>
                     <div className="font-medium">
-                      {l.registration?.patient?.firstName} {l.registration?.patient?.lastName}
+                      {l.registration?.patient?.fullName}
                       {l.registration?.patient?.fullName}
                     </div>
                     <div className="text-sm text-gray-500">
@@ -383,7 +383,7 @@ export default function MaternityPage() {
                 </div>
                 <div>
                   <h3 className="text-xl font-semibold">
-                    {selectedRegistration.patient?.firstName} {selectedRegistration.patient?.lastName}
+                    {selectedRegistration.patient?.fullName}
                   </h3>
                   <p className="text-gray-500">MRN: {selectedRegistration.patient?.mrn}</p>
                 </div>

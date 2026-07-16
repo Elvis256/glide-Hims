@@ -49,7 +49,7 @@ function mapEncounterStatus(status: Encounter['status']): AppointmentStatus {
 // Transform encounters to appointments
 function transformEncounters(encounters: Encounter[]): Appointment[] {
   return encounters.map((encounter) => {
-    const visitTime = new Date(encounter.startTime || encounter.visitDate || encounter.createdAt);
+    const visitTime = new Date(encounter.startTime || encounter.createdAt);
     const time = visitTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
     
     return {
@@ -61,7 +61,7 @@ function transformEncounters(encounters: Encounter[]): Appointment[] {
       duration: 30, // Default duration
       type: encounter.type === 'emergency' ? 'walk-in' : 'scheduled',
       status: mapEncounterStatus(encounter.status),
-      reason: encounter.chiefComplaint || encounter.department || 'Consultation',
+      reason: encounter.chiefComplaint || encounter.department?.name || 'Consultation',
     };
   });
 }

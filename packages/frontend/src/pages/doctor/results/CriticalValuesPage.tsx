@@ -43,10 +43,10 @@ interface CriticalValue {
 }
 
 // Helper to get name from verifiedBy which could be string or object
-const getVerifiedByName = (verifiedBy?: string | { firstName: string; lastName: string }): string => {
+const getVerifiedByName = (verifiedBy?: string | { fullName: string }): string => {
   if (!verifiedBy) return 'Lab';
   if (typeof verifiedBy === 'string') return verifiedBy;
-  return `${verifiedBy.firstName} ${verifiedBy.lastName}`;
+  return verifiedBy.fullName;
 };
 
 // Transform LabResult (from /lab/results/critical) to CriticalValue interface

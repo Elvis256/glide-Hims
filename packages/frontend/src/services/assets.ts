@@ -173,7 +173,8 @@ export interface AssetAllocation {
   facilityId: string;
   departmentId?: string;
   custodianId: string;
-  custodian?: { id: string; firstName?: string; lastName?: string };
+  // custodian is a User relation — User has only fullName.
+  custodian?: { id: string; firstName?: string; lastName?: string; fullName?: string };
   roomId?: string;
   allocationDate: string;
   expectedReturnDate?: string;

@@ -15,6 +15,10 @@ export interface InventoryItem {
   location?: string;
   unitCost?: number;
   sellingPrice?: number;
+  // items.retail_price / items.wholesale_price — nullable columns, so null
+  // means "not priced", which is distinct from a price of 0.
+  retailPrice?: number | null;
+  wholesalePrice?: number | null;
   lastUpdated: string;
   isLowStock?: boolean;
   batchNumber?: string | null;

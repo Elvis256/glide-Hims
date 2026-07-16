@@ -42,9 +42,8 @@ interface PatientTab {
 }
 interface PatientLite {
   id: string;
-  firstName: string;
-  lastName: string;
-  patientNumber: string;
+  fullName: string;
+  mrn: string;
 }
 
 const statusBadge = (s: string) => {
@@ -154,9 +153,9 @@ export default function PatientTabPage() {
                 className="w-full px-4 py-3 text-left hover:bg-gray-50 flex justify-between"
               >
                 <span className="font-medium">
-                  {p.firstName} {p.lastName}
+                  {p.fullName}
                 </span>
-                <span className="text-sm text-gray-500">{p.patientNumber}</span>
+                <span className="text-sm text-gray-500">{p.mrn}</span>
               </button>
             ))}
           </div>
@@ -196,9 +195,9 @@ export default function PatientTabPage() {
             {patient && (
               <p className="text-gray-700 mt-1">
                 <span className="font-medium">
-                  {patient.firstName} {patient.lastName}
+                  {patient.fullName}
                 </span>{' '}
-                <span className="text-gray-500">({patient.patientNumber})</span>
+                <span className="text-gray-500">({patient.mrn})</span>
               </p>
             )}
             {encounterIdQ && (

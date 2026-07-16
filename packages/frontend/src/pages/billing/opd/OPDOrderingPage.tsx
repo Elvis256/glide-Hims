@@ -69,10 +69,10 @@ export default function OPDOrderingPage() {
       if (!searchTerm || searchTerm.length < 2) return [];
       const response = await api.get(`/patients?search=${encodeURIComponent(searchTerm)}&limit=10`);
       const data = response.data;
-      return (data.data || data || []).map((p: { id: string; mrn: string; fullName: string; firstName?: string; lastName?: string }) => ({
+      return (data.data || data || []).map((p: { id: string; mrn: string; fullName: string }) => ({
         id: p.id,
         mrn: p.mrn,
-        fullName: p.fullName || `${p.firstName || ''} ${p.lastName || ''}`.trim()
+        fullName: p.fullName
       }));
     },
     enabled: searchTerm.length >= 2,

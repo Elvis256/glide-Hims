@@ -63,7 +63,7 @@ export default function RefundsPage() {
     id: inv.id,
     originalReceipt: inv.receiptNumber || inv.id,
     billNumber: inv.billNumber || inv.id,
-    patientName: inv.patient ? `${inv.patient.firstName} ${inv.patient.lastName}` : 'N/A',
+    patientName: inv.patient?.fullName || 'N/A',
     patientMrn: inv.patient?.mrn || '',
     originalAmount: inv.totalAmount || 0,
     refundAmount: inv.paidAmount || 0,
@@ -98,7 +98,7 @@ export default function RefundsPage() {
   const searchedInvoices = (allInvoices?.data ?? []).filter((inv: any) => {
     const receipt = inv.receiptNumber || inv.billNumber || inv.id;
     return receipt.toLowerCase().includes(receiptSearch.toLowerCase()) ||
-      `${inv.patient?.firstName} ${inv.patient?.lastName}`.toLowerCase().includes(receiptSearch.toLowerCase());
+      (inv.patient?.fullName || '').toLowerCase().includes(receiptSearch.toLowerCase());
   });
 
   const handleSubmitRefund = () => { refundMutation.mutate(); };
@@ -234,7 +234,7 @@ export default function RefundsPage() {
                         className={`w-full text-left text-sm p-2 rounded border ${selectedInvoiceId === inv.id ? 'border-blue-500 bg-blue-50' : 'border-transparent hover:bg-gray-100'}`}
                       >
                         <div className="font-medium">{inv.receiptNumber || inv.billNumber || inv.id}</div>
-                        <div className="text-gray-500">{inv.patient ? `${inv.patient.firstName} ${inv.patient.lastName}` : ''} — UGX {(inv.totalAmount || 0).toLocaleString()}</div>
+                        <div className="text-gray-500">{inv.patient?.fullName || ''} — UGX {(inv.totalAmount || 0).toLocaleString()}</div>
                       </button>
                     ))}
                   </div>

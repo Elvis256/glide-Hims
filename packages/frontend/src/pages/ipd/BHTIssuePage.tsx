@@ -28,8 +28,7 @@ interface Admission {
   admissionType?: string;
   patient: {
     id: string;
-    firstName: string;
-    lastName: string;
+    fullName: string;
     dateOfBirth?: string;
     gender?: string;
     phone?: string;
@@ -45,8 +44,7 @@ interface Admission {
     };
   };
   attendingDoctor?: {
-    firstName: string;
-    lastName: string;
+    fullName: string;
   };
 }
 
@@ -67,7 +65,7 @@ export default function BHTIssuePage() {
   const filteredAdmissions = useMemo(() => {
     return admissions.filter(
       (adm) =>
-        `${adm.patient.firstName} ${adm.patient.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        `${adm.patient.fullName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
         adm.admissionNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (adm.patient.nationalId && adm.patient.nationalId.includes(searchTerm))
     );
@@ -151,7 +149,7 @@ export default function BHTIssuePage() {
                 >
                   <div className="flex items-start justify-between mb-2">
                     <div>
-                      <p className="font-semibold text-gray-900">{admission.patient.firstName} {admission.patient.lastName}</p>
+                      <p className="font-semibold text-gray-900">{admission.patient.fullName}</p>
                       <p className="text-sm text-indigo-600">#{admission.admissionNumber}</p>
                     </div>
                     <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-medium flex items-center gap-1 capitalize">
@@ -228,7 +226,7 @@ export default function BHTIssuePage() {
                         <div className="grid grid-cols-2 gap-4">
                           <div>
                             <p className="text-sm text-gray-500">Full Name</p>
-                            <p className="font-medium">{selectedAdmission.patient.firstName} {selectedAdmission.patient.lastName}</p>
+                            <p className="font-medium">{selectedAdmission.patient.fullName}</p>
                           </div>
                           <div>
                             <p className="text-sm text-gray-500">Admission Number</p>
@@ -292,7 +290,7 @@ export default function BHTIssuePage() {
                           <p className="font-medium flex items-center gap-2">
                             <Stethoscope className="w-4 h-4 text-gray-500" />
                             {selectedAdmission.attendingDoctor 
-                              ? `Dr. ${selectedAdmission.attendingDoctor.firstName} ${selectedAdmission.attendingDoctor.lastName}`
+                              ? `Dr. ${selectedAdmission.attendingDoctor.fullName}`
                               : 'Not assigned'}
                           </p>
                         </div>
@@ -345,7 +343,7 @@ export default function BHTIssuePage() {
                     <div className="border border-gray-400 p-4 mb-4">
                       <h3 className="font-bold border-b border-gray-400 pb-2 mb-3">PATIENT DETAILS</h3>
                       <div className="grid grid-cols-2 gap-4 text-sm">
-                        <div><span className="font-bold">Name:</span> {selectedAdmission.patient.firstName} {selectedAdmission.patient.lastName}</div>
+                        <div><span className="font-bold">Name:</span> {selectedAdmission.patient.fullName}</div>
                         <div><span className="font-bold">ID No:</span> {selectedAdmission.patient.nationalId || 'N/A'}</div>
                         <div><span className="font-bold">Age:</span> {getAge(selectedAdmission.patient.dateOfBirth)} years</div>
                         <div><span className="font-bold">Gender:</span> {selectedAdmission.patient.gender || 'N/A'}</div>
@@ -365,7 +363,7 @@ export default function BHTIssuePage() {
                         <div className="col-span-2">
                           <span className="font-bold">Attending Doctor:</span>{' '}
                           {selectedAdmission.attendingDoctor 
-                            ? `Dr. ${selectedAdmission.attendingDoctor.firstName} ${selectedAdmission.attendingDoctor.lastName}`
+                            ? `Dr. ${selectedAdmission.attendingDoctor.fullName}`
                             : 'Not assigned'}
                         </div>
                         <div className="col-span-2"><span className="font-bold">Diagnosis:</span> {selectedAdmission.primaryDiagnosis || 'To be determined'}</div>

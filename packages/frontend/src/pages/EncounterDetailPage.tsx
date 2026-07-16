@@ -1532,7 +1532,7 @@ function LabResultsTab({ encounterId }: LabResultsTabProps) {
                         <span>
                           Validated by: {typeof sampleResults[0].validatedBy === 'string' 
                             ? sampleResults[0].validatedBy 
-                            : `${sampleResults[0].validatedBy.firstName} ${sampleResults[0].validatedBy.lastName}`}
+                            : sampleResults[0].validatedBy.fullName}
                         </span>
                       </div>
                     )}

@@ -37,8 +37,7 @@ interface Admission {
   primaryDiagnosis?: string;
   patient: {
     id: string;
-    firstName: string;
-    lastName: string;
+    fullName: string;
     dateOfBirth?: string;
     gender?: string;
   };
@@ -51,8 +50,7 @@ interface Admission {
     };
   };
   attendingDoctor?: {
-    firstName: string;
-    lastName: string;
+    fullName: string;
   };
 }
 
@@ -196,7 +194,7 @@ export default function InpatientBillingPage() {
   const filteredAdmissions = useMemo(() => {
     return admissions.filter(
       (a) =>
-        `${a.patient.firstName} ${a.patient.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        `${a.patient.fullName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
         a.admissionNumber.toLowerCase().includes(searchTerm.toLowerCase())
     );
   }, [searchTerm, admissions]);
@@ -298,7 +296,7 @@ export default function InpatientBillingPage() {
                   >
                     <div className="flex items-start justify-between mb-2">
                       <div>
-                        <p className="font-semibold text-gray-900">{admission.patient.firstName} {admission.patient.lastName}</p>
+                        <p className="font-semibold text-gray-900">{admission.patient.fullName}</p>
                         <p className="text-sm text-gray-500">{admission.bed?.bedNumber || 'No bed'} • {admission.bed?.ward?.name || 'No ward'}</p>
                       </div>
                     </div>
@@ -327,7 +325,7 @@ export default function InpatientBillingPage() {
                     <User className="w-5 h-5 text-gray-600" />
                   </div>
                   <div>
-                    <p className="font-semibold text-gray-900">{selectedAdmission.patient.firstName} {selectedAdmission.patient.lastName}</p>
+                    <p className="font-semibold text-gray-900">{selectedAdmission.patient.fullName}</p>
                     <p className="text-sm text-gray-500">{getAge(selectedAdmission.patient.dateOfBirth)}y, {selectedAdmission.patient.gender || 'N/A'}</p>
                   </div>
                 </div>
@@ -358,7 +356,7 @@ export default function InpatientBillingPage() {
                     <span className="text-gray-500">Attending Doctor:</span>
                     <span className="font-medium">
                       {selectedAdmission.attendingDoctor 
-                        ? `Dr. ${selectedAdmission.attendingDoctor.firstName} ${selectedAdmission.attendingDoctor.lastName}`
+                        ? `Dr. ${selectedAdmission.attendingDoctor.fullName}`
                         : 'Not assigned'}
                     </span>
                   </div>

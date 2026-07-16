@@ -221,7 +221,7 @@ export default function EmergencyQueuePage() {
                 sortedCases.map((c) => {
                 const config = triageLevelConfig[c.triageLevel] || triageLevelConfig[4];
                 const patient = c.encounter?.patient;
-                const patientName = patient ? `${patient.firstName} ${patient.lastName}` : 'Unknown';
+                const patientName = patient?.fullName || 'Unknown';
                 const isWaiting = c.status === TriageStatus.TRIAGED;
                 const isInTreatment = c.status === TriageStatus.IN_TREATMENT;
                 
@@ -261,7 +261,7 @@ export default function EmergencyQueuePage() {
                         <div className="flex items-center gap-1">
                           <Stethoscope className="w-4 h-4 text-green-500" />
                           <span className="text-sm text-gray-700">
-                            {c.attendingDoctor.firstName} {c.attendingDoctor.lastName}
+                            {c.attendingDoctor.fullName}
                           </span>
                         </div>
                       ) : (

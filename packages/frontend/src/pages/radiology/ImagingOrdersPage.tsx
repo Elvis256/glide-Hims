@@ -48,9 +48,7 @@ function mapApiStatus(status: string): DisplayStatus {
 }
 
 function getPatientDisplayName(order: ImagingOrder): string {
-  if (order.patient?.fullName) return order.patient.fullName;
-  if (order.patient?.firstName) return `${order.patient.firstName} ${order.patient.lastName || ''}`.trim();
-  return 'Unknown Patient';
+  return order.patient?.fullName || 'Unknown Patient';
 }
 
 function getPatientMrn(order: ImagingOrder): string {

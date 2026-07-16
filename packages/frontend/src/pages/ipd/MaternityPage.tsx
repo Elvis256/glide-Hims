@@ -37,8 +37,7 @@ interface LabourRecord {
     para: number;
     patient: {
       id: string;
-      firstName: string;
-      lastName: string;
+      fullName: string;
       dateOfBirth?: string;
     };
   };
@@ -61,8 +60,7 @@ interface Admission {
   primaryDiagnosis?: string;
   patient: {
     id: string;
-    firstName: string;
-    lastName: string;
+    fullName: string;
     dateOfBirth?: string;
     gender?: string;
   };
@@ -75,8 +73,7 @@ interface Admission {
     };
   };
   attendingDoctor?: {
-    firstName: string;
-    lastName: string;
+    fullName: string;
   };
 }
 
@@ -129,7 +126,7 @@ export default function MaternityPage() {
 
   const filteredLabours = useMemo(() => {
     return activeLabours.filter((l) =>
-      `${l.registration.patient.firstName} ${l.registration.patient.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      `${l.registration.patient.fullName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
       l.labourNumber.toLowerCase().includes(searchTerm.toLowerCase())
     );
   }, [searchTerm, activeLabours]);
@@ -300,7 +297,7 @@ export default function MaternityPage() {
                       <div className="flex items-start justify-between mb-2">
                         <div>
                           <p className="font-semibold text-gray-900">
-                            {labour.registration.patient.firstName} {labour.registration.patient.lastName}
+                            {labour.registration.patient.fullName}
                           </p>
                           <p className="text-sm text-gray-500">
                             {getAge(labour.registration.patient.dateOfBirth)}y • G{labour.registration.gravida}P{labour.registration.para}
@@ -331,7 +328,7 @@ export default function MaternityPage() {
                     <div>
                       <div className="flex items-center gap-2 mb-1">
                         <h2 className="text-lg font-semibold text-gray-900">
-                          {selectedLabour.registration.patient.firstName} {selectedLabour.registration.patient.lastName}
+                          {selectedLabour.registration.patient.fullName}
                         </h2>
                         <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700">
                           {getStageFromDilation(selectedLabour.cervicalDilation)}

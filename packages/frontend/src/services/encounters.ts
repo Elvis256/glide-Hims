@@ -18,16 +18,11 @@ export interface Encounter {
   };
   type: 'opd' | 'ipd' | 'emergency' | 'day-case';
   status: 'registered' | 'triage' | 'waiting' | 'in_consultation' | 'pending_lab' | 'pending_pharmacy' | 'pending_payment' | 'admitted' | 'discharged' | 'completed' | 'cancelled';
-  department?: string;
-  doctorId?: string;
-  doctor?: {
-    id: string;
-    fullName: string;
-    specialization?: string;
-  };
+  /** Joined relation (`leftJoinAndSelect('encounter.department')`), not a name
+   *  string — null when the encounter has no department. */
+  department?: { id: string; name: string } | null;
   /** The encounter's provider (encounter.entity.ts `attending_provider_id`).
-   *  Joined by GET /encounters/:id and the list query. The `doctor`/`doctorId`
-   *  fields above have no counterpart on the encounters entity. */
+   *  Joined by GET /encounters/:id and the list query. */
   attendingProviderId?: string;
   attendingProvider?: {
     id: string;
@@ -37,7 +32,6 @@ export interface Encounter {
   notes?: string;
   payerType?: PayerType;
   insurancePolicyId?: string;
-  visitDate?: string;
   /** Non-nullable column with a CURRENT_TIMESTAMP default — always present. */
   startTime: string;
   metadata?: Record<string, any>;
@@ -51,8 +45,8 @@ export interface CreateEncounterDto {
   patientId: string;
   facilityId: string;
   type: 'opd' | 'ipd' | 'emergency' | 'day-case';
-  department?: string;
-  doctorId?: string;
+  departmentId?: string;
+  attendingProviderId?: string;
   chiefComplaint?: string;
   notes?: string;
   payerType?: PayerType;
@@ -61,12 +55,14 @@ export interface CreateEncounterDto {
 
 export interface UpdateEncounterDto extends Partial<CreateEncounterDto> {}
 
+/** Mirrors the backend EncounterQueryDto. The API runs with
+ *  `forbidNonWhitelisted`, so an unknown filter key 400s the whole request. */
 export interface EncounterQueryParams {
   patientId?: string;
   type?: string;
   status?: string;
-  department?: string;
-  doctorId?: string;
+  departmentId?: string;
+  attendingProviderId?: string;
   dateFrom?: string;
   dateTo?: string;
   page?: number;

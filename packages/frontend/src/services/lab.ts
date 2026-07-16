@@ -42,8 +42,6 @@ export interface LabSample {
     id: string;
     mrn: string;
     fullName?: string;
-    firstName?: string;
-    lastName?: string;
     gender?: string;
     dateOfBirth?: string;
     phone?: string;
@@ -83,12 +81,12 @@ export interface LabResult {
   flag?: 'normal' | 'low' | 'high' | 'critical_low' | 'critical_high' | 'abnormal';
   status: 'entered' | 'validated' | 'released' | 'amended';
   enteredById?: string;
-  enteredBy?: { firstName: string; lastName: string };
+  enteredBy?: { fullName: string };
   validatedById?: string;
-  validatedBy?: string | { firstName: string; lastName: string };
+  validatedBy?: string | { fullName: string };
   validatedAt?: string;
   // Legacy aliases for verified (same as validated)
-  verifiedBy?: string | { firstName: string; lastName: string };
+  verifiedBy?: string | { fullName: string };
   verifiedAt?: string;
   releasedById?: string;
   releasedAt?: string;

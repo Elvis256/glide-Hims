@@ -227,7 +227,7 @@ export default function EmergencyPage() {
   const filteredCases = cases.filter((c) => {
     if (!searchTerm) return true;
     const search = searchTerm.toLowerCase();
-    const patientName = `${c.encounter?.patient?.firstName || ''} ${c.encounter?.patient?.lastName || ''}`.toLowerCase();
+    const patientName = (c.encounter?.patient?.fullName || '').toLowerCase();
     return (
       c.caseNumber.toLowerCase().includes(search) ||
       c.encounter?.patient?.mrn?.toLowerCase().includes(search) ||
@@ -401,7 +401,7 @@ export default function EmergencyPage() {
                       </div>
                       <div className="flex items-center gap-2 mt-1 text-sm text-gray-600">
                         <User className="w-4 h-4" />
-                        <span>{c.encounter?.patient ? `${c.encounter.patient.firstName} ${c.encounter.patient.lastName}` : 'Unknown'}</span>
+                        <span>{c.encounter?.patient?.fullName || 'Unknown'}</span>
                         <span className="text-gray-400">•</span>
                         <span>{c.encounter?.patient?.mrn || 'N/A'}</span>
                       </div>
@@ -445,7 +445,7 @@ export default function EmergencyPage() {
                     <span className="text-lg font-bold">{selectedCase.triageLevel}</span>
                   </div>
                   <div>
-                    <p className="font-medium">{selectedCase.encounter?.patient ? `${selectedCase.encounter.patient.firstName} ${selectedCase.encounter.patient.lastName}` : 'Unknown Patient'}</p>
+                    <p className="font-medium">{selectedCase.encounter?.patient?.fullName || 'Unknown Patient'}</p>
                     <p className="text-sm text-gray-500">
                       {selectedCase.caseNumber} • {selectedCase.encounter?.patient?.mrn}
                     </p>
@@ -618,12 +618,12 @@ export default function EmergencyPage() {
                             onClick={() => setRegisterForm(prev => ({
                               ...prev,
                               patientId: p.id,
-                              patientName: `${p.firstName} ${p.lastName}`,
+                              patientName: p.fullName,
                               patientSearch: '',
                             }))}
                             className="w-full text-left px-4 py-2 hover:bg-gray-50"
                           >
-                            <span className="font-medium">{p.firstName} {p.lastName}</span>
+                            <span className="font-medium">{p.fullName}</span>
                             <span className="text-gray-500 text-sm ml-2">{p.mrn || 'No MRN'}</span>
                           </button>
                         ))}
@@ -702,7 +702,7 @@ export default function EmergencyPage() {
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h2 className="text-lg font-semibold">Triage Assessment</h2>
-                <p className="text-sm text-gray-500">{selectedCase.caseNumber} - {selectedCase.encounter?.patient ? `${selectedCase.encounter.patient.firstName} ${selectedCase.encounter.patient.lastName}` : 'Unknown'}</p>
+                <p className="text-sm text-gray-500">{selectedCase.caseNumber} - {selectedCase.encounter?.patient?.fullName || 'Unknown'}</p>
               </div>
               <button onClick={() => setShowTriageModal(false)} className="text-gray-400 hover:text-gray-600">
                 <X className="w-5 h-5" />

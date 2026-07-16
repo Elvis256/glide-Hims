@@ -73,7 +73,7 @@ interface PreAuthorization {
   requestedAmount?: number;
   approvedAmount?: number;
   serviceDescription: string;
-  patient: { id: string; firstName: string; lastName: string };
+  patient: { id: string; fullName: string };
   createdAt: string;
 }
 
@@ -644,7 +644,7 @@ export default function InsurancePage() {
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="text-sm text-gray-900">
-                    {preAuth.patient?.firstName} {preAuth.patient?.lastName}
+                    {preAuth.patient?.fullName}
                   </div>
                 </td>
                 <td className="px-6 py-4">

@@ -163,7 +163,7 @@ export default function ScheduleFollowUpPage() {
             date: dateStr,
             time: `${h}:${m}`,
             doctor: schedule.doctor
-              ? `${schedule.doctor.firstName} ${schedule.doctor.lastName}`
+              ? schedule.doctor.fullName
               : 'Unknown Doctor',
             doctorId: schedule.doctorId,
           });

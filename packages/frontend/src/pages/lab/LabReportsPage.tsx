@@ -162,9 +162,7 @@ export default function LabReportsPage() {
       for (const { sample, results } of sampleResults) {
         const pid = sample.patient?.id || sample.patientId;
         const mrn = sample.patient?.mrn || pid;
-        const name = sample.patient?.fullName
-          || [sample.patient?.firstName, sample.patient?.lastName].filter(Boolean).join(' ')
-          || 'Unknown';
+        const name = sample.patient?.fullName || 'Unknown';
         const dob = sample.patient?.dateOfBirth || '';
         const gender = sample.patient?.gender || '';
 

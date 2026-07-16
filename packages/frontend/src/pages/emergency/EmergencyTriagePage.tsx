@@ -223,7 +223,7 @@ export default function EmergencyTriagePage() {
                 <div>
                   <p className="font-medium">{c.caseNumber}</p>
                   <p className="text-sm text-gray-600">
-                    {c.encounter?.patient?.firstName} {c.encounter?.patient?.lastName}
+                    {c.encounter?.patient?.fullName || 'Unknown'}
                   </p>
                   <p className="text-sm text-gray-500">{c.chiefComplaint}</p>
                 </div>
@@ -267,7 +267,7 @@ export default function EmergencyTriagePage() {
             <h1 className="text-2xl font-bold text-gray-900">Emergency Triage</h1>
             <p className="text-sm text-gray-500">
               {selectedCaseData ? (
-                <>Case: {selectedCaseData.caseNumber} - {selectedCaseData.encounter?.patient?.firstName} {selectedCaseData.encounter?.patient?.lastName}</>
+                <>Case: {selectedCaseData.caseNumber} - {selectedCaseData.encounter?.patient?.fullName || 'Unknown'}</>
               ) : (
                 'Manchester Triage System Assessment'
               )}

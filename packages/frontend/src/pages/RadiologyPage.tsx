@@ -22,7 +22,7 @@ interface ImagingOrder {
   id: string;
   orderNumber: string;
   patientId: string;
-  patient?: { id: string; mrn: string; firstName: string; lastName: string };
+  patient?: { id: string; mrn: string; fullName: string };
   modalityId: string;
   modality?: { name: string; modalityType: string };
   studyType: string;
@@ -32,7 +32,7 @@ interface ImagingOrder {
   priority: string;
   status: string;
   orderedById: string;
-  orderedBy?: { firstName: string; lastName: string };
+  orderedBy?: { fullName: string };
   orderedAt: string;
   scheduledAt?: string;
   performedAt?: string;
@@ -135,7 +135,7 @@ export default function RadiologyPage() {
   const filteredOrders = orders.filter((order) => {
     if (!searchTerm && !modalityFilter) return true;
     const search = searchTerm.toLowerCase();
-    const patientName = `${order.patient?.firstName || ''} ${order.patient?.lastName || ''}`.toLowerCase();
+    const patientName = (order.patient?.fullName || '').toLowerCase();
     const matchesSearch =
       !searchTerm ||
       order.orderNumber.toLowerCase().includes(search) ||
@@ -318,7 +318,7 @@ export default function RadiologyPage() {
                         </div>
                         <div className="flex items-center gap-2 mt-1 text-sm text-gray-600">
                           <User className="w-4 h-4" />
-                          <span>{order.patient?.firstName} {order.patient?.lastName}</span>
+                          <span>{order.patient?.fullName}</span>
                           <span className="text-gray-400">•</span>
                           <span>{order.patient?.mrn}</span>
                         </div>
@@ -360,7 +360,7 @@ export default function RadiologyPage() {
                       <User className="w-5 h-5 text-purple-600" />
                     </div>
                     <div>
-                      <p className="font-medium">{selectedOrder.patient?.firstName} {selectedOrder.patient?.lastName}</p>
+                      <p className="font-medium">{selectedOrder.patient?.fullName}</p>
                       <p className="text-sm text-gray-500">
                         {selectedOrder.patient?.mrn} • {selectedOrder.orderNumber}
                       </p>
@@ -399,7 +399,7 @@ export default function RadiologyPage() {
                   <div className="flex justify-between">
                     <span className="text-gray-600">Ordered By</span>
                     <span className="text-gray-900">
-                      {selectedOrder.orderedBy?.firstName} {selectedOrder.orderedBy?.lastName}
+                      {selectedOrder.orderedBy?.fullName}
                     </span>
                   </div>
                   <div className="flex justify-between">
@@ -646,7 +646,7 @@ function RadiologyReportModal({
         <div className="flex items-center justify-between p-4 border-b sticky top-0 bg-white">
           <div>
             <h2 className="text-lg font-semibold">Radiology Report</h2>
-            <p className="text-sm text-gray-500">{order.orderNumber} - {order.patient?.firstName} {order.patient?.lastName}</p>
+            <p className="text-sm text-gray-500">{order.orderNumber} - {order.patient?.fullName}</p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
             <X className="w-5 h-5" />

@@ -26,7 +26,7 @@ interface Order {
   orderedById: string;
   notes?: string;
   createdAt: string;
-  patient?: { firstName: string; lastName: string; mrn: string };
+  patient?: { fullName: string; mrn: string };
   items?: OrderItem[];
 }
 
@@ -94,8 +94,7 @@ export default function OrdersPage() {
 
   const filteredOrders = orders?.filter((o) =>
     o.orderNumber.toLowerCase().includes(search.toLowerCase()) ||
-    o.patient?.firstName?.toLowerCase().includes(search.toLowerCase()) ||
-    o.patient?.lastName?.toLowerCase().includes(search.toLowerCase()) ||
+    o.patient?.fullName?.toLowerCase().includes(search.toLowerCase()) ||
     o.patient?.mrn?.toLowerCase().includes(search.toLowerCase())
   );
 
@@ -268,7 +267,7 @@ export default function OrdersPage() {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm text-gray-900">
-                      {order.patient?.firstName} {order.patient?.lastName}
+                      {order.patient?.fullName}
                     </div>
                     <div className="text-sm text-gray-500">{order.patient?.mrn}</div>
                   </td>
