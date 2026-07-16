@@ -244,12 +244,23 @@ export interface ReceiveBatchDto {
   storeId?: string;
 }
 
+/** Mirrors PharmacyService.getDailySummary (modules/pharmacy), which returns a
+ *  getRawOne() projection — every aggregate arrives as a STRING, so callers must
+ *  coerce with Number(). The old totalAmount/byPaymentMethod/bySaleType shape
+ *  existed on neither the query nor the entity. `totalSales` is COUNT(*), i.e.
+ *  the transaction count, NOT a money value. */
 export interface DailySalesSummary {
   date: string;
-  totalSales: number;
-  totalAmount: number;
-  byPaymentMethod: Record<string, number>;
-  bySaleType: Record<string, number>;
+  totalSales: string;
+  totalRevenue: string;
+  totalDiscounts: string;
+  cashTotal: string;
+  mobileTotal: string;
+  cardTotal: string;
+  insuranceTotal: string;
+  prescriptionRevenue: string;
+  otcRevenue: string;
+  wholesaleRevenue: string;
 }
 
 export interface ProfitAnalytics {

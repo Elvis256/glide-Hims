@@ -247,10 +247,10 @@ export default function MyPayslipsPage() {
                     <span className="font-medium">{formatCurrency(selectedPayslip.overtimePay)}</span>
                   </div>
                 )}
-                {Object.entries(selectedPayslip.allowances || {}).map(([name, amount]) => (
+                {(selectedPayslip.allowances || []).map(({ name, amount }) => (
                   <div key={name} className="flex justify-between">
                     <span className="text-gray-600 capitalize">{name.replace(/_/g, ' ')}</span>
-                    <span className="font-medium">{formatCurrency(amount as number)}</span>
+                    <span className="font-medium">{formatCurrency(amount)}</span>
                   </div>
                 ))}
                 <div className="flex justify-between font-medium border-t pt-2">
@@ -271,10 +271,10 @@ export default function MyPayslipsPage() {
                   <span>NSSF (Employee)</span>
                   <span>-{formatCurrency(selectedPayslip.nssfEmployee)}</span>
                 </div>
-                {Object.entries(selectedPayslip.otherDeductions || {}).map(([name, amount]) => (
+                {(selectedPayslip.otherDeductions || []).map(({ name, amount }) => (
                   <div key={name} className="flex justify-between text-red-600">
                     <span className="capitalize">{name.replace(/_/g, ' ')}</span>
-                    <span>-{formatCurrency(amount as number)}</span>
+                    <span>-{formatCurrency(amount)}</span>
                   </div>
                 ))}
                 <div className="flex justify-between font-medium text-red-600 border-t pt-2">

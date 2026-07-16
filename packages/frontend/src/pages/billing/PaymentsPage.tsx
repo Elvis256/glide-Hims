@@ -34,14 +34,40 @@ import { printService } from '../../lib/print';
 import { asList } from '../../utils/unwrapResponse';
 import { toCsv, downloadBlob } from '../reports/_reportUtils';
 
-import type { PaymentMethod } from '../../shared/payment-methods';
+import {
+  PAYMENT_METHODS,
+  PAYMENT_METHOD_LABELS,
+  PAYMENT_METHOD_ICONS,
+  type PaymentMethod,
+} from '../../shared/payment-methods';
 
-const methodConfig: Record<PaymentMethod, { label: string; icon: React.ElementType; color: string }> = {
-  cash: { label: 'Cash', icon: Banknote, color: 'bg-green-100 text-green-700' },
-  card: { label: 'Card', icon: CreditCard, color: 'bg-blue-100 text-blue-700' },
-  mobile_money: { label: 'Mobile Money', icon: Smartphone, color: 'bg-orange-100 text-orange-700' },
-  insurance: { label: 'Insurance', icon: Shield, color: 'bg-purple-100 text-purple-700' },
+/** Chip tint per method. Labels/icons come from the canonical shared module so
+ *  they cannot drift from the backend PaymentMethod enum. */
+const METHOD_CHIP_COLORS: Record<PaymentMethod, string> = {
+  cash: 'bg-green-100 text-green-700',
+  mobile_money: 'bg-orange-100 text-orange-700',
+  card: 'bg-blue-100 text-blue-700',
+  bank_transfer: 'bg-indigo-100 text-indigo-700',
+  cheque: 'bg-slate-100 text-slate-700',
+  insurance: 'bg-purple-100 text-purple-700',
+  membership: 'bg-fuchsia-100 text-fuchsia-700',
+  hospital_scheme: 'bg-teal-100 text-teal-700',
+  staff: 'bg-amber-100 text-amber-700',
+  credit: 'bg-rose-100 text-rose-700',
 };
+
+const methodConfig: Record<PaymentMethod, { label: string; icon: React.ElementType; color: string }> =
+  PAYMENT_METHODS.reduce(
+    (acc, m) => {
+      acc[m] = {
+        label: PAYMENT_METHOD_LABELS[m],
+        icon: PAYMENT_METHOD_ICONS[m],
+        color: METHOD_CHIP_COLORS[m],
+      };
+      return acc;
+    },
+    {} as Record<PaymentMethod, { label: string; icon: React.ElementType; color: string }>,
+  );
 
 export default function PaymentsPage() {
   const queryClient = useQueryClient();

@@ -1,5 +1,8 @@
 import api from './api';
 
+/** Mirrors backend SampleType (lab-test.entity.ts). */
+export type SampleType = 'blood' | 'serum' | 'plasma' | 'urine' | 'stool' | 'sputum' | 'csf' | 'swab' | 'tissue' | 'other';
+
 export interface LabTest {
   id: string;
   code: string;
@@ -49,7 +52,10 @@ export interface LabSample {
   orderId?: string;
   labTestId?: string;
   labTest?: LabTest;
-  status: 'collected' | 'received' | 'processing' | 'completed' | 'rejected';
+  sampleType: SampleType;
+  /** Backend SampleStatus (lab-sample.entity.ts). 'pending_collection' is the
+   *  column DEFAULT and was missing here, so uncollected samples were untypeable. */
+  status: 'pending_collection' | 'collected' | 'received' | 'processing' | 'completed' | 'rejected';
   priority?: 'routine' | 'urgent' | 'stat';
   collectionTime?: string;
   collectedById?: string;
@@ -169,7 +175,7 @@ export interface CollectSampleDto {
   facilityId: string;
   labTestId?: string;
   labTestCode?: string;
-  sampleType: 'blood' | 'serum' | 'plasma' | 'urine' | 'stool' | 'sputum' | 'csf' | 'swab' | 'tissue' | 'other';
+  sampleType: SampleType;
   priority?: 'routine' | 'urgent' | 'stat';
   collectionNotes?: string;
 }

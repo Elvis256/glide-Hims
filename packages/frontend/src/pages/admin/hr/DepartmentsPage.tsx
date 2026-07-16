@@ -524,7 +524,7 @@ export default function DepartmentsPage() {
             </div>
             <div className="flex justify-end gap-3 mt-6">
               <button 
-                onClick={() => { setShowAddModal(false); setError(''); setParentDeptId(null); setNewDept({ name: '', code: '', building: '', location: '' }); }} 
+                onClick={() => { setShowAddModal(false); setError(''); setParentDeptId(null); setNewDept({ name: '', code: '', building: '', location: '', parentId: '' }); }}
                 className="px-4 py-2 border rounded-lg hover:bg-gray-50"
               >
                 Cancel

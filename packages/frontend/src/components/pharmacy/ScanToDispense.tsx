@@ -37,22 +37,25 @@ export default function ScanToDispense() {
       setLastScanned(code);
 
       try {
-        // Search by barcode first, then by item code
-        const response = await api.get<{ data?: DrugLookupResult[]; } & DrugLookupResult[]>(
-          '/stores/inventory/items',
+        // GET /inventory/items ('/stores/inventory/items' is not a route) always
+        // returns a {data,total,page,limit} envelope, never a bare array.
+        // NOTE: the backend search covers name/code/genericName only — not barcode.
+        const response = await api.get<{ data: DrugLookupResult[]; total: number }>(
+          '/inventory/items',
           { params: { search: code, limit: 5 } },
         );
 
-        const results: DrugLookupResult[] = Array.isArray(response.data)
-          ? response.data
-          : response.data?.data ?? [];
+        const results: DrugLookupResult[] = response.data?.data ?? [];
 
-        // Find exact match by barcode or code
-        const match =
-          results.find(
-            (item) =>
-              item.barcode === code || item.code === code || item.code?.toLowerCase() === code.toLowerCase(),
-          ) || results[0];
+        // Exact match only. This is a scanner feeding a dispensing queue, so a
+        // near-miss must fail closed — the old `|| results[0]` silently queued
+        // an arbitrary drug from a partial-name match.
+        const match = results.find(
+          (item) =>
+            item.barcode === code ||
+            item.code === code ||
+            item.code?.toLowerCase() === code.toLowerCase(),
+        );
 
         if (!match) {
           setLookupError(`No item found for code "${code}"`);

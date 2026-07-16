@@ -31,12 +31,15 @@ export interface SyncConflict {
   createdAt: string;
 }
 
+/** Exactly what GET /sync/status returns (sync.service.ts getSyncStatus).
+ *  There is no pendingPullCount / deviceId / isOnline: the endpoint counts the
+ *  client's OUTBOUND sync_queue rows and its unresolved conflicts, nothing
+ *  more. `pendingCount` is queued-to-push; `failedCount` is push failures. */
 export interface SyncStatus {
-  lastSyncAt: string;
-  pendingChanges: number;
-  conflicts: number;
-  deviceId: string;
-  isOnline: boolean;
+  pendingCount: number;
+  conflictCount: number;
+  failedCount: number;
+  lastSyncAt: string | null;
 }
 
 export interface OfflineQueueItem {
@@ -77,8 +80,9 @@ export const syncService = {
   ): Promise<void> => {
     await api.put(`/sync/conflicts/${id}/resolve`, { resolution, resolvedPayload, notes });
   },
-  getStatus: async (): Promise<SyncStatus> => {
-    const response = await api.get('/sync/status');
+  // facilityId AND clientId are both REQUIRED query params.
+  getStatus: async (facilityId: string, clientId: string): Promise<SyncStatus> => {
+    const response = await api.get('/sync/status', { params: { facilityId, clientId } });
     return response.data;
   },
   retryFailed: async (): Promise<void> => {

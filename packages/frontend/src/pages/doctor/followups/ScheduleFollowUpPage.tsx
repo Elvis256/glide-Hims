@@ -122,7 +122,7 @@ export default function ScheduleFollowUpPage() {
     if (!providersData || !Array.isArray(providersData)) return emptyDoctors;
     return providersData.map((p) => ({
       id: p.id,
-      name: p.fullName || `${p.firstName} ${p.lastName}`,
+      name: p.fullName,
       specialty: p.specialty || p.providerType || '',
     }));
   }, [providersData]);

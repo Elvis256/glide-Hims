@@ -67,7 +67,9 @@ interface WaitingPatient {
   priority: 'emergency' | 'urgent' | 'high' | 'normal' | 'low';
   chiefComplaint: string;
   encounterId?: string;
-  status: 'waiting' | 'called' | 'in_service' | 'return_to_doctor';
+  /** GET /queue/doctor-queue returns waiting|called|in_service|pending_payment;
+   *  'return_to_doctor' is synthesised from encounters by this page. */
+  status: 'waiting' | 'called' | 'in_service' | 'pending_payment' | 'return_to_doctor';
   returnReason?: string;
   appointmentType?: 'walk-in' | 'scheduled' | 'emergency';
   patientInfo?: ExtendedPatientInfo;

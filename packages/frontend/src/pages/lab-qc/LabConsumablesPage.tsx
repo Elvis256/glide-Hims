@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
 import { labSuppliesService } from '../../services';
+import type { LabReagent, ReagentCategory } from '../../services/lab-supplies';
 import { useFacilityId } from '../../lib/facility';
 import { formatCurrency } from '../../lib/currency';
 import { toast } from 'sonner';
@@ -25,24 +26,28 @@ import {
 interface Consumable {
   id: string;
   name: string;
-  category: string;
+  category: ReagentCategory;
   catalogNumber: string;
   unit: string;
-  currentStock: number;
-  minStock: number;
-  maxStock: number;
-  reorderPoint: number;
+  stockQuantity: number;
+  reorderLevel: number;
+  maxStockLevel?: number;
   unitCost: number;
   supplier: string;
-  location: string;
-  expiryDate?: string;
-  lastOrdered?: string;
-  consumptionRate: number; // per day
-  daysUntilReorder: number;
 }
 
-const categories = ['All', 'Blood Collection', 'Pipettes', 'Reagents', 'Microscopy', 'Urinalysis', 'Spectrophotometry', 'Microbiology'];
-const stockStatuses = ['All', 'Low Stock', 'Critical', 'Expiring Soon', 'Normal'];
+/** Real ReagentCategory enum members — the previous list ('Blood Collection',
+ *  'Pipettes', 'Reagents'…) matched no enum value, so filtering returned an
+ *  empty table and the add form posted a value the enum column rejects. */
+const categories: Array<'All' | ReagentCategory> = [
+  'All', 'chemistry', 'hematology', 'microbiology', 'serology', 'urinalysis',
+  'coagulation', 'immunology', 'molecular', 'blood_bank', 'histopathology',
+  'cytology', 'other',
+];
+const categoryLabel = (c: 'All' | ReagentCategory) =>
+  c === 'All' ? 'All' : c.replace(/_/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase());
+
+const stockStatuses = ['All', 'Low Stock', 'Out of Stock', 'Normal'];
 
 export default function LabConsumablesPage() {
   const { hasPermission } = usePermissions();
@@ -57,13 +62,18 @@ export default function LabConsumablesPage() {
   const [showOrderModal, setShowOrderModal] = useState(false);
   const [orderItem, setOrderItem] = useState<Consumable | null>(null);
   const [orderQuantity, setOrderQuantity] = useState(1);
-  const [newItem, setNewItem] = useState({
+  const [newItem, setNewItem] = useState<{
+    name: string;
+    category: ReagentCategory;
+    unit: string;
+    reorderLevel: number;
+    storageConditions: string;
+  }>({
     name: '',
-    category: 'Reagents',
+    category: 'chemistry',
     unit: '',
     reorderLevel: 10,
     storageConditions: '',
-    expiryDate: '',
   });
   const [receiveForm, setReceiveForm] = useState({
     lotNumber: '',
@@ -79,22 +89,18 @@ export default function LabConsumablesPage() {
         const category = selectedCategory === 'All' ? undefined : selectedCategory;
         const apiReagents = await labSuppliesService.reagents.list(facilityId, category);
         if (apiReagents && apiReagents.length > 0) {
-          return apiReagents.map((r: any) => ({
+          return apiReagents.map((r: LabReagent): Consumable => ({
             id: r.id,
             name: r.name,
             category: r.category,
-            catalogNumber: r.code,
+            catalogNumber: r.catalogNumber || r.code,
             unit: r.unit,
-            currentStock: r.currentStock,
-            minStock: r.minStock,
-            maxStock: r.maxStock,
-            reorderPoint: r.reorderPoint,
-            unitCost: r.unitCost,
-            supplier: r.manufacturer || 'Unknown',
-            location: 'Shelf A-1',
-            expiryDate: r.expiryDate,
-            consumptionRate: 1,
-            daysUntilReorder: Math.floor((r.currentStock - r.reorderPoint) / 1),
+            stockQuantity: Number(r.stockQuantity ?? 0),
+            reorderLevel: Number(r.reorderLevel ?? 0),
+            maxStockLevel: r.maxStockLevel != null ? Number(r.maxStockLevel) : undefined,
+            // decimal column — arrives as a string
+            unitCost: Number(r.unitCost ?? 0),
+            supplier: r.manufacturer || '',
           }));
         }
       } catch (error) {
@@ -104,36 +110,43 @@ export default function LabConsumablesPage() {
     },
   });
 
+  // Keys must match CreateReagentDto exactly — the backend runs
+  // forbidNonWhitelisted, so an extra key 400s the whole request. The old body
+  // sent reorderPoint + expiryDate (neither is on the DTO; expiry is per-lot),
+  // so every save failed.
   const saveMutation = useMutation({
-    mutationFn: async (data: Partial<Consumable>) => {
+    mutationFn: async (data: typeof newItem) => {
       return labSuppliesService.reagents.create({
         facilityId,
         name: data.name,
         category: data.category,
         unit: data.unit,
-        reorderPoint: data.reorderPoint,
-        storageConditions: (data as any).storageConditions,
-        expiryDate: data.expiryDate,
+        reorderLevel: data.reorderLevel,
+        storageConditions: data.storageConditions || undefined,
       });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['lab-consumables'] });
       setShowModal(false);
       setEditingItem(null);
-      setNewItem({ name: '', category: 'Reagents', unit: '', reorderLevel: 10, storageConditions: '', expiryDate: '' });
+      setNewItem({ name: '', category: 'chemistry', unit: '', reorderLevel: 10, storageConditions: '' });
       toast.success('Item added successfully');
     },
     onError: () => toast.error('Failed to add item'),
   });
 
+  // Stock is received as a LOT (POST /reagents/:id/lots). reagents.receive()
+  // never existed; the old body also omitted the required facilityId and named
+  // the cost key 'cost' where ReceiveLotDto expects unitCost.
   const orderMutation = useMutation({
     mutationFn: async ({ itemId, form }: { itemId: string; form: typeof receiveForm }) => {
-      return labSuppliesService.reagents.receive(itemId, {
+      return labSuppliesService.reagentLots.receive(itemId, {
+        facilityId,
         lotNumber: form.lotNumber,
         quantity: form.quantity,
         expiryDate: form.expiryDate,
         receivedDate: form.receivedDate,
-        cost: form.cost,
+        unitCost: form.cost,
       });
     },
     onSuccess: () => {
@@ -151,11 +164,13 @@ export default function LabConsumablesPage() {
     return <AccessDenied />;
   }
 
+  // Expiry-based tiers used to live here, but expiry is a reagent_lots column
+  // and the reagent list endpoint does not join lots — the field was always
+  // undefined, so those badges never rendered. Stock tiers below use the only
+  // thresholds the entity actually carries.
   const getStockStatus = (item: Consumable) => {
-    if (item.currentStock <= item.minStock) return 'CRITICAL';
-    if (item.currentStock <= item.reorderPoint) return 'LOW';
-    if (item.expiryDate && new Date(item.expiryDate) < new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)) return 'EXPIRING_CRITICAL';
-    if (item.expiryDate && new Date(item.expiryDate) < new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)) return 'EXPIRING';
+    if (item.stockQuantity <= 0) return 'OUT_OF_STOCK';
+    if (item.stockQuantity <= item.reorderLevel) return 'LOW';
     return 'NORMAL';
   };
 
@@ -168,8 +183,7 @@ export default function LabConsumablesPage() {
     const matchesStatus =
       selectedStatus === 'All' ||
       (selectedStatus === 'Low Stock' && status === 'LOW') ||
-      (selectedStatus === 'Critical' && status === 'CRITICAL') ||
-      (selectedStatus === 'Expiring Soon' && (status === 'EXPIRING' || status === 'EXPIRING_CRITICAL')) ||
+      (selectedStatus === 'Out of Stock' && status === 'OUT_OF_STOCK') ||
       (selectedStatus === 'Normal' && status === 'NORMAL');
     return matchesSearch && matchesCategory && matchesStatus;
   });
@@ -177,28 +191,16 @@ export default function LabConsumablesPage() {
   const getStatusBadge = (item: Consumable) => {
     const status = getStockStatus(item);
     switch (status) {
-      case 'CRITICAL':
+      case 'OUT_OF_STOCK':
         return (
           <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-red-100 text-red-700 rounded-full">
-            <AlertTriangle className="w-3 h-3" /> Critical
+            <AlertTriangle className="w-3 h-3" /> Out of Stock
           </span>
         );
       case 'LOW':
         return (
           <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-yellow-100 text-yellow-700 rounded-full">
             <TrendingDown className="w-3 h-3" /> Low Stock
-          </span>
-        );
-      case 'EXPIRING':
-        return (
-          <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-orange-100 text-orange-700 rounded-full">
-            ⚠️ Expiring Soon
-          </span>
-        );
-      case 'EXPIRING_CRITICAL':
-        return (
-          <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-red-100 text-red-700 rounded-full">
-            🔴 Expires &lt;7 Days
           </span>
         );
       case 'NORMAL':
@@ -213,8 +215,7 @@ export default function LabConsumablesPage() {
   };
 
   const lowStockCount = consumables?.filter((c) => getStockStatus(c) === 'LOW').length || 0;
-  const criticalCount = consumables?.filter((c) => getStockStatus(c) === 'CRITICAL').length || 0;
-  const expiringCount = consumables?.filter((c) => getStockStatus(c) === 'EXPIRING' || getStockStatus(c) === 'EXPIRING_CRITICAL').length || 0;
+  const outOfStockCount = consumables?.filter((c) => getStockStatus(c) === 'OUT_OF_STOCK').length || 0;
 
   return (
     <div className="space-y-6">
@@ -234,7 +235,7 @@ export default function LabConsumablesPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-white p-4 rounded-xl border shadow-sm">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-blue-100 rounded-lg">
@@ -263,19 +264,8 @@ export default function LabConsumablesPage() {
               <AlertTriangle className="w-5 h-5 text-red-600" />
             </div>
             <div>
-              <p className="text-sm text-gray-600">Critical</p>
-              <p className="text-xl font-bold text-red-600">{criticalCount}</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white p-4 rounded-xl border shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-orange-100 rounded-lg">
-              <Calendar className="w-5 h-5 text-orange-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-600">Expiring Soon</p>
-              <p className="text-xl font-bold text-orange-600">{expiringCount}</p>
+              <p className="text-sm text-gray-600">Out of Stock</p>
+              <p className="text-xl font-bold text-red-600">{outOfStockCount}</p>
             </div>
           </div>
         </div>
@@ -314,7 +304,7 @@ export default function LabConsumablesPage() {
             >
               {categories.map((cat) => (
                 <option key={cat} value={cat}>
-                  {cat === 'All' ? 'All Categories' : cat}
+                  {cat === 'All' ? 'All Categories' : categoryLabel(cat)}
                 </option>
               ))}
             </select>
@@ -349,7 +339,7 @@ export default function LabConsumablesPage() {
                   <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Status</th>
                   <th className="px-4 py-3 text-right text-sm font-medium text-gray-600">Unit Cost</th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Supplier</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Reorder</th>
+                  <th className="px-4 py-3 text-right text-sm font-medium text-gray-600">Reorder Level</th>
                   <th className="px-4 py-3 text-right text-sm font-medium text-gray-600">Actions</th>
                 </tr>
               </thead>
@@ -364,27 +354,21 @@ export default function LabConsumablesPage() {
                     </td>
                     <td className="px-4 py-3">
                       <span className="px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded">
-                        {item.category}
+                        {categoryLabel(item.category)}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div>
-                        <p className="font-medium text-gray-900">{item.currentStock}</p>
-                        <p className="text-xs text-gray-500">
-                          Min: {item.minStock} / Max: {item.maxStock}
-                        </p>
+                        <p className="font-medium text-gray-900">{item.stockQuantity}</p>
+                        {item.maxStockLevel != null && (
+                          <p className="text-xs text-gray-500">Max: {item.maxStockLevel}</p>
+                        )}
                       </div>
                     </td>
                     <td className="px-4 py-3">{getStatusBadge(item)}</td>
                     <td className="px-4 py-3 text-right text-sm">{formatCurrency(item.unitCost)}</td>
                     <td className="px-4 py-3 text-sm text-gray-600">{item.supplier}</td>
-                    <td className="px-4 py-3">
-                      {item.daysUntilReorder <= 0 ? (
-                        <span className="text-sm text-red-600 font-medium">Overdue</span>
-                      ) : (
-                        <span className="text-sm text-gray-600">{item.daysUntilReorder} days</span>
-                      )}
-                    </td>
+                    <td className="px-4 py-3 text-right text-sm text-gray-600">{item.reorderLevel}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-2">
                         <button
@@ -392,7 +376,9 @@ export default function LabConsumablesPage() {
                             setOrderItem(item);
                             setReceiveForm({
                               lotNumber: '',
-                              quantity: Math.ceil((item.maxStock - item.currentStock) / 2) || 1,
+                              quantity: item.maxStockLevel != null
+                                ? Math.max(item.maxStockLevel - item.stockQuantity, 1)
+                                : 1,
                               expiryDate: '',
                               receivedDate: new Date().toISOString().split('T')[0],
                               cost: item.unitCost || 0,
@@ -454,11 +440,11 @@ export default function LabConsumablesPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Category *</label>
                 <select
                   value={newItem.category}
-                  onChange={(e) => setNewItem({ ...newItem, category: e.target.value })}
+                  onChange={(e) => setNewItem({ ...newItem, category: e.target.value as ReagentCategory })}
                   className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                 >
                   {categories.slice(1).map((cat) => (
-                    <option key={cat} value={cat}>{cat}</option>
+                    <option key={cat} value={cat}>{categoryLabel(cat)}</option>
                   ))}
                 </select>
               </div>
@@ -492,15 +478,6 @@ export default function LabConsumablesPage() {
                   placeholder="e.g., 2–8°C, room temperature"
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Expiry Date</label>
-                <input
-                  type="date"
-                  value={newItem.expiryDate}
-                  onChange={(e) => setNewItem({ ...newItem, expiryDate: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
             </div>
             <div className="p-6 border-t flex justify-end gap-3">
               <button
@@ -510,14 +487,7 @@ export default function LabConsumablesPage() {
                 Cancel
               </button>
               <button
-                onClick={() => saveMutation.mutate({
-                  name: newItem.name,
-                  category: newItem.category,
-                  unit: newItem.unit,
-                  reorderPoint: newItem.reorderLevel,
-                  expiryDate: newItem.expiryDate || undefined,
-                  ...({ storageConditions: newItem.storageConditions } as any),
-                })}
+                onClick={() => saveMutation.mutate(newItem)}
                 disabled={saveMutation.isPending || !newItem.name || !newItem.unit}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
               >

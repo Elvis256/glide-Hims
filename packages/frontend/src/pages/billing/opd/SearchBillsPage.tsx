@@ -15,10 +15,6 @@ import {
   CheckCircle,
   Clock,
   AlertCircle,
-  CreditCard,
-  Banknote,
-  Smartphone,
-  Shield,
   FileSpreadsheet,
   MoreVertical,
   Loader2,
@@ -36,7 +32,12 @@ import PrintFormatSelector from '../../../components/PrintFormatSelector';
 import { asList } from '../../../utils/unwrapResponse';
 
 type BillStatus = 'paid' | 'pending' | 'partial' | 'cancelled';
-import type { PaymentMethod } from '../../../shared/payment-methods';
+import {
+  PAYMENT_METHODS,
+  PAYMENT_METHOD_ICONS,
+  normalisePaymentMethod,
+  type PaymentMethod,
+} from '../../../shared/payment-methods';
 
 interface Bill {
   id: string;
@@ -64,13 +65,6 @@ const transformInvoiceToBill = (invoice: Invoice): Bill => {
     refunded: 'cancelled',
   };
   
-  const paymentTypeMap: Record<string, PaymentMethod> = {
-    cash: 'cash',
-    insurance: 'insurance',
-    corporate: 'card',
-    membership: 'mobile_money',
-  };
-  
   return {
     id: invoice.id,
     billNumber: invoice.invoiceNumber,
@@ -80,7 +74,9 @@ const transformInvoiceToBill = (invoice: Invoice): Bill => {
     amount: Number(invoice.totalAmount) || 0,
     paidAmount: Number(invoice.paidAmount) || 0,
     status: statusMap[invoice.status] || 'pending',
-    paymentMethod: paymentTypeMap[invoice.paymentType] || 'cash',
+    // invoices.payment_type is the payer type (cash|insurance|corporate|membership);
+    // normalisePaymentMethod maps 'corporate' onto the canonical 'hospital_scheme'.
+    paymentMethod: normalisePaymentMethod(invoice.paymentType) || 'cash',
     services: [],
     encounterId: invoice.encounterId,
   };
@@ -93,12 +89,29 @@ const statusConfig: Record<BillStatus, { color: string; icon: React.ReactNode; l
   cancelled: { color: 'bg-gray-100 text-gray-500', icon: <XCircle className="w-4 h-4" />, label: 'Cancelled' },
 };
 
-const paymentIcons: Record<PaymentMethod, React.ReactNode> = {
-  cash: <Banknote className="w-4 h-4 text-green-600" />,
-  card: <CreditCard className="w-4 h-4 text-blue-600" />,
-  mobile_money: <Smartphone className="w-4 h-4 text-yellow-600" />,
-  insurance: <Shield className="w-4 h-4 text-purple-600" />,
+const METHOD_ICON_COLORS: Record<PaymentMethod, string> = {
+  cash: 'text-green-600',
+  mobile_money: 'text-yellow-600',
+  card: 'text-blue-600',
+  bank_transfer: 'text-indigo-600',
+  cheque: 'text-slate-600',
+  insurance: 'text-purple-600',
+  membership: 'text-fuchsia-600',
+  hospital_scheme: 'text-teal-600',
+  staff: 'text-amber-600',
+  credit: 'text-rose-600',
 };
+
+/** Built from the canonical method list so a payment recorded with any backend
+ *  method (cheque, staff, credit, …) still renders an icon instead of nothing. */
+const paymentIcons: Record<PaymentMethod, React.ReactNode> = PAYMENT_METHODS.reduce(
+  (acc, m) => {
+    const Icon = PAYMENT_METHOD_ICONS[m];
+    acc[m] = <Icon className={`w-4 h-4 ${METHOD_ICON_COLORS[m]}`} />;
+    return acc;
+  },
+  {} as Record<PaymentMethod, React.ReactNode>,
+);
 
 export default function SearchBillsPage() {
   const queryClient = useQueryClient();

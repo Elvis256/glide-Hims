@@ -223,14 +223,22 @@ export default function OrderSetsPage() {
 
   const applyOrdersMutation = useMutation({
     mutationFn: async (orders: OrderItem[]) => {
+      // encounterId is a required UUID on CreateOrderDto; the patient is derived
+      // from it server-side. Keys must match the DTO exactly — the backend runs
+      // forbidNonWhitelisted, so patientId/type/tests (and `category` inside a
+      // test code) 400 the whole request.
+      if (!selectedEncounterId) {
+        throw new Error('No encounter selected - orders require an active visit');
+      }
+      const encounterId = selectedEncounterId;
       // Group by type and submit each as a separate order
       const results = await Promise.all(
         orders.map(order => ordersService.create({
-          patientId: selectedPatient!.id,
-          encounterId: selectedEncounterId || undefined,
-          type: order.type === 'medication' ? 'pharmacy' : order.type as 'lab' | 'procedure',
+          encounterId,
+          orderType: order.type === 'medication' ? 'pharmacy' : order.type,
           priority: 'routine',
-          tests: [{ code: order.id, name: order.name, category: order.details }],
+          testCodes: [{ code: order.id, name: order.name }],
+          clinicalNotes: order.details,
         }))
       );
       return results;
@@ -241,7 +249,7 @@ export default function OrderSetsPage() {
       setSelectedOrders([]);
       setSelectedSet(null);
     },
-    onError: () => toast.error('Failed to submit orders'),
+    onError: (err: Error) => toast.error(err?.message || 'Failed to submit orders'),
   });
 
   const filteredPatients: Patient[] = useMemo(() => {

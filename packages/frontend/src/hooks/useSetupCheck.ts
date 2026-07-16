@@ -28,9 +28,10 @@ export function useSetupCheck() {
           navigate('/setup', { replace: true });
         }
       } catch (error) {
-        // If API fails, assume setup is complete (for backwards compatibility)
+        // getStatus() resolves its own failures, so this is a last-resort guard:
+        // leave status unknown rather than claim a deployment mode we never read.
         console.warn('[Setup] Failed to check setup status:', error);
-        setSetupStatus({ isSetupComplete: true });
+        setSetupStatus(null);
       } finally {
         setIsChecking(false);
       }

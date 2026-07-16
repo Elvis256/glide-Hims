@@ -3,11 +3,11 @@ import { AlertCircle, CheckCircle2, Loader2, Settings, Users } from 'lucide-reac
 import { Link } from 'react-router-dom';
 import {
   type ApprovalChainPreviewResponse,
-  PreviewApprovalChainInput,
+  type LegacyPreviewApprovalChainInput,
   previewApprovalChain,
 } from '../../services/orgApproval';
 
-interface Props extends PreviewApprovalChainInput {
+interface Props extends LegacyPreviewApprovalChainInput {
   /** ms to wait after props change before re-querying. Default 350. */
   debounceMs?: number;
   /** Render nothing when amount === 0 and no items. Default true. */

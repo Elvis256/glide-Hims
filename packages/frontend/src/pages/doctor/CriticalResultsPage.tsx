@@ -175,9 +175,9 @@ export default function CriticalResultsPage() {
         <CriticalResultAckModal
           alert={selected}
           onCancel={() => setSelected(null)}
-          onConfirm={(payload) =>
-            ackMutation.mutateAsync({ id: selected.id, payload })
-          }
+          onConfirm={async (payload) => {
+            await ackMutation.mutateAsync({ id: selected.id, payload });
+          }}
         />
       )}
     </div>

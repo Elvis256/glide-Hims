@@ -16,6 +16,9 @@ interface PaymentMethod {
   expYear?: number | null;
   holderName?: string | null;
   isDefault: boolean;
+  /** Gateway token payload, e.g. { gateway: 'pesapal', accountNumber } or
+   *  { gateway: 'flutterwave', token }. */
+  metadata?: Record<string, any> | null;
   createdAt: string;
 }
 

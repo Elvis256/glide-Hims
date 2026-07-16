@@ -244,7 +244,7 @@ export default function ResultsEntryPage() {
     mutationFn: async ({ sampleId, isCritical }: { sampleId: string; isCritical: boolean }) => {
       const ids = enteredResultIds[sampleId] || [];
       for (const resultId of ids) {
-        await labService.results.validate(resultId, user?.name ? `Validated by ${user.name}` : undefined);
+        await labService.results.validate(resultId, user?.fullName ? `Validated by ${user.fullName}` : undefined);
         await labService.results.release(resultId);
       }
       return { isCritical };

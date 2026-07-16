@@ -498,7 +498,7 @@ export default function PayrollReportsPage() {
       fmtMoneyRaw(taxReport.total.paye),
     ]);
 
-    const tableResult = autoTable(doc, {
+    autoTable(doc, {
       head: [['Month', 'Employees', 'Gross Salary', 'PAYE Amount']],
       body,
       startY: headerY + 16,
@@ -517,7 +517,8 @@ export default function PayrollReportsPage() {
       },
     });
 
-    const finalY = tableResult?.finalY ?? 200;
+    // autoTable() returns void; the plugin hangs the end position off the doc.
+    const finalY = (doc as jsPDF & { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY ?? 200;
     doc.setFontSize(8);
     doc.setTextColor(100, 100, 100);
     doc.text(
@@ -574,7 +575,7 @@ export default function PayrollReportsPage() {
       fmtMoneyRaw(totalNssfAll),
     ]);
 
-    const nssfTableResult = autoTable(doc, {
+    autoTable(doc, {
       head: [['Month', 'Employees', 'Gross Salary', 'NSSF Employee (5%)', 'NSSF Employer (10%)', 'Total NSSF (15%)']],
       body,
       startY: headerY + 10,
@@ -595,7 +596,8 @@ export default function PayrollReportsPage() {
       },
     });
 
-    const finalY = nssfTableResult?.finalY ?? 200;
+    // autoTable() returns void; the plugin hangs the end position off the doc.
+    const finalY = (doc as jsPDF & { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY ?? 200;
     doc.setFontSize(8);
     doc.setTextColor(100, 100, 100);
     doc.text(

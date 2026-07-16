@@ -199,21 +199,10 @@ export default function InvoicesPage() {
     },
   });
 
-  // Map UI status to API status
-  const getApiStatus = (status: InvoiceStatus | 'all'): string | undefined => {
-    if (status === 'all') return undefined;
-    const statusMap: Record<InvoiceStatus, string | undefined> = {
-      draft: 'draft',
-      sent: 'pending',
-      paid: 'paid',
-      overdue: 'pending', // Overdue is calculated client-side
-      cancelled: 'cancelled',
-      pending: 'pending',
-      partial: 'partially_paid',
-      refunded: 'refunded',
-    };
-    return statusMap[status];
-  };
+  /** InvoiceStatus now mirrors the backend enum 1:1, so no translation is
+   *  needed — 'all' simply means "don't filter". */
+  const getApiStatus = (status: InvoiceStatus | 'all'): string | undefined =>
+    status === 'all' ? undefined : status;
 
   // Fetch invoices from API
   const { data: apiInvoices, isLoading } = useQuery({

@@ -105,7 +105,11 @@ export default function SystemPlansPage() {
                   <div className="text-xs uppercase tracking-wide text-gray-500">{p.tier} · {p.code}</div>
                 </div>
                 <div className="flex gap-1">
-                  {p.isPublic ? <Eye className="w-4 h-4 text-emerald-600" titleAccess="Public" /> : <EyeOff className="w-4 h-4 text-gray-400" titleAccess="Private" />}
+                  {p.isPublic ? (
+                    <Eye className="w-4 h-4 text-emerald-600" role="img" aria-label="Public" />
+                  ) : (
+                    <EyeOff className="w-4 h-4 text-gray-400" role="img" aria-label="Private" />
+                  )}
                 </div>
               </div>
               {p.description && <p className="text-sm text-gray-600 mt-2">{p.description}</p>}

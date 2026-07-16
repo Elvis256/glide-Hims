@@ -8,55 +8,70 @@ import {
   XCircle,
   Clock,
   Eye,
-  MessageSquare,
   User,
   Building2,
   DollarSign,
   Calendar,
-  ChevronDown,
-  ChevronRight,
-  AlertTriangle,
-  History,
   ThumbsUp,
   ThumbsDown,
-  Scale,
-  Loader2,
 } from 'lucide-react';
 import { rfqService, type QuotationApproval, type ApprovalLevel as ApprovalLevelType } from '../../../services/rfq';
 import { useAuthStore } from '../../../store/auth';
+import { formatCurrency } from '../../../lib/currency';
 
-type ApprovalStatus = 'pending' | 'approved' | 'rejected';
-type ApprovalLevel = 'manager' | 'finance' | 'director';
+const formatDate = (s?: string) => (s ? new Date(s).toLocaleDateString() : '—');
 
-const levelConfig: Record<ApprovalLevel, { order: number; icon: React.ReactNode; label: string }> = {
-  manager: { order: 1, icon: <User className="w-4 h-4" />, label: 'Manager' },
-  finance: { order: 2, icon: <DollarSign className="w-4 h-4" />, label: 'Finance' },
-  director: { order: 3, icon: <Building2 className="w-4 h-4" />, label: 'Director' },
+/** quotation_approvals.level is the ApprovalLevel enum — the API filters on
+ *  these exact values, so the UI must speak them rather than role nicknames. */
+const levelConfig: Record<ApprovalLevelType, { order: number; icon: React.ReactNode; label: string }> = {
+  approval_1: { order: 1, icon: <User className="w-4 h-4" />, label: 'Level 1' },
+  approval_2: { order: 2, icon: <DollarSign className="w-4 h-4" />, label: 'Level 2' },
+  approval_3: { order: 3, icon: <Building2 className="w-4 h-4" />, label: 'Level 3' },
 };
 
-const priorityConfig: Record<string, { color: string; bg: string }> = {
-  Normal: { color: 'text-gray-600', bg: 'bg-gray-100' },
-  High: { color: 'text-orange-600', bg: 'bg-orange-100' },
-  Urgent: { color: 'text-red-600', bg: 'bg-red-100' },
-};
+const APPROVAL_LEVELS: ApprovalLevelType[] = ['approval_1', 'approval_2', 'approval_3'];
 
-// Extended type for UI display
-interface ExtendedQuotationApproval extends QuotationApproval {
-  title?: string;
-  selectedVendor?: string;
-  totalAmount?: number;
-  originalBudget?: number;
-  approvalHistory?: { level: string; status: string; approvedBy?: string; approvedAt?: string; date?: string; approver?: { fullName: string }; comments?: string }[];
-  currentLevel?: string;
-  items?: any[];
-  comparisonSummary?: { vendorsCompared: number; savings: number; deliveryDays: number; paymentTerms: string };
-  quotation?: { quotationNumber?: string; supplier?: { name: string }; rfq?: { title: string } };
-  rfqNumber?: string;
-  priority?: string;
-  department?: string;
-  requester?: string;
-  submittedDate?: string;
+/** vendor_quotation_items — pricing only; decimals arrive as strings. */
+interface QuotationLine {
+  id: string;
+  rfqItemId: string;
+  unitPrice: number | string;
+  totalPrice: number | string;
+  deliveryDays?: number;
+  inStock?: boolean;
+  notes?: string;
 }
+
+/** rfq_items — carries what was actually asked for. */
+interface RfqLine {
+  id: string;
+  itemCode: string;
+  itemName: string;
+  quantity: number;
+  unit: string;
+  specifications?: string;
+}
+
+/**
+ * What GET /rfq/approvals/pending actually returns: the approval row plus
+ * quotation → supplier, quotation → rfq → rfq.items, and quotation.items.
+ * Everything shown must come from here — the approval row itself carries no
+ * amount, priority, budget or requester.
+ */
+interface ExtendedQuotationApproval extends QuotationApproval {
+  quotation?: {
+    quotationNumber?: string;
+    totalAmount?: number | string;
+    deliveryDays?: number;
+    paymentTerms?: string;
+    validUntil?: string;
+    receivedDate?: string;
+    supplier?: { name: string };
+    items?: QuotationLine[];
+    rfq?: { rfqNumber?: string; title?: string; deadline?: string; items?: RfqLine[] };
+  };
+}
+
 
 export default function ApproveQuotationsPage() {
   const queryClient = useQueryClient();
@@ -64,7 +79,7 @@ export default function ApproveQuotationsPage() {
   const facilityId = user?.facilityId || '';
 
   const [searchTerm, setSearchTerm] = useState('');
-  const [levelFilter, setLevelFilter] = useState<ApprovalLevel | 'all'>('all');
+  const [levelFilter, setLevelFilter] = useState<ApprovalLevelType | 'all'>('all');
   const [selectedApproval, setSelectedApproval] = useState<ExtendedQuotationApproval | null>(null);
   const [showActionModal, setShowActionModal] = useState<'approve' | 'reject' | null>(null);
   const [comments, setComments] = useState('');
@@ -72,7 +87,7 @@ export default function ApproveQuotationsPage() {
   // Fetch pending approvals
   const { data: pendingApprovals = [], isLoading } = useQuery({
     queryKey: ['pending-approvals', facilityId, levelFilter],
-    queryFn: () => rfqService.approvals.getPending(facilityId, levelFilter === 'all' ? undefined : levelFilter as ApprovalLevelType),
+    queryFn: () => rfqService.approvals.getPending(facilityId, levelFilter === 'all' ? undefined : levelFilter),
     enabled: !!facilityId,
   });
 
@@ -107,8 +122,6 @@ export default function ApproveQuotationsPage() {
       return matchesSearch;
     });
   }, [pendingApprovals, searchTerm]);
-
-  const [expandedHistory, setExpandedHistory] = useState<string | null>(null);
 
   const handleAction = (action: 'approve' | 'reject') => {
     setShowActionModal(action);
@@ -162,7 +175,7 @@ export default function ApproveQuotationsPage() {
           <div className="flex items-center gap-2">
             <Filter className="w-4 h-4 text-gray-400" />
             <div className="flex gap-1">
-              {(['all', 'manager', 'finance', 'director'] as const).map((level) => (
+              {(['all', ...APPROVAL_LEVELS] as const).map((level) => (
                 <button
                   key={level}
                   onClick={() => setLevelFilter(level)}
@@ -172,7 +185,7 @@ export default function ApproveQuotationsPage() {
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}
                 >
-                  {level.charAt(0).toUpperCase() + level.slice(1)}
+                  {level === 'all' ? 'All' : levelConfig[level].label}
                 </button>
               ))}
             </div>
@@ -193,8 +206,7 @@ export default function ApproveQuotationsPage() {
           ) : (
           <div className="space-y-4">
             {filteredApprovals.map((approval) => {
-              const isOverBudget = (approval.totalAmount || 0) > (approval.originalBudget || 0);
-              
+              const quote = approval.quotation;
               return (
                 <div
                   key={approval.id}
@@ -209,130 +221,49 @@ export default function ApproveQuotationsPage() {
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
                         <div className="flex items-center gap-3 mb-2">
-                          <span className="font-mono text-sm text-gray-500">{approval.rfqNumber}</span>
-                          <span
-                            className={`px-2 py-0.5 rounded-full text-xs font-medium ${priorityConfig[approval.priority || 'Normal']?.bg || 'bg-gray-100'} ${priorityConfig[approval.priority || 'Normal']?.color || 'text-gray-600'}`}
-                          >
-                            {approval.priority || 'Normal'}
-                          </span>
+                          <span className="font-mono text-sm text-gray-500">{quote?.rfq?.rfqNumber}</span>
                           <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-teal-100 text-teal-700">
                             <Clock className="w-3 h-3" />
-                            {approval.currentLevel} Review
+                            {levelConfig[approval.level]?.label || approval.level} Review
                           </span>
-                          {isOverBudget && (
-                            <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-600">
-                              <AlertTriangle className="w-3 h-3" />
-                              Over Budget
-                            </span>
-                          )}
                         </div>
-                        <h3 className="font-medium text-gray-900 mb-1">{approval.title}</h3>
+                        <h3 className="font-medium text-gray-900 mb-1">{quote?.rfq?.title}</h3>
                         <div className="flex items-center gap-4 text-sm text-gray-500">
                           <span className="flex items-center gap-1">
                             <Building2 className="w-3.5 h-3.5" />
-                            {approval.department}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <User className="w-3.5 h-3.5" />
-                            {approval.requester}
+                            {quote?.quotationNumber}
                           </span>
                           <span className="flex items-center gap-1">
                             <Calendar className="w-3.5 h-3.5" />
-                            {approval.submittedDate}
+                            {formatDate(quote?.receivedDate)}
                           </span>
                         </div>
                       </div>
                       <div className="text-right">
                         <div className="text-lg font-bold text-gray-900">
-                          ${(approval.totalAmount || 0).toLocaleString()}
+                          {formatCurrency(Number(quote?.totalAmount ?? 0))}
                         </div>
-                        <p className="text-xs text-gray-500">
-                          Budget: ${(approval.originalBudget || 0).toLocaleString()}
-                        </p>
                         <p className="text-xs font-medium text-teal-600 mt-1">
-                          {approval.selectedVendor || 'N/A'}
+                          {quote?.supplier?.name || 'N/A'}
                         </p>
                       </div>
                     </div>
 
-                    {/* Comparison Summary */}
-                    <div className="mt-3 pt-3 border-t grid grid-cols-4 gap-4 text-sm">
-                      <div className="flex items-center gap-2">
-                        <Scale className="w-4 h-4 text-gray-400" />
-                        <span className="text-gray-600">
-                          {approval.comparisonSummary?.vendorsCompared || 0} vendors compared
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <DollarSign className="w-4 h-4 text-green-500" />
-                        <span className="text-green-600">
-                          ${approval.comparisonSummary?.savings || 0} savings
-                        </span>
-                      </div>
+                    <div className="mt-3 pt-3 border-t grid grid-cols-3 gap-4 text-sm">
                       <div className="flex items-center gap-2">
                         <Clock className="w-4 h-4 text-gray-400" />
                         <span className="text-gray-600">
-                          {approval.comparisonSummary?.deliveryDays || 0} days delivery
+                          {quote?.deliveryDays ?? 0} days delivery
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className="text-gray-600">
-                          {approval.comparisonSummary?.paymentTerms || 'N/A'}
-                        </span>
+                        <span className="text-gray-600">{quote?.paymentTerms || 'N/A'}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-gray-600">Valid to {formatDate(quote?.validUntil)}</span>
                       </div>
                     </div>
 
-                    {/* Approval History Accordion */}
-                    {(approval.approvalHistory?.length || 0) > 0 && (
-                      <div className="mt-3">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setExpandedHistory(expandedHistory === approval.id ? null : approval.id);
-                          }}
-                          className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"
-                        >
-                          {expandedHistory === approval.id ? (
-                            <ChevronDown className="w-4 h-4" />
-                          ) : (
-                            <ChevronRight className="w-4 h-4" />
-                          )}
-                          <History className="w-4 h-4" />
-                          Approval History ({(approval as ExtendedQuotationApproval).approvalHistory?.length || 0})
-                        </button>
-                        {expandedHistory === approval.id && (
-                          <div className="mt-2 pl-5 space-y-2">
-                            {((approval as ExtendedQuotationApproval).approvalHistory || []).map((record: any, idx: number) => (
-                              <div key={idx} className="flex items-start gap-3 text-sm">
-                                <div
-                                  className={`p-1 rounded-full ${
-                                    record.status === 'Approved'
-                                      ? 'bg-green-100 text-green-600'
-                                      : 'bg-red-100 text-red-600'
-                                  }`}
-                                >
-                                  {record.status === 'Approved' ? (
-                                    <CheckCircle className="w-3 h-3" />
-                                  ) : (
-                                    <XCircle className="w-3 h-3" />
-                                  )}
-                                </div>
-                                <div>
-                                  <p className="text-gray-900">
-                                    <span className="font-medium">{record.approver?.fullName || record.approvedBy || 'Unknown'}</span>
-                                    <span className="text-gray-500"> ({record.level})</span>
-                                  </p>
-                                  {record.comments && (
-                                    <p className="text-gray-500 text-xs">{record.comments}</p>
-                                  )}
-                                  <p className="text-gray-400 text-xs">{record.date || record.approvedAt}</p>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
                   </div>
 
                   {/* Action Buttons */}
@@ -376,17 +307,21 @@ export default function ApproveQuotationsPage() {
             <div className="p-4 space-y-4">
               <div>
                 <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Selected Vendor</p>
-                <p className="font-medium text-lg text-teal-600">{selectedApproval.selectedVendor}</p>
+                <p className="font-medium text-lg text-teal-600">
+                  {selectedApproval.quotation?.supplier?.name || '—'}
+                </p>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Total Amount</p>
-                  <p className="font-bold text-xl">${(selectedApproval.totalAmount || 0).toLocaleString()}</p>
+                  <p className="font-bold text-xl">
+                    {formatCurrency(Number(selectedApproval.quotation?.totalAmount ?? 0))}
+                  </p>
                 </div>
                 <div>
-                  <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Budget</p>
-                  <p className="font-medium">${(selectedApproval.originalBudget || 0).toLocaleString()}</p>
+                  <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Quotation No.</p>
+                  <p className="font-medium">{selectedApproval.quotation?.quotationNumber || '—'}</p>
                 </div>
               </div>
 
@@ -394,39 +329,20 @@ export default function ApproveQuotationsPage() {
                 <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Items</p>
                 <div className="space-y-2">
                   {(() => {
-                    const quotationItems =
-                      selectedApproval.items ||
-                      selectedApproval.quotation?.items ||
-                      [];
-                    const rfqItems: any[] =
-                      (selectedApproval.quotation as any)?.rfq?.items || [];
+                    const quotationItems = selectedApproval.quotation?.items || [];
+                    const rfqItems = selectedApproval.quotation?.rfq?.items || [];
                     if (quotationItems.length === 0) {
                       return (
                         <p className="text-sm italic text-gray-400">No items.</p>
                       );
                     }
-                    return quotationItems.map((item: any, idx: number) => {
+                    return quotationItems.map((item, idx) => {
                       const rfqItem = rfqItems.find((ri) => ri.id === item.rfqItemId);
-                      const name =
-                        item.itemName ||
-                        item.name ||
-                        rfqItem?.itemName ||
-                        rfqItem?.name ||
-                        rfqItem?.itemCode ||
-                        '—';
-                      const qty = Number(
-                        item.quantity ??
-                          item.quantityRequested ??
-                          rfqItem?.quantity ??
-                          rfqItem?.quantityRequested ??
-                          0,
-                      );
-                      const unit =
-                        item.itemUnit || item.unit || rfqItem?.itemUnit || rfqItem?.unit || '';
-                      const unitPrice = Number(item.unitPrice ?? item.unitPriceEstimated ?? 0);
-                      const lineTotal = Number(
-                        item.totalPrice ?? item.subtotal ?? qty * unitPrice,
-                      );
+                      const name = rfqItem?.itemName || rfqItem?.itemCode || '—';
+                      const qty = Number(rfqItem?.quantity ?? 0);
+                      const unit = rfqItem?.unit || '';
+                      const unitPrice = Number(item.unitPrice ?? 0);
+                      const lineTotal = Number(item.totalPrice ?? qty * unitPrice);
                       return (
                         <div
                           key={item.id || idx}
@@ -447,11 +363,8 @@ export default function ApproveQuotationsPage() {
               <div>
                 <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Approval Workflow</p>
                 <div className="space-y-2">
-                  {(['manager', 'finance', 'director'] as ApprovalLevel[]).map((level) => {
-                    const record = selectedApproval.approvalHistory?.find((r: any) => r.level === level);
-                    const isCurrent = selectedApproval.currentLevel === level;
-                    const isPending = !record && !isCurrent;
-                    
+                  {APPROVAL_LEVELS.map((level) => {
+                    const isCurrent = selectedApproval.level === level;
                     return (
                       <div
                         key={level}
@@ -461,34 +374,16 @@ export default function ApproveQuotationsPage() {
                       >
                         <div
                           className={`p-1.5 rounded-full ${
-                            record?.status === 'Approved'
-                              ? 'bg-green-100 text-green-600'
-                              : record?.status === 'Rejected'
-                                ? 'bg-red-100 text-red-600'
-                                : isCurrent
-                                  ? 'bg-teal-100 text-teal-600'
-                                  : 'bg-gray-100 text-gray-400'
+                            isCurrent ? 'bg-teal-100 text-teal-600' : 'bg-gray-100 text-gray-400'
                           }`}
                         >
                           {levelConfig[level].icon}
                         </div>
                         <div className="flex-1">
-                          <p className="font-medium text-sm">{level}</p>
-                          {record && (
-                            <p className="text-xs text-gray-500">{record.approver?.fullName || record.approvedBy || ''}</p>
-                          )}
+                          <p className="font-medium text-sm">{levelConfig[level].label}</p>
                         </div>
-                        {record?.status === 'Approved' && (
-                          <CheckCircle className="w-5 h-5 text-green-500" />
-                        )}
-                        {record?.status === 'Rejected' && (
-                          <XCircle className="w-5 h-5 text-red-500" />
-                        )}
                         {isCurrent && (
-                          <span className="text-xs text-teal-600 font-medium">Current</span>
-                        )}
-                        {isPending && (
-                          <span className="text-xs text-gray-400">Pending</span>
+                          <span className="text-xs text-teal-600 font-medium">Awaiting this level</span>
                         )}
                       </div>
                     );
@@ -517,10 +412,10 @@ export default function ApproveQuotationsPage() {
                     : 'You are about to reject this quotation for:'}
                 </p>
                 <div className="bg-gray-50 rounded-lg p-3">
-                  <p className="font-medium">{selectedApproval.title}</p>
-                  <p className="text-sm text-gray-500">{selectedApproval.selectedVendor}</p>
+                  <p className="font-medium">{selectedApproval.quotation?.rfq?.title}</p>
+                  <p className="text-sm text-gray-500">{selectedApproval.quotation?.supplier?.name}</p>
                   <p className="text-lg font-bold mt-1">
-                    ${(selectedApproval.totalAmount || 0).toLocaleString()}
+                    {formatCurrency(Number(selectedApproval.quotation?.totalAmount ?? 0))}
                   </p>
                 </div>
               </div>

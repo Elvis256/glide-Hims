@@ -36,7 +36,9 @@ export interface Employee {
   departmentId?: string;
   department?: Department | string;  // Can be object or string
   staffCategory?: string;
-  employmentType?: 'full-time' | 'part-time' | 'contract' | 'intern' | 'permanent';
+  /** employees.employment_type is a DB enum — these are the only valid values.
+   *  (users.employment_type is a looser varchar; do not widen this to match it.) */
+  employmentType?: 'permanent' | 'contract' | 'temporary' | 'intern' | 'consultant';
   hireDate?: string;
   terminationDate?: string;
   salaryGrade?: string;
@@ -145,7 +147,7 @@ export interface CreateEmployeeDto {
   address?: string;
   jobTitle: string;
   department?: string;
-  employmentType: 'full-time' | 'part-time' | 'contract' | 'intern';
+  employmentType: 'permanent' | 'contract' | 'temporary' | 'intern' | 'consultant';
   hireDate: string;
   salaryGrade?: string;
   basicSalary: number;
@@ -154,17 +156,29 @@ export interface CreateEmployeeDto {
   bankAccountNumber?: string;
 }
 
+// Mirrors backend UpdateEmployeeDto (PATCH /hr/employees/:id). The API runs
+// forbidNonWhitelisted, so any key not listed here fails the whole request.
 export interface UpdateEmployeeDto {
   phone?: string;
   email?: string;
   address?: string;
   jobTitle?: string;
   department?: string;
+  departmentId?: string;
   basicSalary?: number;
   allowances?: { name: string; amount: number; taxable: boolean }[];
   deductions?: { name: string; amount: number; type: 'fixed' | 'percentage' }[];
   bankName?: string;
   bankAccountNumber?: string;
+  staffCategory?: string;
+  employmentType?: string;
+  gender?: 'male' | 'female' | 'other';
+  dateOfBirth?: string;
+  hireDate?: string;
+  nationalId?: string;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
+  emergencyContactRelationship?: string;
 }
 
 export interface RecordAttendanceDto {
@@ -356,8 +370,11 @@ export const hrService = {
   // Attendance
   attendance: {
     list: async (params?: { facilityId?: string; employeeId?: string; startDate?: string; endDate?: string }): Promise<Attendance[]> => {
-      const response = await api.get<Attendance[]>('/hr/attendance', { params });
-      return response.data;
+      // /hr/attendance answers with a { data, total, page, limit } envelope.
+      const response = await api.get<{ data: Attendance[] } | Attendance[]>('/hr/attendance', { params });
+      const raw = response.data;
+      const list: Attendance[] = Array.isArray(raw) ? raw : raw?.data || [];
+      return list.map((a) => (a.employee ? { ...a, employee: synthFullName(a.employee) } : a));
     },
     record: async (data: RecordAttendanceDto): Promise<Attendance> => {
       const response = await api.post<Attendance>('/hr/attendance', data);
@@ -376,8 +393,12 @@ export const hrService = {
   // Leave
   leave: {
     list: async (params?: { facilityId?: string; status?: string; employeeId?: string }): Promise<LeaveRequest[]> => {
-      const response = await api.get<LeaveRequest[]>('/hr/leave', { params });
-      return response.data;
+      // /hr/leave answers with a { data, total, page, limit } envelope and joins
+      // the Employee row, which carries firstName/lastName rather than fullName.
+      const response = await api.get<{ data: LeaveRequest[] } | LeaveRequest[]>('/hr/leave', { params });
+      const raw = response.data;
+      const list: LeaveRequest[] = Array.isArray(raw) ? raw : raw?.data || [];
+      return list.map((r) => (r.employee ? { ...r, employee: synthFullName(r.employee) } : r));
     },
     request: async (data: RequestLeaveDto): Promise<LeaveRequest> => {
       const response = await api.post<LeaveRequest>('/hr/leave', data);

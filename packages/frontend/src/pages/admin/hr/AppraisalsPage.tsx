@@ -125,8 +125,15 @@ export default function AppraisalsPage() {
     bulkCreateMutation.mutate({ ...bulkData, facilityId } as BulkCreateAppraisalDto);
   };
 
-  // Get unique departments from employees
-  const departments = [...new Set(employees.map((e: Employee) => e.department).filter(Boolean))];
+  // Get unique departments from employees. /hr/employees returns department as
+  // a name string; the bulk-appraisal DTO filters by that same name.
+  const departments = [
+    ...new Set(
+      employees
+        .map((e: Employee) => (typeof e.department === 'string' ? e.department : e.department?.name))
+        .filter((d): d is string => Boolean(d)),
+    ),
+  ];
 
   // Filtered appraisals
   const filtered = appraisals.filter((a: Appraisal) => {

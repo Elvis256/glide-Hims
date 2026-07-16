@@ -59,6 +59,7 @@ export interface OrderQueryParams {
   status?: OrderStatus;
   encounterId?: string;
   facilityId?: string;
+  patientId?: string;
   priority?: OrderPriority;
   startDate?: string;
   endDate?: string;

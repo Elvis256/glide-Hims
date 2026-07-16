@@ -359,13 +359,13 @@ export default function OutstandingReportsPage() {
           <Calendar className="h-5 w-5 text-gray-400" />
           <span className="text-sm font-medium text-gray-700">Period:</span>
           <div className="flex gap-2">
-            {[
+            {([
               { key: 'all', label: 'All Time' },
               { key: 'month', label: 'This Month' },
               { key: 'quarter', label: 'This Quarter' },
               { key: 'year', label: 'This Year' },
               { key: 'custom', label: 'Custom' },
-            ].map((range) => (
+            ] satisfies { key: RangeKey; label: string }[]).map((range) => (
               <button
                 key={range.key}
                 onClick={() => setDateRange(range.key)}

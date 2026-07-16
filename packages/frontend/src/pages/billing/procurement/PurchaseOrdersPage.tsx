@@ -32,7 +32,16 @@ import {
 } from 'lucide-react';
 
 // Map backend status to UI status
-type BackendPOStatus = 'draft' | 'pending_approval' | 'approved' | 'sent' | 'partially_received' | 'received' | 'cancelled';
+/** Mirrors POStatus in backend database/entities/purchase-order.entity.ts. */
+type BackendPOStatus =
+  | 'draft'
+  | 'pending_approval'
+  | 'approved'
+  | 'sent'
+  | 'partially_received'
+  | 'fully_received'
+  | 'cancelled'
+  | 'closed';
 type POStatus = 'Draft' | 'Sent' | 'Partial' | 'Received' | 'Closed';
 
 const statusMap: Record<BackendPOStatus, POStatus> = {
@@ -41,16 +50,17 @@ const statusMap: Record<BackendPOStatus, POStatus> = {
   approved: 'Draft',
   sent: 'Sent',
   partially_received: 'Partial',
-  received: 'Received',
+  fully_received: 'Received',
   cancelled: 'Closed',
+  closed: 'Closed',
 };
 
 const reverseStatusMap: Record<POStatus, BackendPOStatus[]> = {
   Draft: ['draft', 'pending_approval', 'approved'],
   Sent: ['sent'],
   Partial: ['partially_received'],
-  Received: ['received'],
-  Closed: ['cancelled'],
+  Received: ['fully_received'],
+  Closed: ['cancelled', 'closed'],
 };
 
 interface POItem {
@@ -100,23 +110,25 @@ interface BackendPurchaseOrder {
   };
   items: Array<{
     id: string;
-    itemName?: string;
-    name?: string;
-    quantity: number;
-    receivedQuantity?: number;
-    unit?: string;
+    itemName: string;
+    itemUnit?: string;
+    quantityOrdered: number;
+    quantityReceived: number;
     unitPrice: number;
-    totalPrice?: number;
+    lineTotal: number;
   }>;
   totalAmount: number;
   orderDate: string;
-  expectedDeliveryDate?: string;
+  expectedDelivery?: string;
   deliveryAddress?: string;
   paymentTerms?: string;
   notes?: string;
 }
 
+/** Mirrors CreatePurchaseOrderDto. The backend runs ValidationPipe with
+ *  forbidNonWhitelisted, so any key not on the DTO rejects the whole request. */
 interface CreatePurchaseOrderData {
+  facilityId: string;
   supplierId: string;
   items: Array<{
     itemId: string;
@@ -126,7 +138,7 @@ interface CreatePurchaseOrderData {
     quantityOrdered: number;
     unitPrice: number;
   }>;
-  expectedDeliveryDate?: string;
+  expectedDelivery?: string;
   deliveryAddress?: string;
   paymentTerms?: string;
   notes?: string;
@@ -143,21 +155,22 @@ const transformBackendPO = (po: BackendPurchaseOrder): PurchaseOrder => ({
     phone: po.supplier?.phone || '',
     address: po.supplier?.address || '',
   },
-  items: po.items.map((item) => ({
+  // decimal columns arrive from TypeORM as strings — coerce before arithmetic
+  items: (po.items ?? []).map((item) => ({
     id: item.id,
-    name: item.itemName || item.name || '',
-    quantity: item.quantity,
-    receivedQty: item.receivedQuantity || 0,
-    unit: item.unit || 'unit',
-    unitPrice: item.unitPrice,
-    totalPrice: item.totalPrice || item.quantity * item.unitPrice,
+    name: item.itemName,
+    quantity: Number(item.quantityOrdered),
+    receivedQty: Number(item.quantityReceived ?? 0),
+    unit: item.itemUnit || 'unit',
+    unitPrice: Number(item.unitPrice),
+    totalPrice: Number(item.lineTotal),
   })),
-  totalAmount: po.totalAmount,
+  totalAmount: Number(po.totalAmount),
   status: statusMap[po.status] || 'Draft',
   backendStatus: po.status,
   createdDate: po.orderDate,
   sentDate: po.status === 'sent' ? po.orderDate : undefined,
-  expectedDelivery: po.expectedDeliveryDate || '',
+  expectedDelivery: po.expectedDelivery || '',
   deliveryAddress: po.deliveryAddress || '',
   paymentTerms: po.paymentTerms || 'Net 30',
   notes: po.notes,
@@ -317,6 +330,10 @@ export default function PurchaseOrdersPage() {
   };
 
   const handleCreatePO = (sendImmediately: boolean) => {
+    if (!facilityId) {
+      toast.error('No facility selected');
+      return;
+    }
     if (!createFormData.supplierId) {
       toast.error('Please select a supplier');
       return;
@@ -327,6 +344,7 @@ export default function PurchaseOrdersPage() {
       return;
     }
     const payload: CreatePurchaseOrderData = {
+      facilityId,
       supplierId: createFormData.supplierId!,
       items: validItems.map((i) => ({
         itemId: i.itemId,
@@ -336,7 +354,7 @@ export default function PurchaseOrdersPage() {
         quantityOrdered: i.quantityOrdered,
         unitPrice: i.unitPrice,
       })),
-      expectedDeliveryDate: createFormData.expectedDeliveryDate,
+      expectedDelivery: createFormData.expectedDelivery,
       deliveryAddress: createFormData.deliveryAddress,
       paymentTerms: createFormData.paymentTerms,
       notes: createFormData.notes,
@@ -757,8 +775,8 @@ export default function PurchaseOrdersPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Expected Delivery Date</label>
                   <input
                     type="date"
-                    value={createFormData.expectedDeliveryDate || ''}
-                    onChange={(e) => setCreateFormData({ ...createFormData, expectedDeliveryDate: e.target.value })}
+                    value={createFormData.expectedDelivery || ''}
+                    onChange={(e) => setCreateFormData({ ...createFormData, expectedDelivery: e.target.value })}
                     className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
@@ -836,7 +854,6 @@ export default function PurchaseOrdersPage() {
                                   ),
                                 )
                               }
-                              module="all"
                               size="sm"
                             />
                           </td>

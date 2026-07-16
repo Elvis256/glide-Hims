@@ -181,14 +181,22 @@ export default function ProcedureOrdersPage() {
       toast.error('Consent must be obtained before scheduling');
       return;
     }
+    // encounterId is a required UUID on CreateOrderDto; the order's patient is
+    // derived from it server-side. Keys must match the DTO exactly — the backend
+    // runs forbidNonWhitelisted, so patientId/type/tests/notes (and `category`
+    // inside a test code) 400 the whole request.
+    if (!selectedEncounterId) {
+      toast.error('No encounter selected - a procedure order requires an active visit');
+      return;
+    }
     createOrderMutation.mutate({
-      patientId: selectedPatient.id,
-      encounterId: selectedEncounterId || undefined,
-      type: 'procedure',
+      encounterId: selectedEncounterId,
+      orderType: 'procedure',
       priority: 'routine',
-      tests: [{ code: selectedProcedure.id, name: selectedProcedure.name, category: selectedProcedure.category }],
-      notes: [
+      testCodes: [{ code: selectedProcedure.id, name: selectedProcedure.name }],
+      clinicalNotes: [
         `Procedure: ${selectedProcedure.name}`,
+        `Category: ${selectedProcedure.category}`,
         `Anesthesia: ${anesthesia}`,
         `Consent: ${consentStatus}`,
         scheduledDate ? `Scheduled: ${scheduledDate} ${scheduledTime}` : '',

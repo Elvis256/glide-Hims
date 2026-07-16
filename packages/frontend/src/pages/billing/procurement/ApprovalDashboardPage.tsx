@@ -70,7 +70,8 @@ interface DashboardSummary {
 export default function ApprovalDashboardPage() {
   const { user } = useAuthStore();
   const [selectedDocType, setSelectedDocType] = useState<'PR' | 'PO' | 'ALL'>('ALL');
-  const [roleFilter, setRoleFilter] = useState<string>(user?.roles?.[0]?.name || 'manager');
+  // user.roles is a list of role NAMES, not objects
+  const [roleFilter, setRoleFilter] = useState<string>(user?.roles?.[0] || 'manager');
   const facilityId = user?.facilityId || '';
 
   // Fetch pending approvals

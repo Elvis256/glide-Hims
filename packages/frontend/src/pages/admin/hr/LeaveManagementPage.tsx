@@ -196,8 +196,11 @@ export default function LeaveManagementPage() {
     return leaveRequests.map((request) => ({
       id: request.id,
       staffName: request.employee?.fullName || 'Unknown',
-      staffId: request.employee?.employeeCode || request.employeeId,
-      department: request.employee?.department?.name || 'N/A',
+      staffId: request.employee?.employeeNumber || request.employeeId,
+      department:
+        (typeof request.employee?.department === 'string'
+          ? request.employee.department
+          : request.employee?.department?.name) || 'N/A',
       leaveType: mapLeaveType(request.leaveType),
       startDate: request.startDate,
       endDate: request.endDate,

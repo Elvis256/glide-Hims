@@ -163,10 +163,12 @@ export default function WritePrescriptionPage() {
     const newAlerts: SafetyAlert[] = [];
     
     // Check allergies (if patient has allergy data)
-    if (patient?.allergies) {
-      const allergies = typeof patient.allergies === 'string' 
-        ? patient.allergies.split(',').map(a => a.trim().toLowerCase())
-        : [];
+    if (patient?.allergies?.length) {
+      // patients.allergies is a jsonb string[] (patient.entity.ts). This used to
+      // test `typeof allergies === 'string'` and split on commas, which never
+      // matched an array — the list was always empty, so this drug-allergy check
+      // silently passed for every drug.
+      const allergies = patient.allergies.map(a => String(a).trim().toLowerCase()).filter(Boolean);
       const drugName = (drug.genericName || drug.name || '').toLowerCase();
       if (allergies.some(a => drugName.includes(a) || a.includes(drugName.split(' ')[0]))) {
         newAlerts.push({ 
@@ -392,14 +394,14 @@ export default function WritePrescriptionPage() {
                 </p>
                 <p className="text-xs text-gray-500">MRN: {patient.mrn}</p>
                 
-                {patient.allergies && (
+                {patient.allergies && patient.allergies.length > 0 && (
                   <div className="mt-3">
                     <p className="text-xs font-medium text-red-600 flex items-center gap-1">
                       <AlertTriangle className="w-3 h-3" /> ALLERGIES
                     </p>
                     <div className="flex flex-wrap gap-1 mt-1">
-                      {(typeof patient.allergies === 'string' ? patient.allergies.split(',') : []).map((a: string) => (
-                        <span key={a} className="px-2 py-0.5 bg-red-100 text-red-800 rounded text-xs">{a.trim()}</span>
+                      {patient.allergies.map((a: string) => (
+                        <span key={a} className="px-2 py-0.5 bg-red-100 text-red-800 rounded text-xs">{String(a).trim()}</span>
                       ))}
                     </div>
                   </div>
@@ -635,9 +637,11 @@ export default function WritePrescriptionPage() {
             <div className="bg-white rounded-lg shadow p-4">
               <h2 className="font-semibold mb-3">Prescriber</h2>
               <div className="text-sm space-y-1">
+                {/* License/specialty are provider columns (provider.entity.ts), not
+                    user columns — they read undefined here, so the panel asserted a
+                    fabricated "General Medicine" for every prescriber. Restoring them
+                    needs a providers lookup keyed on providers.userId. */}
                 <p className="font-medium">{user?.fullName || 'Current User'}</p>
-                <p className="text-gray-500">License: {user?.licenseNumber || 'N/A'}</p>
-                <p className="text-gray-500">Specialty: {user?.specialty || 'General Medicine'}</p>
               </div>
             </div>
           </div>

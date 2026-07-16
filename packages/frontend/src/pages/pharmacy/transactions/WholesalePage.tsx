@@ -121,8 +121,12 @@ export default function WholesalePage() {
       name: item.name,
       genericName: item.name,
       category: item.category,
-      retailPrice: item.retailPrice || item.sellingPrice || (item.unitCost || 0) * 1.3,
-      wholesalePrice: item.wholesalePrice || item.unitCost || 0,
+      // items carries retail_price/wholesale_price, but GET /stores/inventory
+      // returns a fixed projection that omits both — reading them here always
+      // yielded undefined and silently fell through to the values below.
+      // Surfacing true wholesale pricing needs that projection extended.
+      retailPrice: Number(item.sellingPrice) || Number(item.unitCost || 0) * 1.3,
+      wholesalePrice: Number(item.unitCost) || 0,
       stock: item.currentStock,
       unit: item.unit,
       minOrder: 10,

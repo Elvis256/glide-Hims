@@ -42,7 +42,8 @@ interface InsurancePolicy {
   policyNumber: string;
   membershipNumber: string;
   provider: InsuranceProvider;
-  patient: { id: string; firstName: string; lastName: string; mrn: string };
+  // patients table stores a single full_name column — there is no first/last split
+  patient?: { id: string; fullName: string; mrn: string };
   planName?: string;
   coverageType: string;
   maxCoverageAmount?: number;
@@ -61,7 +62,7 @@ interface InsuranceClaim {
   paidAmount?: number;
   submissionDate?: string;
   provider?: InsuranceProvider;
-  patient: { id: string; firstName: string; lastName: string; mrn: string };
+  patient?: { id: string; fullName: string; mrn: string };
   createdAt: string;
 }
 
@@ -424,7 +425,7 @@ export default function InsurancePage() {
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="text-sm text-gray-900">
-                    {policy.patient?.fullName || `${policy.patient?.firstName || ''} ${policy.patient?.lastName || ''}`.trim() || 'Unknown Patient'}
+                    {policy.patient?.fullName || 'Unknown Patient'}
                   </div>
                   <div className="text-sm text-gray-500">{policy.patient?.mrn}</div>
                 </td>
@@ -536,7 +537,7 @@ export default function InsurancePage() {
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="text-sm text-gray-900">
-                    {claim.patient?.fullName || `${claim.patient?.firstName || ''} ${claim.patient?.lastName || ''}`.trim() || 'Unknown Patient'}
+                    {claim.patient?.fullName || 'Unknown Patient'}
                   </div>
                   <div className="text-sm text-gray-500">{claim.patient?.mrn}</div>
                 </td>

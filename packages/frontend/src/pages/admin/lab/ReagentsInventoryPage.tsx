@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api, getApiErrorMessage } from '../../../services/api';
 import { labSuppliesService } from '../../../services';
+import type { ReceiveLotDto } from '../../../services/lab-supplies';
 import { useFacilityId } from '../../../lib/facility';
 import { CURRENCY_SYMBOL, formatCurrency } from '../../../lib/currency';
 import { toCsv, downloadBlob } from '../../reports/_reportUtils';
@@ -142,7 +143,7 @@ export default function ReagentsInventoryPage() {
   });
 
   const receiveMutation = useMutation({
-    mutationFn: ({ reagentId, data }: { reagentId: string; data: object }) =>
+    mutationFn: ({ reagentId, data }: { reagentId: string; data: ReceiveLotDto }) =>
       labSuppliesService.reagentLots.receive(reagentId, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['reagents'] });
@@ -254,13 +255,17 @@ export default function ReagentsInventoryPage() {
       toast.error('Lot number and valid quantity are required');
       return;
     }
+    // Fields must match ReceiveLotDto exactly: facilityId is required, and the
+    // cost field is `unitCost` — `costPerUnit` tripped forbidNonWhitelisted and
+    // 400'd every stock receipt.
     receiveMutation.mutate({
       reagentId: receiveModal.reagent.id,
       data: {
+        facilityId,
         lotNumber: receiveForm.lotNumber,
         quantity: qty,
         expiryDate: receiveForm.expiryDate || undefined,
-        costPerUnit: receiveForm.costPerUnit ? Number(receiveForm.costPerUnit) : undefined,
+        unitCost: receiveForm.costPerUnit ? Number(receiveForm.costPerUnit) : undefined,
         supplier: receiveForm.supplier || undefined,
       },
     });

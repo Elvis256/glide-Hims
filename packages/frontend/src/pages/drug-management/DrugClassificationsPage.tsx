@@ -1,6 +1,11 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { pharmacyService } from '../../services/pharmacy';
+import {
+  DrugSchedule,
+  TherapeuticClass,
+  type DrugClassification,
+} from '../../services/drug-management';
 import api from '../../services/api';
 import {
   Pill,
@@ -19,25 +24,17 @@ import {
   Beaker,
 } from 'lucide-react';
 
-interface DrugClassification {
-  id: string;
-  itemId: string;
-  drugName: string;
-  genericName: string;
-  schedule: 'OTC' | 'PRESCRIPTION_ONLY' | 'SCHEDULE_II' | 'SCHEDULE_III' | 'SCHEDULE_IV' | 'SCHEDULE_V';
-  therapeuticClass: string;
-  isControlled: boolean;
-  isNarcotic: boolean;
-  highAlert: boolean;
-  isOnFormulary: boolean;
-  maxDailyDose?: string;
-  contraindications: string[];
-  warnings: string[];
-  createdAt: string;
-}
+// The real drug_classifications columns (drug-classification.entity.ts). The
+// local interface this replaces invented `drugName` (there is no such column —
+// the list endpoint joins no item, so drugName.toLowerCase() threw as soon as
+// any row existed) and typed contraindications/warnings as string[] when both
+// are text columns.
+const schedules: Array<'All' | DrugSchedule> = ['All', ...Object.values(DrugSchedule)];
+const therapeuticClasses: Array<'All' | TherapeuticClass> = ['All', ...Object.values(TherapeuticClass)];
 
-const schedules = ['All', 'OTC', 'PRESCRIPTION_ONLY', 'SCHEDULE_II', 'SCHEDULE_III', 'SCHEDULE_IV', 'SCHEDULE_V'];
-const therapeuticClasses = ['All', 'ANALGESIC', 'OPIOID_ANALGESIC', 'ANTICOAGULANT', 'BENZODIAZEPINE', 'ANTIBIOTIC', 'ANTIHYPERTENSIVE', 'ANTIDIABETIC'];
+const humanise = (v: string) => v.replace(/_/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase());
+/** brandName/genericName are the only name columns on the row. */
+const drugLabel = (d: DrugClassification) => d.brandName || d.genericName || '—';
 
 export default function DrugClassificationsPage() {
   const queryClient = useQueryClient();
@@ -74,9 +71,10 @@ export default function DrugClassificationsPage() {
   const items = classifications || [];
 
   const filteredDrugs = items.filter((drug) => {
-    const matchesSearch = 
-      drug.drugName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      drug.genericName.toLowerCase().includes(searchTerm.toLowerCase());
+    const term = searchTerm.toLowerCase();
+    const matchesSearch =
+      (drug.brandName || '').toLowerCase().includes(term) ||
+      (drug.genericName || '').toLowerCase().includes(term);
     const matchesSchedule = selectedSchedule === 'All' || drug.schedule === selectedSchedule;
     const matchesClass = selectedClass === 'All' || drug.therapeuticClass === selectedClass;
     const matchesControlled = !showControlledOnly || drug.isControlled;
@@ -84,14 +82,17 @@ export default function DrugClassificationsPage() {
     return matchesSearch && matchesSchedule && matchesClass && matchesControlled && matchesHighAlert;
   });
 
+  // Keys are the real enum values; the old UPPERCASE labels matched none of
+  // them, so every schedule rendered with the default grey badge.
   const getScheduleColor = (schedule: string) => {
     switch (schedule) {
-      case 'OTC': return 'bg-green-100 text-green-700';
-      case 'PRESCRIPTION_ONLY': return 'bg-blue-100 text-blue-700';
-      case 'SCHEDULE_II': return 'bg-red-100 text-red-700';
-      case 'SCHEDULE_III': return 'bg-orange-100 text-orange-700';
-      case 'SCHEDULE_IV': return 'bg-yellow-100 text-yellow-700';
-      case 'SCHEDULE_V': return 'bg-purple-100 text-purple-700';
+      case DrugSchedule.OTC: return 'bg-green-100 text-green-700';
+      case DrugSchedule.POM: return 'bg-blue-100 text-blue-700';
+      case DrugSchedule.SCHEDULE_I: return 'bg-red-200 text-red-800';
+      case DrugSchedule.SCHEDULE_II: return 'bg-red-100 text-red-700';
+      case DrugSchedule.SCHEDULE_III: return 'bg-orange-100 text-orange-700';
+      case DrugSchedule.SCHEDULE_IV: return 'bg-yellow-100 text-yellow-700';
+      case DrugSchedule.SCHEDULE_V: return 'bg-purple-100 text-purple-700';
       default: return 'bg-gray-100 text-gray-700';
     }
   };
@@ -207,7 +208,7 @@ export default function DrugClassificationsPage() {
                     }}
                     className="w-full px-4 py-2 text-left hover:bg-gray-50"
                   >
-                    {schedule.replace('_', ' ')}
+                    {schedule === 'All' ? 'All' : humanise(schedule)}
                   </button>
                 ))}
               </div>
@@ -233,7 +234,7 @@ export default function DrugClassificationsPage() {
                     }}
                     className="w-full px-4 py-2 text-left hover:bg-gray-50"
                   >
-                    {cls.replace('_', ' ')}
+                    {cls === 'All' ? 'All' : humanise(cls)}
                   </button>
                 ))}
               </div>
@@ -285,18 +286,20 @@ export default function DrugClassificationsPage() {
                       <Pill className="w-4 h-4 text-blue-600" />
                     </div>
                     <div>
-                      <p className="font-medium text-gray-900">{drug.drugName}</p>
-                      <p className="text-xs text-gray-500">{drug.genericName}</p>
+                      <p className="font-medium text-gray-900">{drugLabel(drug)}</p>
+                      <p className="text-xs text-gray-500">{drug.brandName ? drug.genericName : ''}</p>
                     </div>
                   </div>
                 </td>
                 <td className="px-4 py-3">
                   <span className={`px-2 py-1 rounded-full text-xs font-medium ${getScheduleColor(drug.schedule)}`}>
-                    {drug.schedule.replace('_', ' ')}
+                    {humanise(drug.schedule)}
                   </span>
                 </td>
                 <td className="px-4 py-3">
-                  <span className="text-sm text-gray-700">{drug.therapeuticClass.replace('_', ' ')}</span>
+                  <span className="text-sm text-gray-700">
+                    {drug.therapeuticClass ? humanise(drug.therapeuticClass) : '—'}
+                  </span>
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-1">
@@ -318,7 +321,9 @@ export default function DrugClassificationsPage() {
                   </div>
                 </td>
                 <td className="px-4 py-3">
-                  <span className="text-sm text-gray-700">{drug.maxDailyDose || '—'}</span>
+                  <span className="text-sm text-gray-700">
+                    {drug.maxDailyDose != null ? `${drug.maxDailyDose}${drug.doseUnit ? ` ${drug.doseUnit}` : ''}` : '—'}
+                  </span>
                 </td>
                 <td className="px-4 py-3">
                   {drug.isOnFormulary ? (
@@ -369,11 +374,11 @@ export default function DrugClassificationsPage() {
 
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Drug Name</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Brand Name</label>
                 <input
                   type="text"
-                  defaultValue={editingDrug?.drugName}
-                  placeholder="e.g., Paracetamol 500mg"
+                  defaultValue={editingDrug?.brandName}
+                  placeholder="Brand name"
                   className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                 />
               </div>

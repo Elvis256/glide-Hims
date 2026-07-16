@@ -68,6 +68,7 @@ const modules = [
 const BUILTIN_PRESETS: FacilityPreset[] = [
   {
     mode: 'single_user',
+    businessType: 'hospital',
     name: 'Single-User Clinic',
     description: 'Everything done by one person on one computer — registration, consultation, billing, and dispensing.',
     icon: 'monitor',
@@ -80,6 +81,7 @@ const BUILTIN_PRESETS: FacilityPreset[] = [
   },
   {
     mode: 'clinic_opd',
+    businessType: 'hospital',
     name: 'Clinic – Outpatient Only',
     description: 'A clinic with outpatient services only. No ward admissions.',
     icon: 'stethoscope',
@@ -92,6 +94,7 @@ const BUILTIN_PRESETS: FacilityPreset[] = [
   },
   {
     mode: 'clinic_full',
+    businessType: 'hospital',
     name: 'Clinic – Inpatient & Outpatient',
     description: 'A clinic that handles both outpatient visits and inpatient admissions.',
     icon: 'bed',
@@ -104,6 +107,7 @@ const BUILTIN_PRESETS: FacilityPreset[] = [
   },
   {
     mode: 'multisite_opd',
+    businessType: 'hospital',
     name: 'Multi-Site OPD Network',
     description: 'Multiple outpatient-only locations under one organisation with centralised reporting.',
     icon: 'map-pin',
@@ -116,6 +120,7 @@ const BUILTIN_PRESETS: FacilityPreset[] = [
   },
   {
     mode: 'hospital',
+    businessType: 'hospital',
     name: 'Full Hospital',
     description: 'Complete hospital management: OPD, IPD, Emergency, Theatre, Maternity, HR, and Finance.',
     icon: 'building',

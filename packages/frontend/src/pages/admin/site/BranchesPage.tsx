@@ -116,7 +116,7 @@ export default function BranchesPage() {
         manager: '',
         managerEmail: f.contact?.email || '',
         services: (f.settings?.enabledModules as string[]) || [],
-        status: (f.status === 'active' ? 'active' : 'inactive') as const,
+        status: f.status === 'active' ? ('active' as const) : ('inactive' as const),
         employeeCount: stats.employeeCount,
         bedCount: stats.bedCount,
         openDate: f.createdAt?.split('T')[0] || '',

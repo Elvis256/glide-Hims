@@ -61,8 +61,8 @@ interface PurchaseRequest {
   items: RequisitionItem[];
   notes?: string;
   justification?: string;
-  totalAmount: number;
-  totalEstimated?: number;
+  // purchase_requests stores the estimate as totalEstimated (decimal → string)
+  totalEstimated?: number | string;
   requestDate?: string;
   createdAt?: string;
   // Joined relations from backend
@@ -154,7 +154,7 @@ export default function RequisitionsPage() {
       return s;
     }
   };
-  const totalOf = (req: PurchaseRequest) => Number(req.totalAmount ?? req.totalEstimated ?? 0);
+  const totalOf = (req: PurchaseRequest) => Number(req.totalEstimated ?? 0);
 
 
   // Fetch purchase requests
