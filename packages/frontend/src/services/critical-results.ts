@@ -24,14 +24,14 @@ export interface CriticalResultAlert {
   summary?: string | null;
   flaggedAt: string;
   flaggedById?: string | null;
-  flaggedBy?: { id: string; firstName?: string; lastName?: string } | null;
+  flaggedBy?: { id: string; fullName?: string; firstName?: string; lastName?: string } | null;
   assignedToId?: string | null;
-  assignedTo?: { id: string; firstName?: string; lastName?: string } | null;
+  assignedTo?: { id: string; fullName?: string; firstName?: string; lastName?: string } | null;
   status: CriticalResultStatus;
   slaDeadline: string;
   acknowledgedAt?: string | null;
   acknowledgedById?: string | null;
-  acknowledgedBy?: { id: string; firstName?: string; lastName?: string } | null;
+  acknowledgedBy?: { id: string; fullName?: string; firstName?: string; lastName?: string } | null;
   acknowledgementNote?: string | null;
   actionTaken?: string | null;
   followUpOrderId?: string | null;

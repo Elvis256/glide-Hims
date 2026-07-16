@@ -191,7 +191,9 @@ export default function CriticalResultsReadOnlyPage({ resourceType }: Props) {
                     </td>
                     <td className="px-3 py-2 text-gray-700">
                       {a.acknowledgedBy
-                        ? `${a.acknowledgedBy.firstName ?? ''} ${a.acknowledgedBy.lastName ?? ''}`.trim() || '—'
+                        ? a.acknowledgedBy.fullName ||
+                          `${a.acknowledgedBy.firstName ?? ''} ${a.acknowledgedBy.lastName ?? ''}`.trim() ||
+                          '—'
                         : '—'}
                     </td>
                     <td className="px-3 py-2 text-gray-700">{a.actionTaken || '—'}</td>
