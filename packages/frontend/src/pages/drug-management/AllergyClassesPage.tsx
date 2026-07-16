@@ -67,11 +67,17 @@ export default function AllergyClassesPage() {
 
   const items = allergyClasses || [];
 
+  // NOTE: fantasy shape — drug_allergy_classes has className/description/
+  // relatedDrugs/crossReactiveClasses only (no name/commonAllergens/severity/
+  // isActive), and no delete route. Needs a rewrite (see 05-pharmacy.md).
+  // Guard the reads so it degrades to a blank list instead of white-screening.
+  const q = searchTerm.toLowerCase();
   const filteredClasses = items.filter((cls) => {
-    const matchesSearch = 
-      cls.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      cls.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      cls.commonAllergens.some(a => a.toLowerCase().includes(searchTerm.toLowerCase()));
+    const matchesSearch =
+      !q ||
+      cls.name?.toLowerCase().includes(q) ||
+      cls.description?.toLowerCase().includes(q) ||
+      cls.commonAllergens?.some((a) => a.toLowerCase().includes(q));
     const matchesSeverity = selectedSeverity === 'All' || cls.severity === selectedSeverity;
     return matchesSearch && matchesSeverity;
   });
@@ -238,14 +244,14 @@ export default function AllergyClassesPage() {
                 <div>
                   <p className="text-xs font-medium text-gray-500 mb-1">Common Allergens</p>
                   <div className="flex flex-wrap gap-1">
-                    {cls.commonAllergens.slice(0, 4).map((allergen, idx) => (
+                    {(cls.commonAllergens || []).slice(0, 4).map((allergen, idx) => (
                       <span key={idx} className="px-2 py-0.5 bg-gray-100 text-gray-700 rounded text-xs">
                         {allergen}
                       </span>
                     ))}
-                    {cls.commonAllergens.length > 4 && (
+                    {(cls.commonAllergens || []).length > 4 && (
                       <span className="px-2 py-0.5 bg-gray-100 text-gray-500 rounded text-xs">
-                        +{cls.commonAllergens.length - 4} more
+                        +{(cls.commonAllergens || []).length - 4} more
                       </span>
                     )}
                   </div>
@@ -254,7 +260,7 @@ export default function AllergyClassesPage() {
                 <div>
                   <p className="text-xs font-medium text-gray-500 mb-1">Cross-Reactive Drugs</p>
                   <div className="flex flex-wrap gap-1">
-                    {cls.crossReactiveDrugs.slice(0, 3).map((drug, idx) => (
+                    {(cls.crossReactiveDrugs || []).slice(0, 3).map((drug, idx) => (
                       <span key={idx} className="px-2 py-0.5 bg-orange-50 text-orange-700 rounded text-xs">
                         {drug}
                       </span>
