@@ -37,15 +37,19 @@ export default function ScanToDispense() {
       setLastScanned(code);
 
       try {
-        // GET /inventory/items ('/stores/inventory/items' is not a route) always
-        // returns a {data,total,page,limit} envelope, never a bare array.
+        // GET /inventory/items returns a {data,total,page,limit} envelope, but the
+        // axios response interceptor hoists the StandardResponse so response.data
+        // arrives as the BARE ARRAY (pagination on response.meta). The old
+        // `response.data?.data` therefore read undefined → always "no item found".
         // NOTE: the backend search covers name/code/genericName only — not barcode.
-        const response = await api.get<{ data: DrugLookupResult[]; total: number }>(
+        const response = await api.get<DrugLookupResult[]>(
           '/inventory/items',
           { params: { search: code, limit: 5 } },
         );
 
-        const results: DrugLookupResult[] = response.data?.data ?? [];
+        const results: DrugLookupResult[] = Array.isArray(response.data)
+          ? response.data
+          : ((response.data as any)?.data ?? []);
 
         // Exact match only. This is a scanner feeding a dispensing queue, so a
         // near-miss must fail closed — the old `|| results[0]` silently queued

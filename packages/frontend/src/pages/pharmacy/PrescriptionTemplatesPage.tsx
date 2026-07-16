@@ -17,6 +17,7 @@ import {
   Users,
 } from 'lucide-react';
 import { prescriptionsService, type RxTemplate, type RxTemplateItem, type CreateRxTemplateDto } from '../../services/prescriptions';
+import { confirmDialog } from '../../components/ConfirmDialog';
 import { toast } from 'sonner';
 
 type ScopeFilter = 'all' | 'personal' | 'department' | 'facility';
@@ -480,8 +481,10 @@ export default function PrescriptionTemplatesPage() {
                     <Edit2 className="w-3 h-3" /> Edit
                   </button>
                   <button
-                    onClick={() => {
-                      if (confirm('Delete this template?')) deleteMutation.mutate(t.id);
+                    onClick={async () => {
+                      if (await confirmDialog({ title: 'Delete template', message: `Delete "${t.name}"? This cannot be undone.`, confirmLabel: 'Delete', variant: 'danger' })) {
+                        deleteMutation.mutate(t.id);
+                      }
                     }}
                     className="flex items-center gap-1 px-3 py-1.5 bg-red-50 text-red-700 rounded-lg text-xs font-medium hover:bg-red-100"
                   >
