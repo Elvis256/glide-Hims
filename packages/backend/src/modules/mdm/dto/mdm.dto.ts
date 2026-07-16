@@ -1,4 +1,5 @@
-import { IsString, IsOptional, IsEnum, IsUUID } from 'class-validator';
+import { IsString, IsOptional, IsEnum, IsUUID, IsBoolean } from 'class-validator';
+import { PartialType } from '@nestjs/swagger';
 import {
   MasterDataEntityType,
   ApprovalStatus,
@@ -44,7 +45,10 @@ export class CreateApprovalRuleDto {
   @IsEnum(MasterDataEntityType)
   entityType: MasterDataEntityType;
 
-  requiresApproval: boolean;
+  // Optional so callers that omit it keep landing on the column default (false).
+  @IsOptional()
+  @IsBoolean()
+  requiresApproval?: boolean;
 
   @IsOptional()
   @IsUUID()
@@ -58,4 +62,13 @@ export class CreateApprovalRuleDto {
 
   @IsOptional()
   notificationEmails?: string[];
+}
+
+// PartialType keeps the update surface to declared fields only; with
+// forbidNonWhitelisted this is what blocks writes to id/tenantId/createdAt.
+export class UpdateApprovalRuleDto extends PartialType(CreateApprovalRuleDto) {
+  // Deactivation is PUT { isActive: false } — there is no DELETE route.
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
 }

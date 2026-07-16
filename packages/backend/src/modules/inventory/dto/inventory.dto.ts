@@ -9,6 +9,7 @@ import {
   NotEquals,
   IsUUID,
   IsDateString,
+  IsIn,
 } from 'class-validator';
 import { MovementType } from '../../../database/entities/inventory.entity';
 
@@ -401,4 +402,28 @@ export class StockTransferDto {
   @IsOptional()
   @IsString()
   notes?: string;
+}
+
+export class ConsumptionReportQueryDto {
+  @IsOptional()
+  @IsIn(['week', 'month', 'quarter', 'year', 'custom'])
+  period?: string;
+
+  // Matches the store name reported back in departmentConsumption[].name.
+  @IsOptional()
+  @IsString()
+  department?: string;
+
+  @IsOptional()
+  @IsString()
+  category?: string;
+
+  // Only honoured when period === 'custom'.
+  @IsOptional()
+  @IsDateString()
+  startDate?: string;
+
+  @IsOptional()
+  @IsDateString()
+  endDate?: string;
 }

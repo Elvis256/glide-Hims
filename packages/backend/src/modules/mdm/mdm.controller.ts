@@ -11,7 +11,12 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { MdmService } from './mdm.service';
-import { MasterDataVersionQueryDto, ApproveVersionDto, CreateApprovalRuleDto } from './dto/mdm.dto';
+import {
+  MasterDataVersionQueryDto,
+  ApproveVersionDto,
+  CreateApprovalRuleDto,
+  UpdateApprovalRuleDto,
+} from './dto/mdm.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { MasterDataEntityType } from '../../database/entities/master-data-version.entity';
@@ -131,7 +136,7 @@ export class MdmController {
   @ApiOperation({ summary: 'Update approval rule' })
   async updateApprovalRule(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: Partial<CreateApprovalRuleDto>,
+    @Body() dto: UpdateApprovalRuleDto,
     @Request() req: any,
   ) {
     const rule = await this.mdmService.updateApprovalRule(id, dto, req.user?.tenantId);

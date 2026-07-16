@@ -24,6 +24,10 @@ import {
   StockTransferDto,
 } from './dto/inventory.dto';
 
+// Label used for consumption with no originating store; also a selectable
+// department filter value, so the label and the filter must stay in sync.
+const UNASSIGNED_DEPARTMENT = 'General';
+
 @Injectable()
 export class InventoryService {
   constructor(
@@ -111,13 +115,14 @@ export class InventoryService {
       baseWhere.status = status as any;
     }
 
-    // If search term, create OR conditions for name/code/genericName
+    // If search term, create OR conditions for name/code/genericName/barcode
     let where: FindOptionsWhere<Item> | FindOptionsWhere<Item>[];
     if (search) {
       where = [
         { ...baseWhere, name: ILike(`%${search}%`) },
         { ...baseWhere, code: ILike(`%${search}%`) },
         { ...baseWhere, genericName: ILike(`%${search}%`) },
+        { ...baseWhere, barcode: ILike(`%${search}%`) },
       ];
     } else {
       where = baseWhere;
@@ -614,29 +619,45 @@ export class InventoryService {
     period: string = 'month',
     department?: string,
     category?: string,
+    startDate?: string,
+    endDate?: string,
   ) {
     const now = new Date();
-    let startDate: Date;
+    let rangeStart: Date;
+    let rangeEnd: Date = now;
 
     switch (period) {
       case 'week':
-        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        rangeStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
         break;
       case 'quarter':
-        startDate = new Date(now.getFullYear(), now.getMonth() - 3, 1);
+        rangeStart = new Date(now.getFullYear(), now.getMonth() - 3, 1);
         break;
       case 'year':
-        startDate = new Date(now.getFullYear(), 0, 1);
+        rangeStart = new Date(now.getFullYear(), 0, 1);
+        break;
+      case 'custom':
+        // Both bounds required; without them there is no range to honour, so fall back to month.
+        if (startDate && endDate) {
+          rangeStart = new Date(startDate);
+          rangeEnd = new Date(endDate);
+          break;
+        }
+        rangeStart = new Date(now.getFullYear(), now.getMonth(), 1);
         break;
       case 'month':
       default:
-        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+        rangeStart = new Date(now.getFullYear(), now.getMonth(), 1);
         break;
+    }
+
+    if (rangeEnd < rangeStart) {
+      throw new BadRequestException('endDate must be on or after startDate');
     }
 
     const daysDiff = Math.max(
       1,
-      Math.ceil((now.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000)),
+      Math.ceil((rangeEnd.getTime() - rangeStart.getTime()) / (24 * 60 * 60 * 1000)),
     );
 
     // Query outgoing stock movements (consumption)
@@ -647,14 +668,28 @@ export class InventoryService {
       .where('sl.movementType IN (:...types)', {
         types: ['sale', 'adjustment', 'expired', 'damaged', 'transfer_out'],
       })
-      .andWhere('sl.createdAt >= :startDate', { startDate })
+      .andWhere('sl.createdAt >= :rangeStart', { rangeStart })
       .andWhere('sl.quantity < 0');
+
+    if (period === 'custom') {
+      qb.andWhere('sl.createdAt <= :rangeEnd', { rangeEnd });
+    }
 
     const tid = requireTenantId(tenantId);
     qb.andWhere('sl.tenant_id = :tenantId', { tenantId: tid });
 
     if (category && category !== 'all') {
       qb.andWhere('item.category = :category', { category });
+    }
+
+    // departmentConsumption labels rows by store name (or 'General' when the
+    // movement has no store), so the filter has to match on the same basis.
+    if (department && department !== 'all') {
+      if (department === UNASSIGNED_DEPARTMENT) {
+        qb.andWhere('(store.name = :department OR sl.storeId IS NULL)', { department });
+      } else {
+        qb.andWhere('store.name = :department', { department });
+      }
     }
 
     const movements = await qb.getMany();
@@ -709,7 +744,7 @@ export class InventoryService {
     // Department consumption (derived from store name if available)
     const departmentMap = new Map<string, number>();
     for (const m of movements) {
-      const dept = (m as any).store?.name || 'General';
+      const dept = m.store?.name || UNASSIGNED_DEPARTMENT;
       departmentMap.set(dept, (departmentMap.get(dept) || 0) + Math.abs(m.quantity));
     }
 
