@@ -83,7 +83,11 @@ export default function LabPanelsPage() {
     queryKey: QUERY_KEY,
     queryFn: async () => {
       try {
-        const response = await api.get(`/settings?key=${SETTINGS_KEY}`);
+        // Settings are addressed by PATH key (GET /settings/:key → { key, value }).
+        // The old `?key=` query hit the list endpoint (GET /settings), which
+        // returns an ARRAY of all settings — so `.value` was always undefined and
+        // panels never loaded. A 404 (key never saved yet) falls through to [].
+        const response = await api.get(`/settings/${SETTINGS_KEY}`);
         return (response.data?.value ?? []) as LabPanel[];
       } catch {
         return [];
@@ -100,7 +104,9 @@ export default function LabPanelsPage() {
   // Save panels to settings API
   const saveMutation = useMutation({
     mutationFn: async (updated: LabPanel[]) => {
-      await api.post('/settings', { key: SETTINGS_KEY, value: updated });
+      // Upsert is PUT /settings/:key with { value } — there is no POST /settings
+      // route, so the old POST 404'd and no panel edit ever persisted.
+      await api.put(`/settings/${SETTINGS_KEY}`, { value: updated });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEY });
