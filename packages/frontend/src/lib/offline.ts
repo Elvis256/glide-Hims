@@ -53,9 +53,13 @@ if (typeof window !== 'undefined') {
 
 export const offline = {
   isOnline: () => online,
-  subscribe(l: Listener) {
+  /** Returns an unsubscribe fn. It must return void, not Set.delete's boolean —
+   *  React's useEffect only accepts a void-returning destructor. */
+  subscribe(l: Listener): () => void {
     listeners.add(l);
-    return () => listeners.delete(l);
+    return () => {
+      listeners.delete(l);
+    };
   },
   forceProbe: probe,
 };

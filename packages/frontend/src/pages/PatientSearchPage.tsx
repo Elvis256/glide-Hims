@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { patientsService, type Patient } from '../services/patients';
 import { encountersService } from '../services/encounters';
-import { usePatientStore } from '../store/patients';
+import { usePatientStore, type PatientRecord } from '../store/patients';
 import { useAuthStore } from '../store/auth';
 import { printService } from '../lib/print';
 import { toCsv, downloadBlob } from './reports/_reportUtils';
@@ -52,6 +52,37 @@ const GENDERS = [
 
 // Recent patients storage key
 const RECENT_PATIENTS_KEY = 'glide-hims-recent-patients';
+
+// The offline store keeps its own PatientRecord shape (session-local records
+// added at registration). Project it onto the API Patient shape so results,
+// badges and handlers all see a single type.
+const toPatient = (p: PatientRecord): Patient => ({
+  id: p.id,
+  mrn: p.mrn,
+  fullName: p.fullName,
+  gender: p.gender,
+  dateOfBirth: p.dateOfBirth,
+  nationalId: p.nationalId,
+  phone: p.phone,
+  email: p.email,
+  address: p.address,
+  bloodGroup: p.bloodGroup,
+  allergies: p.allergies ? [p.allergies] : undefined,
+  // PatientRecord carries the full PaymentMethod union; only the payer
+  // categories Patient models are carried across.
+  paymentType:
+    p.paymentType === 'insurance' || p.paymentType === 'membership' || p.paymentType === 'cash'
+      ? p.paymentType
+      : undefined,
+  insuranceProvider: p.insurance?.provider,
+  insurancePolicyNumber: p.insurance?.policyNumber,
+  membershipType: p.membership?.type,
+  userId: p.userId,
+  nextOfKin: p.nextOfKin,
+  maritalStatus: p.maritalStatus,
+  occupation: p.occupation,
+  createdAt: p.createdAt,
+});
 
 export default function PatientSearchPage() {
   const navigate = useNavigate();
@@ -154,8 +185,8 @@ export default function PatientSearchPage() {
   };
 
   // Combine API results with local store and apply filters
-  const localPatients = localSearchPatients(searchTerm);
-  const rawPatients = searchTerm.length >= 2 
+  const localPatients = localSearchPatients(searchTerm).map(toPatient);
+  const rawPatients = searchTerm.length >= 2
     ? [...(apiPatients?.data || []), ...localPatients.filter(lp => !apiPatients?.data?.some(ap => ap.id === lp.id))]
     : [];
 

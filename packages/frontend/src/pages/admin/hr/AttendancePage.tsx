@@ -242,9 +242,9 @@ export default function AttendancePage() {
                     <tr key={emp.id} className="border-t hover:bg-gray-50">
                       <td className="p-4">
                         <p className="font-medium">{emp.fullName}</p>
-                        <p className="text-sm text-gray-500">{emp.employeeCode}</p>
+                        <p className="text-sm text-gray-500">{emp.employeeNumber}</p>
                       </td>
-                      <td className="p-4 text-gray-600">{emp.department?.name || '—'}</td>
+                      <td className="p-4 text-gray-600">{(typeof emp.department === 'string' ? emp.department : emp.department?.name) || '—'}</td>
                       <td className="p-4 text-gray-600">{record?.clockIn || '—'}</td>
                       <td className="p-4 text-gray-600">{record?.clockOut || '—'}</td>
                       <td className="p-4">

@@ -292,7 +292,7 @@ export default function DispenseMedicationPage() {
         return sum + ((info?.price || 0) * item.quantity);
       }, 0);
       setDispensedInfo({
-        patientName: selectedPrescription!.patientName || selectedPrescription!.patient?.fullName || 'Patient',
+        patientName: selectedPrescription!.patient?.fullName || 'Patient',
         itemCount: dispItems.length,
         oosCount,
         total,
@@ -555,7 +555,6 @@ export default function DispenseMedicationPage() {
       ${isHighAlert ? '<div class="warn">⚠ HIGH-ALERT MEDICATION</div>' : ''}
       <div class="grid">
         <div><b>Qty Dispensed</b><br/>${item.quantity}</div>
-        <div><b>Route</b><br/>${item.route || 'Oral'}</div>
         <div><b>Batch #</b><br/>${batchNo}</div>
         <div><b>Expiry</b><br/>${expiryStr}</div>
       </div>
@@ -817,7 +816,10 @@ export default function DispenseMedicationPage() {
                         <tr key={item.id} className="bg-yellow-50">
                           <td className="py-2 pr-1">
                             <CatalogItemPicker
-                              value={editValues.drugName ? { id: editValues.drugCode || '', name: editValues.drugName } : null}
+                              // A prescription item stores only drugCode/drugName — it carries no
+                              // inventory link or unit, so the stored value cannot be attested as
+                              // an inventory row ('free_text' suppresses the source badge).
+                              value={editValues.drugName ? { id: null, source: 'free_text', code: editValues.drugCode || '', name: editValues.drugName, unit: '' } : null}
                               onChange={(item) => setEditValues((v: Record<string, any>) => ({ ...v, drugName: item?.name || '', drugCode: item?.code || item?.id || '' }))}
                               module="pharmacy"
                               placeholder="Drug name"

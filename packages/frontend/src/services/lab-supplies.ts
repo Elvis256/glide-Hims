@@ -68,20 +68,68 @@ export interface LeveyJenningsData {
   minus3Sd: number;
 }
 
+/** Mirrors backend ReagentCategory (lab-reagent.entity.ts) — the column is a
+ *  postgres enum, so any other string is rejected on write and matches nothing
+ *  on filter. */
+export type ReagentCategory =
+  | 'chemistry' | 'hematology' | 'microbiology' | 'serology' | 'urinalysis'
+  | 'coagulation' | 'immunology' | 'molecular' | 'blood_bank'
+  | 'histopathology' | 'cytology' | 'other';
+
+export type ReagentStatus = 'active' | 'low_stock' | 'out_of_stock' | 'expired' | 'discontinued';
+
+/** Mirrors lab_reagents (lab-reagent.entity.ts); listReagents returns raw
+ *  entities. Stock lives on stockQuantity/reorderLevel/maxStockLevel — there is
+ *  no minStock/reorderPoint/currentStock column. Expiry is per-LOT
+ *  (reagent_lots) and is NOT joined by the list endpoint. */
 export interface LabReagent {
   id: string;
   facilityId: string;
   code: string;
   name: string;
-  category: string;
+  description?: string;
+  category: ReagentCategory;
   manufacturer?: string;
+  catalogNumber?: string;
   unit: string;
-  currentStock: number;
-  minStock: number;
-  maxStock: number;
-  reorderPoint: number;
-  unitCost: number;
+  stockQuantity: number;
+  reorderLevel: number;
+  maxStockLevel?: number;
+  /** decimal column — arrives as a STRING over the wire. */
+  unitCost?: number | string;
+  storageConditions?: string;
+  status: ReagentStatus;
   isActive: boolean;
+}
+
+/** Mirrors backend ReceiveLotDto (modules/lab-supplies/dto). The backend runs
+ *  ValidationPipe{whitelist,forbidNonWhitelisted} — an unknown key 400s the
+ *  whole request, so this must stay exact. */
+export interface ReceiveLotDto {
+  facilityId: string;
+  lotNumber: string;
+  quantity?: number;
+  expiryDate?: string;
+  receivedDate?: string;
+  supplier?: string;
+  unitCost?: number;
+}
+
+/** Mirrors reagent_lots (lab-reagent.entity.ts). */
+export interface ReagentLot {
+  id: string;
+  reagentId: string;
+  facilityId: string;
+  lotNumber: string;
+  expiryDate: string;
+  receivedDate: string;
+  openedDate?: string;
+  initialQuantity: number;
+  currentQuantity: number;
+  unitCost?: number | string;
+  supplierName?: string;
+  isActive: boolean;
+  isQcPassed: boolean;
 }
 
 export interface LabEquipment {
@@ -237,7 +285,7 @@ export const labSuppliesService = {
 
   // ==================== Reagent Lots ====================
   reagentLots: {
-    receive: async (reagentId: string, data: any): Promise<any> => {
+    receive: async (reagentId: string, data: ReceiveLotDto): Promise<ReagentLot> => {
       const response = await api.post(`/lab-supplies/reagents/${reagentId}/lots`, data);
       return response.data;
     },

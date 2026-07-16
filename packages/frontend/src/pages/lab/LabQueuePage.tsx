@@ -102,11 +102,12 @@ export default function LabQueuePage() {
     // never be assigned.
     (p) => p.providerType === 'lab_technician' && p.status === 'active'
   );
-  const currentUserTechName = currentUser
-    ? [currentUser.firstName, currentUser.lastName].filter(Boolean).join(' ') || currentUser.email || ''
-    : '';
+  // users has only full_name — the old firstName/lastName build always yielded
+  // '' and fell through to the email, so "Assign to me" stamped an email
+  // address into assignedTo and never matched a provider by name.
+  const currentUserTechName = currentUser?.fullName || '';
   const isCurrentUserTech = technicians.some(
-    (t) => t.fullName === currentUserTechName || t.userId === (currentUser as any)?.id
+    (t) => t.fullName === currentUserTechName || t.userId === currentUser?.id
   );
 
   // Fetch lab orders
@@ -410,7 +411,7 @@ export default function LabQueuePage() {
       pending: orders.filter((o) => o.status === 'pending').length,
       inProgress: orders.filter((o) => o.status === 'in_progress').length,
       completed: orders.filter((o) => o.status === 'completed').length,
-      completedToday: orders.filter((o) => o.status === 'completed' && new Date((o as any).completedAt || o.updatedAt || o.createdAt).toDateString() === todayStr).length,
+      completedToday: orders.filter((o) => o.status === 'completed' && new Date(o.completedAt || o.createdAt).toDateString() === todayStr).length,
     };
   }, [orders]);
 

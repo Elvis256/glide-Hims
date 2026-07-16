@@ -38,28 +38,49 @@ import { printService } from '../../lib/print';
 import { useInstitutionInfo } from '../../lib/useInstitutionInfo';
 import { num, toCsv, downloadBlob } from './_reportUtils';
 
+/* Shapes below mirror InventoryService.getConsumptionReport(). */
+
+/** Daily series: `consumptionTrend` carries a quantity per day under `value`. */
 interface ConsumptionTrend {
   date: string;
+  value: number;
+}
+
+/** Monthly series: the only one that reports both quantity and money. */
+interface MonthlyTrend {
+  month: string;
   quantity: number;
   value: number;
 }
 
 interface TopConsumedItem {
-  id: string;
   name: string;
   category: string;
   totalQuantity: number;
   totalValue: number;
   avgDailyConsumption: number;
-  trend: 'up' | 'down' | 'stable';
+  trend: string;
 }
 
+/** Grouped by issuing store name; the report returns quantity only. */
 interface DepartmentConsumption {
-  department: string;
-  quantity: number;
+  name: string;
   value: number;
-  percentage: number;
-  color: string;
+}
+
+/** Chart tints — the report carries no colour, so assign one per slice. */
+const DEPT_COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7c7c', '#8dd1e1', '#d084d0', '#a4de6c'];
+const deptColor = (index: number) => DEPT_COLORS[index % DEPT_COLORS.length];
+
+interface ConsumptionReport {
+  totalConsumption: number;
+  totalValue: number;
+  avgDailyConsumption: number;
+  avgDailyValue: number;
+  topConsumedItems: TopConsumedItem[];
+  departmentConsumption: DepartmentConsumption[];
+  monthlyTrend: MonthlyTrend[];
+  consumptionTrend: ConsumptionTrend[];
 }
 
 export default function ConsumptionReportsPage() {
@@ -99,8 +120,7 @@ export default function ConsumptionReportsPage() {
       }
       const response = await api.get('/inventory/consumption', { params });
       const data = response.data ?? {};
-      return {
-        ...data,
+      const report: ConsumptionReport = {
         totalConsumption: num(data.totalConsumption),
         totalValue: num(data.totalValue),
         avgDailyConsumption: num(data.avgDailyConsumption),
@@ -113,27 +133,51 @@ export default function ConsumptionReportsPage() {
         })),
         departmentConsumption: (data.departmentConsumption ?? []).map((d: DepartmentConsumption) => ({
           ...d,
-          quantity: num(d.quantity),
           value: num(d.value),
-          percentage: num(d.percentage),
         })),
         consumptionTrend: (data.consumptionTrend ?? []).map((t: ConsumptionTrend) => ({
           ...t,
-          quantity: num(t.quantity),
           value: num(t.value),
         })),
-        monthlyTrend: (data.monthlyTrend ?? []).map((t: ConsumptionTrend) => ({
+        monthlyTrend: (data.monthlyTrend ?? []).map((t: MonthlyTrend) => ({
           ...t,
           quantity: num(t.quantity),
           value: num(t.value),
         })),
       };
+      return report;
     },
   });
 
+  /**
+   * One series for the trend chart. Only the monthly series carries money —
+   * consumptionTrend's `value` is a daily QUANTITY, so it must not be plotted
+   * on the currency axis.
+   */
+  const showMoneySeries = dateRange === 'year';
+  const trendSeries = useMemo(() => {
+    if (showMoneySeries) {
+      return (stats?.monthlyTrend ?? []).map((t) => ({
+        label: t.month,
+        quantity: t.quantity,
+        value: t.value,
+      }));
+    }
+    return (stats?.consumptionTrend ?? []).map((t) => ({
+      label: t.date,
+      quantity: t.value,
+    }));
+  }, [showMoneySeries, stats?.monthlyTrend, stats?.consumptionTrend]);
+
+  /** Share of total consumed quantity — the report does not return a
+   *  precomputed percentage, so derive it from the values we do get. */
+  const departmentTotal = (stats?.departmentConsumption ?? []).reduce((s, d) => s + d.value, 0);
+  const departmentShare = (d: DepartmentConsumption) =>
+    departmentTotal > 0 ? (d.value / departmentTotal) * 100 : 0;
+
   // Calculate trend from monthlyTrend data instead of using backend's hardcoded value
   const computedTrend = useMemo(() => {
-    const trend = stats?.monthlyTrend as ConsumptionTrend[] | undefined;
+    const trend = stats?.monthlyTrend;
     if (!trend || trend.length < 2) return null;
     const last = trend[trend.length - 1]?.quantity ?? 0;
     const prev = trend[trend.length - 2]?.quantity ?? 0;
@@ -170,9 +214,9 @@ export default function ConsumptionReportsPage() {
     );
     rows.push([]);
     rows.push(['Department Consumption']);
-    rows.push(['Department', 'Quantity', 'Value', 'Percentage']);
+    rows.push(['Department', 'Quantity', 'Percentage']);
     (stats?.departmentConsumption ?? []).forEach((d: DepartmentConsumption) =>
-      rows.push([d.department, d.quantity, d.value, `${d.percentage}%`]),
+      rows.push([d.name, d.value, `${departmentShare(d).toFixed(1)}%`]),
     );
     return toCsv(rows);
   };
@@ -246,12 +290,11 @@ export default function ConsumptionReportsPage() {
         <thead><tr style="background:#f1f5f9;">
           <th style="border:1px solid #e2e8f0;padding:5px;text-align:left;">Department</th>
           <th style="border:1px solid #e2e8f0;padding:5px;text-align:right;">Quantity</th>
-          <th style="border:1px solid #e2e8f0;padding:5px;text-align:right;">Value</th>
           <th style="border:1px solid #e2e8f0;padding:5px;text-align:right;">% of Total</th>
         </tr></thead>
         <tbody>
           ${dept.map((d) =>
-            `<tr><td style="border:1px solid #e2e8f0;padding:5px;">${d.department}</td><td style="border:1px solid #e2e8f0;padding:5px;text-align:right;">${d.quantity.toLocaleString()}</td><td style="border:1px solid #e2e8f0;padding:5px;text-align:right;">${fmt(d.value)}</td><td style="border:1px solid #e2e8f0;padding:5px;text-align:right;">${d.percentage.toFixed(1)}%</td></tr>`,
+            `<tr><td style="border:1px solid #e2e8f0;padding:5px;">${d.name}</td><td style="border:1px solid #e2e8f0;padding:5px;text-align:right;">${d.value.toLocaleString()}</td><td style="border:1px solid #e2e8f0;padding:5px;text-align:right;">${departmentShare(d).toFixed(1)}%</td></tr>`,
           ).join('')}
         </tbody>
       </table>` : '';
@@ -310,7 +353,7 @@ export default function ConsumptionReportsPage() {
     );
   }
 
-  const departments = ['all', ...new Set(stats?.departmentConsumption?.map((d: DepartmentConsumption) => d.department) || [])];
+  const departments = ['all', ...new Set(stats?.departmentConsumption?.map((d: DepartmentConsumption) => d.name) || [])];
   const categories = ['all', ...new Set(stats?.topConsumedItems?.map((i: TopConsumedItem) => i.category) || [])];
 
   return (
@@ -488,20 +531,24 @@ export default function ConsumptionReportsPage() {
       <div className="bg-white rounded-lg shadow p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Consumption Trends</h3>
         <ResponsiveContainer width="100%" height={350}>
-          <LineChart data={dateRange === 'year' ? stats?.monthlyTrend : stats?.consumptionTrend || []}>
+          <LineChart data={trendSeries}>
             <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="date" />
+            <XAxis dataKey="label" />
             <YAxis yAxisId="left" orientation="left" tickFormatter={(value) => value.toLocaleString()} />
-            <YAxis yAxisId="right" orientation="right" tickFormatter={(value) => formatCurrency(value, { compact: true, showSymbol: false })} />
+            {showMoneySeries && (
+              <YAxis yAxisId="right" orientation="right" tickFormatter={(value) => formatCurrency(value, { compact: true, showSymbol: false })} />
+            )}
             <Tooltip
               formatter={(value: number, name: string) => [
-                name === 'value' ? formatCurrency(value) : value.toLocaleString(),
-                name === 'value' ? 'Value' : 'Quantity',
+                name === 'Value' ? formatCurrency(value) : value.toLocaleString(),
+                name,
               ]}
             />
             <Legend />
             <Line yAxisId="left" type="monotone" dataKey="quantity" stroke="#3B82F6" strokeWidth={2} name="Quantity" dot={{ fill: '#3B82F6' }} />
-            <Line yAxisId="right" type="monotone" dataKey="value" stroke="#10B981" strokeWidth={2} name="Value" dot={{ fill: '#10B981' }} />
+            {showMoneySeries && (
+              <Line yAxisId="right" type="monotone" dataKey="value" stroke="#10B981" strokeWidth={2} name="Value" dot={{ fill: '#10B981' }} />
+            )}
           </LineChart>
         </ResponsiveContainer>
       </div>
@@ -521,13 +568,19 @@ export default function ConsumptionReportsPage() {
                 outerRadius={100}
                 paddingAngle={5}
                 dataKey="value"
-                label={({ department, percentage }) => `${department}: ${percentage}%`}
+                // recharts spreads the datum into the label props but types
+                // only `payload`, so read the row from there.
+                label={({ payload }) => {
+                  const row = payload as DepartmentConsumption;
+                  return `${row.name}: ${departmentShare(row).toFixed(1)}%`;
+                }}
               >
                 {stats?.departmentConsumption?.map((entry: DepartmentConsumption, index: number) => (
-                  <Cell key={`cell-${index}`} fill={entry.color} />
+                  <Cell key={`cell-${entry.name}`} fill={deptColor(index)} />
                 ))}
               </Pie>
-              <Tooltip formatter={(value: number | undefined) => formatCurrency(value ?? 0)} />
+              {/* value is consumed quantity, not money */}
+              <Tooltip formatter={(value: number | undefined) => (value ?? 0).toLocaleString()} />
             </PieChart>
           </ResponsiveContainer>
         </div>
@@ -538,12 +591,12 @@ export default function ConsumptionReportsPage() {
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={stats?.departmentConsumption || []} layout="vertical">
               <CartesianGrid strokeDasharray="3 3" />
-              <XAxis type="number" tickFormatter={(value) => formatCurrency(value, { compact: true, showSymbol: false })} />
-              <YAxis type="category" dataKey="department" width={100} />
-              <Tooltip formatter={(value: number | undefined) => formatCurrency(value ?? 0)} />
+              <XAxis type="number" tickFormatter={(value) => Number(value).toLocaleString()} />
+              <YAxis type="category" dataKey="name" width={100} />
+              <Tooltip formatter={(value: number | undefined) => (value ?? 0).toLocaleString()} />
               <Bar dataKey="value" radius={[0, 4, 4, 0]}>
                 {stats?.departmentConsumption?.map((entry: DepartmentConsumption, index: number) => (
-                  <Cell key={`cell-${index}`} fill={entry.color} />
+                  <Cell key={`cell-${entry.name}`} fill={deptColor(index)} />
                 ))}
               </Bar>
             </BarChart>
@@ -574,7 +627,7 @@ export default function ConsumptionReportsPage() {
               {stats?.topConsumedItems?.map((item: TopConsumedItem, index: number) => {
                 const itemTrend = computedTrend || item.trend;
                 return (
-                <tr key={item.id} className="hover:bg-gray-50">
+                <tr key={item.name} className="hover:bg-gray-50">
                   <td className="px-6 py-4 text-sm text-gray-500">{index + 1}</td>
                   <td className="px-6 py-4 text-sm font-medium text-gray-900">{item.name}</td>
                   <td className="px-6 py-4 text-sm text-gray-600">{item.category}</td>
@@ -607,30 +660,28 @@ export default function ConsumptionReportsPage() {
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Department</th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Quantity</th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Value</th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">% of Total</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {stats?.departmentConsumption?.map((dept: DepartmentConsumption) => (
-                <tr key={dept.department} className="hover:bg-gray-50">
+              {stats?.departmentConsumption?.map((dept: DepartmentConsumption, index: number) => (
+                <tr key={dept.name} className="hover:bg-gray-50">
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: dept.color }}></div>
-                      <span className="text-sm font-medium text-gray-900">{dept.department}</span>
+                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: deptColor(index) }}></div>
+                      <span className="text-sm font-medium text-gray-900">{dept.name}</span>
                     </div>
                   </td>
-                  <td className="px-6 py-4 text-sm text-gray-900 text-right">{(dept.quantity ?? 0).toLocaleString()}</td>
-                  <td className="px-6 py-4 text-sm text-gray-900 text-right font-medium">{formatCurrency(dept.value ?? 0)}</td>
+                  <td className="px-6 py-4 text-sm text-gray-900 text-right">{dept.value.toLocaleString()}</td>
                   <td className="px-6 py-4 text-right">
                     <div className="flex items-center justify-end gap-2">
                       <div className="w-24 bg-gray-200 rounded-full h-2">
                         <div
                           className="h-2 rounded-full"
-                          style={{ width: `${dept.percentage}%`, backgroundColor: dept.color }}
+                          style={{ width: `${departmentShare(dept)}%`, backgroundColor: deptColor(index) }}
                         ></div>
                       </div>
-                      <span className="text-sm text-gray-600 w-12">{dept.percentage}%</span>
+                      <span className="text-sm text-gray-600 w-12">{departmentShare(dept).toFixed(1)}%</span>
                     </div>
                   </td>
                 </tr>
@@ -639,8 +690,7 @@ export default function ConsumptionReportsPage() {
             <tfoot className="bg-gray-50">
               <tr className="font-semibold">
                 <td className="px-6 py-4 text-sm text-gray-900">Total</td>
-                <td className="px-6 py-4 text-sm text-gray-900 text-right">{stats?.totalConsumption?.toLocaleString()}</td>
-                <td className="px-6 py-4 text-sm text-gray-900 text-right">{formatCurrency(stats?.totalValue)}</td>
+                <td className="px-6 py-4 text-sm text-gray-900 text-right">{departmentTotal.toLocaleString()}</td>
                 <td className="px-6 py-4 text-sm text-gray-900 text-right">100%</td>
               </tr>
             </tfoot>

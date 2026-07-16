@@ -322,16 +322,22 @@ export interface Item {
   unitId?: string;
   formulationId?: string;
   storageConditionId?: string;
+  strengthId?: string;
   genericName?: string;
   strength?: string;
   manufacturer?: string;
   description?: string;
   unit: string;
+  packSize?: number;
+  barcode?: string;
   isDrug: boolean;
   requiresPrescription: boolean;
   isControlled?: boolean;
   requiresBatchTracking?: boolean;
   requiresExpiryTracking?: boolean;
+  isSellable?: boolean;
+  /** standard | reagent | consumable | service_input */
+  itemType?: string;
   reorderLevel: number;
   unitCost: number;
   sellingPrice: number;

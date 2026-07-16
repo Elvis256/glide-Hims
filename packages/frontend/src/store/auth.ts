@@ -13,6 +13,7 @@ interface AuthActions {
   hasPermission: (permission: string) => boolean;
   hasAnyPermission: (permissions: string[]) => boolean;
   hasRole: (role: string) => boolean;
+  hasAnyRole: (roles: string[]) => boolean;
   hasModuleAccess: (moduleCode: string) => boolean;
   setAccessibleModules: (modules: string[]) => void;
   updateFromMe: (data: { permissions?: string[]; roles?: string[]; accessibleModules?: string[]; facilityMode?: string; businessType?: string; workflowMode?: 'simple' | 'departmental' }) => void;

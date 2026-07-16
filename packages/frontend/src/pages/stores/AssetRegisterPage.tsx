@@ -47,7 +47,8 @@ export default function AssetRegisterPage() {
   }, [searchTerm, assets]);
 
   const stats = useMemo(() => {
-    const totalValue = assets.reduce((sum, a) => sum + Number(a.purchaseCost || 0), 0);
+    // totalCost = acquisition + installation, the capitalised value on the register
+    const totalValue = assets.reduce((sum, a) => sum + Number(a.totalCost || 0), 0);
     const depreciation = assets.reduce((sum, a) => sum + Number(a.accumulatedDepreciation || 0), 0);
     const maintenanceDue = assets.filter(a => a.nextMaintenanceDate && new Date(a.nextMaintenanceDate) < new Date()).length;
     return { total: assets.length, totalValue, depreciation, maintenanceDue };
@@ -192,7 +193,8 @@ export default function AssetRegisterPage() {
             </thead>
             <tbody className="divide-y">
               {filteredAssets.map((asset) => {
-                const bookValue = Number(asset.purchaseCost || 0) - Number(asset.accumulatedDepreciation || 0);
+                // book_value is maintained by the depreciation run — don't recompute it
+                const bookValue = Number(asset.bookValue || 0);
                 const needsMaintenance = asset.nextMaintenanceDate && new Date(asset.nextMaintenanceDate) < new Date();
                 return (
                   <tr key={asset.id} className="hover:bg-gray-50">
@@ -219,12 +221,12 @@ export default function AssetRegisterPage() {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1 text-gray-600">
                         <User className="w-3 h-3" />
-                        {asset.department || asset.assignedTo || '—'}
+                        {asset.department?.name || '—'}
                       </div>
                     </td>
                     <td className="px-4 py-3">
                       <div>
-                        <p className="font-medium text-gray-900">{formatCurrency(Number(asset.purchaseCost || 0))}</p>
+                        <p className="font-medium text-gray-900">{formatCurrency(Number(asset.totalCost || 0))}</p>
                         <p className="text-xs text-gray-500">Book: {formatCurrency(bookValue)}</p>
                       </div>
                     </td>

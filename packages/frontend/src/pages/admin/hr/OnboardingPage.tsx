@@ -165,7 +165,7 @@ export default function OnboardingPage() {
     queryFn: async () => {
       try {
         const res = await hrService.staff.list({ facilityId });
-        return Array.isArray(res) ? res : res?.data ?? [];
+        return res?.data ?? [];
       } catch {
         return [];
       }

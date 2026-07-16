@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { syncService } from '../../services/sync';
+import { toast } from 'sonner';
+import { db, type SyncQueueItem } from '../../lib/sync/db';
+import { syncNow } from '../../lib/sync/syncManager';
+import { useFacilityId } from '../../lib/facility';
 import {
   CloudUpload,
   Clock,
@@ -21,25 +24,23 @@ import {
   ChevronDown,
 } from 'lucide-react';
 
-interface OfflineQueueItem {
-  id: string;
-  entityType: string;
-  entityId: string;
-  operation: 'CREATE' | 'UPDATE' | 'DELETE';
-  data: Record<string, unknown>;
-  createdAt: string;
-  retryCount: number;
-  lastError?: string;
-  status: 'PENDING' | 'FAILED' | 'SYNCING';
-}
+// The offline queue lives ONLY in this browser's IndexedDB (lib/sync/db.ts).
+// This page previously fetched it from GET /sync/pull with a `type` param that
+// endpoint does not accept — pull returns server changes since a timestamp and
+// requires facilityId/clientId/since. There is no server-side "my offline
+// queue" to fetch: by definition these are changes that have not reached the
+// server yet.
 
+// Keys are SyncableEntityType values from lib/sync/db.ts (lowercase).
 const entityIcons: Record<string, React.ReactNode> = {
-  PATIENT: <User className="w-4 h-4" />,
-  ENCOUNTER: <Stethoscope className="w-4 h-4" />,
-  LAB_ORDER: <FlaskConical className="w-4 h-4" />,
-  PRESCRIPTION: <Pill className="w-4 h-4" />,
-  BILLING: <DollarSign className="w-4 h-4" />,
-  VITALS: <FileText className="w-4 h-4" />,
+  patient: <User className="w-4 h-4" />,
+  encounter: <Stethoscope className="w-4 h-4" />,
+  lab_order: <FlaskConical className="w-4 h-4" />,
+  lab_result: <FlaskConical className="w-4 h-4" />,
+  prescription: <Pill className="w-4 h-4" />,
+  invoice: <DollarSign className="w-4 h-4" />,
+  payment: <DollarSign className="w-4 h-4" />,
+  vital_sign: <FileText className="w-4 h-4" />,
 };
 
 export default function OfflineQueuePage() {
@@ -47,38 +48,55 @@ export default function OfflineQueuePage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedType, setSelectedType] = useState('All');
   const [selectedStatus, setSelectedStatus] = useState('All');
-  const [selectedItems, setSelectedItems] = useState<string[]>([]);
+  const [selectedItems, setSelectedItems] = useState<number[]>([]);
   const [showTypeDropdown, setShowTypeDropdown] = useState(false);
-  const [showDetails, setShowDetails] = useState<string | null>(null);
+  const [showDetails, setShowDetails] = useState<number | null>(null);
+
+  const facilityId = useFacilityId();
 
   const { data: queueItems, isLoading } = useQuery({
     queryKey: ['offline-queue'],
-    queryFn: () => syncService.pull({ type: 'offline-queue' }),
+    queryFn: () => db.syncQueue.orderBy('createdAt').reverse().toArray(),
+    refetchInterval: 5000,
   });
 
+  // Requeue one failed item: reset it to pending, then run a sync pass.
   const syncItemMutation = useMutation({
-    mutationFn: (itemId: string) => syncService.push([{ id: itemId }]),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['offline-queue'] });
+    mutationFn: async (itemId: number) => {
+      await db.syncQueue.update(itemId, { status: 'pending', retryCount: 0, errorMessage: undefined });
+      if (facilityId) await syncNow(facilityId);
     },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['offline-queue'] }),
+    onError: (e: any) => toast.error(e?.message || 'Failed to sync item'),
   });
 
+  // Discarding drops a local change that never reached the server — it cannot
+  // be recovered, so the caller confirms first.
   const deleteItemMutation = useMutation({
-    mutationFn: (itemId: string) => syncService.push([{ id: itemId, action: 'delete' }]),
+    mutationFn: (itemId: number) => db.syncQueue.delete(itemId),
     onSuccess: () => {
+      toast.success('Queued change discarded');
       queryClient.invalidateQueries({ queryKey: ['offline-queue'] });
     },
+    onError: (e: any) => toast.error(e?.message || 'Failed to discard item'),
   });
 
   const syncAllMutation = useMutation({
-    mutationFn: () => syncService.retryFailed(),
-    onSuccess: () => {
+    mutationFn: async () => {
+      if (!facilityId) throw new Error('No active facility');
+      await db.syncQueue.where('status').equals('failed').modify({ status: 'pending', retryCount: 0 });
+      return syncNow(facilityId);
+    },
+    onSuccess: (res) => {
+      toast.success(`Synced ${res.pushed} change${res.pushed === 1 ? '' : 's'}`);
       queryClient.invalidateQueries({ queryKey: ['offline-queue'] });
     },
+    onError: (e: any) => toast.error(e?.message || 'Sync failed'),
   });
 
-  const formatTimeAgo = (dateStr: string) => {
-    const diff = Date.now() - new Date(dateStr).getTime();
+  // SyncQueueItem.createdAt is epoch milliseconds, not an ISO string.
+  const formatTimeAgo = (date: number | string) => {
+    const diff = Date.now() - new Date(date).getTime();
     const mins = Math.floor(diff / 60000);
     if (mins < 1) return 'Just now';
     if (mins < 60) return `${mins}m ago`;
@@ -98,10 +116,10 @@ export default function OfflineQueuePage() {
   });
 
   const entityTypes = ['All', ...new Set(items.map(i => i.entityType))];
-  const statuses = ['All', 'PENDING', 'FAILED', 'SYNCING'];
+  const statuses = ['All', 'pending', 'syncing', 'failed', 'conflict'];
 
-  const pendingCount = items.filter(i => i.status === 'PENDING').length;
-  const failedCount = items.filter(i => i.status === 'FAILED').length;
+  const pendingCount = items.filter(i => i.status === 'pending').length;
+  const failedCount = items.filter(i => i.status === 'failed').length;
 
   if (isLoading) {
     return (
@@ -289,8 +307,8 @@ export default function OfflineQueuePage() {
                   </td>
                   <td className="px-4 py-3">
                     <span className={`px-2 py-1 rounded text-xs font-medium ${
-                      item.operation === 'CREATE' ? 'bg-green-100 text-green-700' :
-                      item.operation === 'UPDATE' ? 'bg-blue-100 text-blue-700' :
+                      item.operation === 'create' ? 'bg-green-100 text-green-700' :
+                      item.operation === 'update' ? 'bg-blue-100 text-blue-700' :
                       'bg-red-100 text-red-700'
                     }`}>
                       {item.operation}
@@ -300,12 +318,12 @@ export default function OfflineQueuePage() {
                     {formatTimeAgo(item.createdAt)}
                   </td>
                   <td className="px-4 py-3">
-                    {item.status === 'PENDING' ? (
+                    {item.status === 'pending' ? (
                       <span className="flex items-center gap-1 text-orange-600 text-sm">
                         <Clock className="w-4 h-4" />
                         Pending
                       </span>
-                    ) : item.status === 'FAILED' ? (
+                    ) : item.status === 'failed' ? (
                       <span className="flex items-center gap-1 text-red-600 text-sm">
                         <AlertTriangle className="w-4 h-4" />
                         Failed
@@ -355,11 +373,11 @@ export default function OfflineQueuePage() {
                       <div className="space-y-2">
                         <p className="text-sm font-medium text-gray-700">Data:</p>
                         <pre className="text-xs bg-gray-100 p-3 rounded overflow-x-auto">
-                          {JSON.stringify(item.data, null, 2)}
+                          {JSON.stringify(item.payload, null, 2)}
                         </pre>
-                        {item.lastError && (
+                        {item.errorMessage && (
                           <p className="text-sm text-red-600">
-                            <strong>Last Error:</strong> {item.lastError}
+                            <strong>Last Error:</strong> {item.errorMessage}
                           </p>
                         )}
                       </div>

@@ -8,27 +8,34 @@ import {
 } from 'recharts';
 import { api } from '../../services/api';
 
+/* Shapes mirror SupplierAnalyticsService / SpendAnalyticsService. */
+
 interface SupplierMetric {
   supplierId: string;
   supplierName: string;
   totalSpend: number;
   orderCount: number;
   avgOrderValue: number;
-  onTimeDeliveryRate: number;
-  qualityScore: number;
+  /** null when no PO carried an expected delivery date, or no GRNs exist. */
+  onTimeDeliveryRate: number | null;
+  /** null when no GRN inspection data exists. */
+  qualityScore: number | null;
 }
 
 interface SpendTrend {
   period: string;
   totalSpend: number;
   orderCount: number;
+  avgOrderValue: number;
 }
 
 interface CategorySpend {
   category: string;
   totalSpend: number;
   orderCount: number;
+  avgOrderValue: number;
   percentOfTotal: number;
+  trend: 'up' | 'down' | 'stable' | null;
 }
 
 const ProcurementAnalyticsDashboard: React.FC = () => {
@@ -166,7 +173,12 @@ const ProcurementAnalyticsDashboard: React.FC = () => {
                     cx="50%"
                     cy="50%"
                     labelLine={false}
-                    label={({ category, percentOfTotal }) => `${category}: ${percentOfTotal.toFixed(1)}%`}
+                    // recharts spreads the datum into the label props but types
+                    // only `payload`, so read the row from there.
+                    label={({ payload }) => {
+                      const row = payload as CategorySpend;
+                      return `${row.category}: ${row.percentOfTotal.toFixed(1)}%`;
+                    }}
                     outerRadius={80}
                     fill="#8884d8"
                     dataKey="totalSpend"

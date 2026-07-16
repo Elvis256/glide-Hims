@@ -76,7 +76,7 @@ export default function GoodsReceivedPage() {
     queryKey: ['purchase-orders', facilityId, 'for-grn-sent'],
     queryFn: () => procurementService.purchaseOrders.list({
       facilityId: facilityId || undefined,
-      status: 'sent' as any,
+      status: 'sent',
     }),
     staleTime: 30000,
   });
@@ -84,7 +84,7 @@ export default function GoodsReceivedPage() {
     queryKey: ['purchase-orders', facilityId, 'for-grn-partial'],
     queryFn: () => procurementService.purchaseOrders.list({
       facilityId: facilityId || undefined,
-      status: 'partially_received' as any,
+      status: 'partially_received',
     }),
     staleTime: 30000,
   });
@@ -869,7 +869,6 @@ function CreateGRNModal({ purchaseOrders, facilityId, isLoadingPO, isLoadingDire
                                   ),
                                 )
                               }
-                              module="all"
                               size="sm"
                             />
                           </td>

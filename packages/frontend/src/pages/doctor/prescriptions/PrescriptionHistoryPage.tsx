@@ -50,7 +50,7 @@ interface Prescription {
 function transformPrescription(apiPrescription: APIPrescription): Prescription {
   const statusMap: Record<APIPrescription['status'], Prescription['status']> = {
     pending: 'Active',
-    partial: 'Active',
+    partially_dispensed: 'Active',
     dispensing: 'Active',
     ready: 'Active',
     dispensed: 'Completed',

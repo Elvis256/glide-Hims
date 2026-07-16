@@ -649,7 +649,7 @@ export default function ImagingOrdersPage() {
                 {newOrderForm.selectedPatient ? (
                   <div className="flex items-center justify-between p-2 bg-blue-50 border border-blue-200 rounded-lg">
                     <div>
-                      <p className="font-medium text-gray-900">{newOrderForm.selectedPatient.firstName} {newOrderForm.selectedPatient.lastName}</p>
+                      <p className="font-medium text-gray-900">{newOrderForm.selectedPatient.fullName}</p>
                       <p className="text-sm text-gray-500">{newOrderForm.selectedPatient.mrn}</p>
                     </div>
                     <button
@@ -676,7 +676,7 @@ export default function ImagingOrdersPage() {
                             onClick={() => setNewOrderForm(f => ({ ...f, selectedPatient: p, patientSearch: '' }))}
                             className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm"
                           >
-                            <span className="font-medium">{p.firstName} {p.lastName}</span>
+                            <span className="font-medium">{p.fullName}</span>
                             <span className="text-gray-500 ml-2">{p.mrn}</span>
                           </button>
                         ))}

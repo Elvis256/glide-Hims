@@ -235,7 +235,7 @@ export default function LoginPage() {
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-8">
           <div className="flex flex-col items-center mb-8">
-            <Logo size="lg" variant="full" showTagline tagline={getBusinessConfig(tenant?.businessType).tagline} />
+            <Logo size="lg" variant="full" showTagline tagline={getBusinessConfig().tagline} />
           </div>
 
           {setupStatus?.organizationName && (
@@ -328,7 +328,7 @@ export default function LoginPage() {
           </form>
 
           <p className="text-center text-gray-500 text-sm mt-6">
-            Glide HIMS v1.0.0 • {getBusinessConfig(tenant?.businessType).tagline}
+            Glide HIMS v1.0.0 • {getBusinessConfig().tagline}
           </p>
         </div>
       </div>
@@ -340,7 +340,7 @@ export default function LoginPage() {
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-8">
         <div className="flex flex-col items-center mb-8">
-          <Logo size="lg" variant="full" showTagline tagline={getBusinessConfig(tenant?.businessType).tagline} />
+          <Logo size="lg" variant="full" showTagline tagline={getBusinessConfig().tagline} />
         </div>
 
         {/* Tenant info banner */}
@@ -461,7 +461,7 @@ export default function LoginPage() {
         </form>
 
         <p className="text-center text-gray-500 text-sm mt-6">
-          Glide HIMS v{__APP_VERSION__} • {getBusinessConfig(tenant?.businessType).tagline}
+          Glide HIMS v{__APP_VERSION__} • {getBusinessConfig().tagline}
         </p>
         <p className="text-center text-gray-400 text-xs mt-2">
           <a href="https://hmis.itsolutionsuganda.com" target="_blank" rel="noopener noreferrer" className="hover:text-gray-600">About Glide HIMS</a>

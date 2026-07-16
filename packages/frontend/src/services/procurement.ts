@@ -1,7 +1,16 @@
 import api from './api';
 
 // Purchase Request Types
-export type PRStatus = 'draft' | 'submitted' | 'approved' | 'rejected' | 'ordered' | 'cancelled';
+// Mirrors PRStatus in backend database/entities/purchase-request.entity.ts
+export type PRStatus =
+  | 'draft'
+  | 'pending_approval'
+  | 'approved'
+  | 'rejected'
+  | 'partially_ordered'
+  | 'fully_ordered'
+  | 'completed'
+  | 'cancelled';
 export type PRPriority = 'low' | 'normal' | 'high' | 'urgent';
 
 export interface PRItem {
@@ -40,7 +49,16 @@ export interface PurchaseRequest {
 }
 
 // Purchase Order Types
-export type POStatus = 'draft' | 'pending_approval' | 'approved' | 'sent' | 'partial' | 'received' | 'cancelled';
+// Mirrors POStatus in backend database/entities/purchase-order.entity.ts
+export type POStatus =
+  | 'draft'
+  | 'pending_approval'
+  | 'approved'
+  | 'sent'
+  | 'partially_received'
+  | 'fully_received'
+  | 'cancelled'
+  | 'closed';
 
 export interface POItem {
   id: string;
@@ -126,7 +144,7 @@ export interface GoodsReceipt {
   invoiceNumber?: string;
   invoiceDate?: string;
   invoiceAmount?: number;
-  subtotal: number;
+  totalQuantityReceived: number;
   totalValue: number;
   inspectedById?: string;
   inspectedAt?: string;
@@ -141,14 +159,15 @@ export interface GoodsReceipt {
   updatedAt: string;
 }
 
-// Dashboard Types
+// Dashboard Types — mirrors ProcurementService.getDashboard()
 export interface ProcurementDashboard {
-  pendingRequests: number;
-  pendingOrders: number;
-  pendingReceipts: number;
-  totalSpendMonth: number;
-  recentRequests: PurchaseRequest[];
-  recentOrders: PurchaseOrder[];
+  pendingPRs: number;
+  approvedPRs: number;
+  pendingPOs: number;
+  sentPOs: number;
+  pendingGRNs: number;
+  /** SUM(totalValue) of GRNs posted today; decimal → arrives as string. */
+  totalValueToday: number | string;
 }
 
 // DTOs

@@ -114,8 +114,11 @@ export default function PharmacyAnalyticsPage() {
 
   // Calculate dashboard stats from API data
   const dashboardStats = useMemo(() => {
-    const totalRevenue = dailySummary?.totalAmount || 0;
-    const prescriptionsFilled = dailySummary?.totalSales || 0;
+    // getDailySummary aliases the revenue sum as totalRevenue; there is no
+    // totalAmount on the summary. Every figure comes back as a STRING from the
+    // raw query, so coerce before use.
+    const totalRevenue = Number(dailySummary?.totalRevenue ?? 0);
+    const prescriptionsFilled = Number(dailySummary?.totalSales ?? 0);
     const inventory = asList(inventoryData);
     const stockValue = inventory.reduce((sum, item) => sum + (item.currentStock * (item.unitCost || 0)), 0);
 
@@ -217,14 +220,20 @@ export default function PharmacyAnalyticsPage() {
 
   // Build category revenue from sales
   const categoryRevenue: CategoryRevenue[] = useMemo(() => {
-    if (!dailySummary?.bySaleType) return [];
-    
-    const colors = ['bg-blue-500', 'bg-green-500', 'bg-purple-500', 'bg-amber-500'];
-    const entries = Object.entries(dailySummary.bySaleType);
+    if (!dailySummary) return [];
+
+    // getDailySummary returns revenue per sale type as three named columns —
+    // there is no bySaleType map, so this list was always empty.
+    const colors = ['bg-blue-500', 'bg-green-500', 'bg-purple-500'];
+    const entries: Array<[string, number]> = [
+      ['Prescription', Number(dailySummary.prescriptionRevenue ?? 0)],
+      ['OTC', Number(dailySummary.otcRevenue ?? 0)],
+      ['Wholesale', Number(dailySummary.wholesaleRevenue ?? 0)],
+    ];
     const total = entries.reduce((sum, [, value]) => sum + value, 0);
-    
+
     return entries.map(([category, value], index) => ({
-      category: category.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+      category,
       revenue: value,
       percentage: total > 0 ? Math.round((value / total) * 100) : 0,
       color: colors[index % colors.length],

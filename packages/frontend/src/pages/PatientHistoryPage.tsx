@@ -855,9 +855,9 @@ export default function PatientHistoryPage() {
                   <span className="text-gray-500">Pulse:</span> {visit.vitals.pulse} bpm
                 </div>
               )}
-              {visit.vitals.bloodPressureSystolic && (
+              {visit.vitals.bpSystolic && (
                 <div className="bg-gray-50 rounded p-2">
-                  <span className="text-gray-500">BP:</span> {visit.vitals.bloodPressureSystolic}/{visit.vitals.bloodPressureDiastolic}
+                  <span className="text-gray-500">BP:</span> {visit.vitals.bpSystolic}/{visit.vitals.bpDiastolic}
                 </div>
               )}
               {visit.vitals.oxygenSaturation && (

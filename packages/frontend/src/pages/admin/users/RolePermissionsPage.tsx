@@ -19,7 +19,7 @@ import {
   Package,
   Settings,
 } from 'lucide-react';
-import { rolesService, permissionsService, permissionGroupsService, type Role as APIRole, type Permission as APIPermission, type PermissionGroup as APIPermissionGroup } from '../../../services';
+import { rolesService, permissionsService, permissionGroupsService, type Role as APIRole, type Permission as APIPermission } from '../../../services';
 
 interface Permission {
   id: string;

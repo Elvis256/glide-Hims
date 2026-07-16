@@ -195,9 +195,13 @@ export default function LabReportsPage() {
           value: (r.numericValue ?? parseFloat(r.value)) || 0,
           displayValue: r.value || '0',
           unit: r.unit || '',
-          status: (r.abnormalFlag === 'critical' || r.abnormalFlag === 'critical_low' || r.abnormalFlag === 'critical_high')
+          // AbnormalFlag.ABNORMAL is the lab's fail-closed "out of range,
+          // direction unknown" signal and must never present as Normal.
+          status: (r.abnormalFlag === 'critical_low' || r.abnormalFlag === 'critical_high')
             ? 'Critical' as const
-            : (r.abnormalFlag === 'low' || r.abnormalFlag === 'high') ? 'Abnormal' as const : 'Normal' as const,
+            : (r.abnormalFlag === 'low' || r.abnormalFlag === 'high' || r.abnormalFlag === 'abnormal')
+              ? 'Abnormal' as const
+              : 'Normal' as const,
           referenceRange: r.referenceRange || '',
           referenceMin: r.referenceMin,
           referenceMax: r.referenceMax,

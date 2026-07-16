@@ -40,10 +40,18 @@ interface StaffMember {
   facilityId?: string;
 }
 
+// The `employee` relation on leave_requests / attendance_records joins the
+// Employee entity (firstName/lastName), not the User account.
+interface EmployeeRef {
+  id: string;
+  firstName?: string;
+  lastName?: string;
+}
+
 interface LeaveRequest {
   id: string;
-  staffId: string;
-  staff: StaffMember;
+  employeeId: string;
+  employee?: EmployeeRef;
   leaveType: string;
   startDate: string;
   endDate: string;
@@ -55,8 +63,8 @@ interface LeaveRequest {
 
 interface AttendanceRecord {
   id: string;
-  staffId: string;
-  staff: StaffMember;
+  employeeId: string;
+  employee?: EmployeeRef;
   date: string;
   clockIn?: string;
   clockOut?: string;
@@ -119,12 +127,12 @@ export default function HRPage() {
         setStaff((list as unknown as StaffMember[]) || []);
       } else if (activeTab === 'leave') {
         const res = await api.get(`/hr/leave?facilityId=${facilityId}`);
-        setLeaveRequests(res.data || []);
+        setLeaveRequests(res.data?.data || []);
       } else if (activeTab === 'attendance') {
         const today = new Date().toISOString().slice(0, 10);
         const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
         const res = await api.get(`/hr/attendance?facilityId=${facilityId}&startDate=${weekAgo}&endDate=${today}`);
-        setAttendance(res.data || []);
+        setAttendance(res.data?.data || []);
       }
     } catch (error) {
       console.error('Error loading HR data:', error);

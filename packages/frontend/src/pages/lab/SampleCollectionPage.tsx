@@ -113,7 +113,7 @@ export default function SampleCollectionPage() {
   const currentUser = useAuthStore((s) => s.user);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<PendingCollection | null>(null);
-  const [collectorName, setCollectorName] = useState(currentUser?.fullName || currentUser?.firstName || '');
+  const [collectorName, setCollectorName] = useState(currentUser?.fullName || '');
   const [selectedSampleType, setSelectedSampleType] = useState<SampleType>('blood');
   const [showPrintModal, setShowPrintModal] = useState(false);
   const [lastBarcode, setLastBarcode] = useState('');

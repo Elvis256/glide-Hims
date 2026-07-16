@@ -19,7 +19,10 @@ export interface UgandaParish {
   subcountyName: string;
 }
 
-export const UGANDA_DISTRICTS: UgandaDistrict[] = [
+// Annotated here rather than on the .sort() below: chaining .sort() onto the
+// literal means the annotation types sort()'s RESULT, so the literal itself is
+// never contextually typed and each `region` widens to plain string.
+const DISTRICTS: UgandaDistrict[] = [
   // Central Region
   { name: 'Kampala', code: 'KMP', region: 'Central' },
   { name: 'Wakiso', code: 'WKS', region: 'Central' },
@@ -152,7 +155,11 @@ export const UGANDA_DISTRICTS: UgandaDistrict[] = [
   { name: 'Mitooma', code: 'MTO', region: 'Western' },
   { name: 'Buhweju', code: 'BHW', region: 'Western' },
   { name: 'Rwampara', code: 'RWA', region: 'Western' },
-].sort((a, b) => a.name.localeCompare(b.name));
+];
+
+export const UGANDA_DISTRICTS: UgandaDistrict[] = DISTRICTS.sort((a, b) =>
+  a.name.localeCompare(b.name),
+);
 
 // Sub-counties per district (key districts pre-loaded; others fetched via GeoNames)
 export const UGANDA_SUBCOUNTIES: Record<string, string[]> = {

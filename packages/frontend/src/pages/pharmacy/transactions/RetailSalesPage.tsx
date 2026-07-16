@@ -295,11 +295,12 @@ export default function RetailSalesPage() {
   // Daily summary calculations
   const dailySummary = useMemo(() => {
     if (dailySummaryData) {
+      // Aggregates come back from getRawOne() as strings.
       return {
-        totalSales: Number(dailySummaryData.totalRevenue) || Number(dailySummaryData.totalAmount) || 0,
-        cashSales: Number(dailySummaryData.cashTotal) || Number(dailySummaryData.byPaymentMethod?.cash) || 0,
-        cardSales: Number(dailySummaryData.cardTotal) || Number(dailySummaryData.byPaymentMethod?.card) || 0,
-        mobileSales: Number(dailySummaryData.mobileTotal) || Number(dailySummaryData.byPaymentMethod?.mobile_money) || 0,
+        totalSales: Number(dailySummaryData.totalRevenue) || 0,
+        cashSales: Number(dailySummaryData.cashTotal) || 0,
+        cardSales: Number(dailySummaryData.cardTotal) || 0,
+        mobileSales: Number(dailySummaryData.mobileTotal) || 0,
         transactionCount: Number(dailySummaryData.totalSales) || 0,
       };
     }

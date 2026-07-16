@@ -185,7 +185,7 @@ function StaffDirectoryPageContent() {
     queryKey: ['roles'],
     queryFn: async () => {
       try {
-        return await rolesService.getAll();
+        return await rolesService.list();
       } catch (err) {
         console.error('Failed to fetch roles:', err);
         return [];
@@ -245,7 +245,6 @@ function StaffDirectoryPageContent() {
       const matchesSearch =
         emp.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         emp.employeeNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        emp.employeeCode?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         emp.email?.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesStatus = statusFilter === 'all' || emp.status === statusFilter;
       const empDept = typeof emp.department === 'string' ? emp.department : emp.department?.name;
@@ -362,7 +361,9 @@ function StaffDirectoryPageContent() {
   const handleSaveEdit = async () => {
     if (!selectedStaff) return;
     try {
-      await hrService.staff.update(selectedStaff.id, {
+      // The list comes from /hr/employees, so these are employee ids — they must
+      // go back to the employees endpoint, not the user-keyed /hr/staff.
+      await hrService.employees.update(selectedStaff.id, {
         jobTitle: editForm.jobTitle,
         departmentId: editForm.departmentId || undefined,
         staffCategory: editForm.staffCategory,
@@ -463,8 +464,8 @@ function StaffDirectoryPageContent() {
       s.employeeNumber || '',
       s.fullName || '',
       s.email || '',
-      s.phoneNumber || '',
-      departments.find(d => d.id === s.departmentId)?.name || 'Unassigned',
+      s.phone || '',
+      departmentsList?.find(d => d.id === s.departmentId)?.name || 'Unassigned',
       s.jobTitle || 'Not Assigned',
       s.status || s.staffCategory || 'active',
       s.hireDate ? new Date(s.hireDate).toLocaleDateString() : '',
@@ -593,7 +594,7 @@ function StaffDirectoryPageContent() {
       }
       
       // Find department by code
-      const dept = departments.find(d => d.code?.toLowerCase() === data.department_code?.toLowerCase());
+      const dept = departmentsList?.find(d => d.code?.toLowerCase() === data.department_code?.toLowerCase());
       
       try {
         // POST /users with employeeProfile — the successor to the deprecated
@@ -1080,11 +1081,10 @@ function StaffDirectoryPageContent() {
                   onChange={(e) => setNewStaff({ ...newStaff, employmentType: e.target.value })}
                 >
                   <option value="permanent">Permanent</option>
-                  <option value="full_time">Full-time</option>
-                  <option value="part_time">Part-time</option>
                   <option value="contract">Contract</option>
                   <option value="temporary">Temporary</option>
                   <option value="intern">Intern</option>
+                  <option value="consultant">Consultant</option>
                 </select>
               </div>
               <div>
@@ -1302,8 +1302,9 @@ function StaffDirectoryPageContent() {
                 >
                   <option value="permanent">Permanent</option>
                   <option value="contract">Contract</option>
-                  <option value="part-time">Part-time</option>
+                  <option value="temporary">Temporary</option>
                   <option value="intern">Intern</option>
+                  <option value="consultant">Consultant</option>
                 </select>
               </div>
               <div>

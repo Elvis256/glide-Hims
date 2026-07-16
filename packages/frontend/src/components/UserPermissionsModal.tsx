@@ -20,20 +20,12 @@ export default function UserPermissionsModal({ user, onClose }: UserPermissionsM
 
   // Refresh the current user's permissions if we're editing our own permissions
   const refreshCurrentUserPermissions = useCallback(async () => {
-    if (currentUser?.id === user.id) {
-      const storedRefreshToken = useAuthStore.getState().refreshToken;
-      if (storedRefreshToken) {
-        try {
-          const response = await authService.refreshToken(storedRefreshToken);
-          const { accessToken, refreshToken: newRefreshToken, user: updatedUser } = response as any;
-          useAuthStore.getState().setTokens(accessToken, newRefreshToken);
-          if (updatedUser) {
-            useAuthStore.getState().setUser(updatedUser);
-          }
-        } catch {
-          // Silently fail - permissions will update on next login
-        }
-      }
+    if (currentUser?.id !== user.id) return;
+    try {
+      const me = await authService.getMe();
+      useAuthStore.getState().updateFromMe(me);
+    } catch {
+      // Silently fail - permissions will update on next login
     }
   }, [currentUser?.id, user.id]);
 

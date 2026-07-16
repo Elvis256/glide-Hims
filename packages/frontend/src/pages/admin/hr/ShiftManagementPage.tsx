@@ -132,15 +132,20 @@ export default function ShiftManagementPage() {
   const createShiftMutation = useMutation({
     mutationFn: async (data: ShiftFormData) => {
       const typeMap: Record<string, string> = { Morning: 'morning', Evening: 'afternoon', Night: 'night' };
-      return hrService.shifts.create({
+      const created = await hrService.shifts.create({
         facilityId,
         name: data.name,
         code: data.code,
         startTime: data.startTime,
         endTime: data.endTime,
         shiftType: typeMap[data.type] ?? 'morning',
-        isActive: data.status === 'Active',
       });
+      // CreateShiftDefinitionDto has no isActive (the column defaults to true) and
+      // the API rejects unknown keys, so deactivation goes through a follow-up patch.
+      if (data.status !== 'Active' && created?.id) {
+        return hrService.shifts.update(created.id, { isActive: false });
+      }
+      return created;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['hr-shifts', facilityId] });

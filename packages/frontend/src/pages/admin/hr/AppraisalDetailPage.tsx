@@ -439,7 +439,7 @@ export default function AppraisalDetailPage() {
               <div key={key} className="border rounded-lg p-4">
                 <StarRating
                   label={`${label} *`}
-                  value={(managerReview as Record<string, number>)[key] || 0}
+                  value={managerReview[key] || 0}
                   onChange={(val) => setManagerReview({ ...managerReview, [key]: val })}
                 />
                 <p className="text-xs text-gray-400 mt-1">{description}</p>
@@ -486,7 +486,7 @@ export default function AppraisalDetailPage() {
             </button>
             <button
               onClick={() => {
-                const allRated = RATING_CATEGORIES.every(({ key }) => (managerReview as Record<string, number>)[key] > 0);
+                const allRated = RATING_CATEGORIES.every(({ key }) => managerReview[key] > 0);
                 if (!allRated) { toast.error('Please rate all categories'); return; }
                 submitManagerReviewMutation.mutate({ ...managerReview, questions });
               }}

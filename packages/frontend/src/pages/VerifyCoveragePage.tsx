@@ -17,14 +17,12 @@ import { insuranceService } from '../services/insurance';
 import { patientsService } from '../services';
 import { asList } from '../utils/unwrapResponse';
 
+/** Search-result shape. The patients table holds no insurance columns — cover
+ *  is read from insurance_policies once a patient is selected. */
 interface Patient {
   id: string;
   mrn: string;
   fullName: string;
-  insuranceProvider: string;
-  policyNumber: string;
-  status: string;
-  expiryDate: string;
 }
 
 interface VerificationResult {
@@ -51,17 +49,13 @@ export default function VerifyCoveragePage() {
   // Patient search
   const { data: patientSearchData } = useQuery({
     queryKey: ['patient-search-coverage', searchTerm],
-    queryFn: () => patientsService.search({ q: searchTerm }),
+    queryFn: () => patientsService.search({ search: searchTerm }),
     enabled: searchTerm.length >= 2,
   });
   const patients: Patient[] = (asList(patientSearchData)).map((p: any) => ({
     id: p.id,
     mrn: p.mrn,
-    fullName: `${p.firstName} ${p.lastName}`,
-    insuranceProvider: p.insuranceProvider || '',
-    policyNumber: p.policyNumber || '',
-    status: p.insuranceStatus || 'unknown',
-    expiryDate: p.insuranceExpiryDate || '',
+    fullName: p.fullName,
   }));
 
   // Patient's policies
@@ -157,16 +151,6 @@ export default function VerifyCoveragePage() {
                   Change
                 </button>
               </div>
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div>
-                  <p className="text-gray-500">Provider</p>
-                  <p className="font-medium">{selectedPatient.insuranceProvider}</p>
-                </div>
-                <div>
-                  <p className="text-gray-500">Policy #</p>
-                  <p className="font-mono font-medium">{selectedPatient.policyNumber}</p>
-                </div>
-              </div>
             </div>
           ) : (
             <>
@@ -195,11 +179,6 @@ export default function VerifyCoveragePage() {
                       <p className="font-medium">{patient.fullName}</p>
                       <p className="text-sm text-gray-500">{patient.mrn}</p>
                     </div>
-                    <span className={`px-2 py-0.5 rounded text-xs ${
-                      patient.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                    }`}>
-                      {patient.status}
-                    </span>
                   </button>
                 ))}
               </div>

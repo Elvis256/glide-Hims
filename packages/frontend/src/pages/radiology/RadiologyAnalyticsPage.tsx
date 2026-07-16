@@ -207,13 +207,11 @@ export default function RadiologyAnalyticsPage() {
       }));
   }, [orders]);
 
-  const criticalCount = useMemo(() =>
-    orders.filter(o => o.result?.isCritical === true).length,
-  [orders]);
-
-  const criticalFindingsRate = useMemo(() =>
-    orders.length > 0 ? Math.round((criticalCount / orders.length) * 1000) / 10 : 0,
-  [criticalCount, orders.length]);
+  // A "Critical Findings" KPI used to live here, computed from o.result.isCritical.
+  // imaging_orders has no result relation and GET /radiology/orders joins only
+  // patient/modality/orderedBy, so the field was always undefined and the card
+  // permanently rendered a green 0%. isCritical lives on imaging_results; adding
+  // it back needs a backend aggregate, not a client-side count.
 
   const modalityHeatMap = useMemo(() => {
     const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -311,7 +309,7 @@ export default function RadiologyAnalyticsPage() {
       )}
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-5 gap-4 mb-6">
+      <div className="grid grid-cols-4 gap-4 mb-6">
         <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
           <div className="flex items-center justify-between">
             <div className="p-2 bg-blue-100 rounded-lg">
@@ -347,17 +345,6 @@ export default function RadiologyAnalyticsPage() {
           </div>
           <p className="text-2xl font-bold text-gray-900 mt-3">{summaryStats.avgUtilization > 0 ? `${summaryStats.avgUtilization}%` : '-'}</p>
           <p className="text-sm text-gray-600">Equipment Utilization</p>
-        </div>
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
-          <div className="flex items-center justify-between">
-            <div className={`p-2 rounded-lg ${criticalFindingsRate > 10 ? 'bg-red-100' : criticalFindingsRate > 5 ? 'bg-amber-100' : 'bg-green-100'}`}>
-              <AlertCircle className={`w-5 h-5 ${criticalFindingsRate > 10 ? 'text-red-600' : criticalFindingsRate > 5 ? 'text-amber-600' : 'text-green-600'}`} />
-            </div>
-          </div>
-          <p className={`text-2xl font-bold mt-3 ${criticalFindingsRate > 10 ? 'text-red-600' : criticalFindingsRate > 5 ? 'text-amber-600' : 'text-gray-900'}`}>
-            {orders.length > 0 ? `${criticalFindingsRate}%` : '-'}
-          </p>
-          <p className="text-sm text-gray-600">Critical Findings ({criticalCount})</p>
         </div>
       </div>
 

@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { syncService } from '../../services/sync';
+import { getClientId } from '../../lib/sync/db';
+import { useFacilityId } from '../../lib/facility';
 import {
   RefreshCw,
   Cloud,
@@ -17,16 +19,9 @@ import {
   BarChart3,
 } from 'lucide-react';
 
-interface SyncStatus {
-  clientId: string;
-  facilityId: string;
-  lastSyncAt: string;
-  pendingPushCount: number;
-  pendingPullCount: number;
-  conflictCount: number;
-  isOnline: boolean;
-  syncInProgress: boolean;
-}
+// SyncStatus comes from services/sync.ts — it mirrors what GET /sync/status
+// actually returns. The shape previously declared here
+// (pendingPushCount/pendingPullCount/isOnline/syncInProgress) matched none of it.
 
 interface EntitySyncStatus {
   entityType: string;
@@ -39,9 +34,14 @@ export default function SyncStatusPage() {
   const queryClient = useQueryClient();
   const [isOnline] = useState(navigator.onLine);
 
+  const facilityId = useFacilityId();
+
+  // facilityId + clientId are required by GET /sync/status; the clientId is the
+  // per-device id the offline queue already persists in IndexedDB.
   const { data: syncStatus, isLoading } = useQuery({
-    queryKey: ['sync-status'],
-    queryFn: () => syncService.getStatus(),
+    queryKey: ['sync-status', facilityId],
+    queryFn: async () => syncService.getStatus(facilityId!, await getClientId()),
+    enabled: !!facilityId,
     refetchInterval: 30000,
   });
 
@@ -67,7 +67,9 @@ export default function SyncStatusPage() {
     },
   });
 
-  const formatTimeAgo = (dateStr: string) => {
+  // lastSyncAt is null until the device's first successful push.
+  const formatTimeAgo = (dateStr: string | null) => {
+    if (!dateStr) return 'Never';
     const diff = Date.now() - new Date(dateStr).getTime();
     const mins = Math.floor(diff / 60000);
     if (mins < 1) return 'Just now';
@@ -86,14 +88,10 @@ export default function SyncStatusPage() {
   }
 
   const status = syncStatus || {
-    clientId: '',
-    facilityId: '',
-    lastSyncAt: new Date().toISOString(),
-    pendingPushCount: 0,
-    pendingPullCount: 0,
+    pendingCount: 0,
     conflictCount: 0,
-    isOnline: true,
-    syncInProgress: false,
+    failedCount: 0,
+    lastSyncAt: null,
   };
 
   return (
@@ -169,7 +167,7 @@ export default function SyncStatusPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-600">Pending Upload</p>
-              <p className="text-2xl font-bold text-orange-600">{status.pendingPushCount}</p>
+              <p className="text-2xl font-bold text-orange-600">{status.pendingCount}</p>
             </div>
             <Cloud className="w-10 h-10 text-orange-200" />
           </div>
@@ -178,8 +176,8 @@ export default function SyncStatusPage() {
         <div className="bg-white p-6 rounded-xl border shadow-sm">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-600">Pending Download</p>
-              <p className="text-2xl font-bold text-blue-600">{status.pendingPullCount}</p>
+              <p className="text-sm text-gray-600">Failed</p>
+              <p className="text-2xl font-bold text-blue-600">{status.failedCount}</p>
             </div>
             <CloudOff className="w-10 h-10 text-blue-200" />
           </div>
