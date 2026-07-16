@@ -84,6 +84,19 @@ export default function RadiologyAnalyticsPage() {
     staleTime: 30000,
   });
 
+  // Critical findings are aggregated server-side: isCritical lives on
+  // imaging_results, which GET /radiology/orders does not join. On failure this
+  // deliberately stays undefined so the KPI reads "—" — a 0 nobody measured
+  // would read as "no critical findings".
+  const { data: criticalStats } = useQuery({
+    queryKey: ['radiology-critical-findings', facilityId, selectedPeriod],
+    queryFn: () => {
+      const { startDate, endDate } = getPeriodDates();
+      return radiologyService.dashboard.getCriticalFindingsStats(facilityId, startDate, endDate);
+    },
+    staleTime: 30000,
+  });
+
   // Fetch modalities
   const { data: modalitiesData } = useQuery({
     queryKey: ['radiology-modalities', facilityId],
@@ -207,12 +220,6 @@ export default function RadiologyAnalyticsPage() {
       }));
   }, [orders]);
 
-  // A "Critical Findings" KPI used to live here, computed from o.result.isCritical.
-  // imaging_orders has no result relation and GET /radiology/orders joins only
-  // patient/modality/orderedBy, so the field was always undefined and the card
-  // permanently rendered a green 0%. isCritical lives on imaging_results; adding
-  // it back needs a backend aggregate, not a client-side count.
-
   const modalityHeatMap = useMemo(() => {
     const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const modalityNames = [...new Set(
@@ -309,7 +316,7 @@ export default function RadiologyAnalyticsPage() {
       )}
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-5 gap-4 mb-6">
         <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
           <div className="flex items-center justify-between">
             <div className="p-2 bg-blue-100 rounded-lg">
@@ -345,6 +352,24 @@ export default function RadiologyAnalyticsPage() {
           </div>
           <p className="text-2xl font-bold text-gray-900 mt-3">{summaryStats.avgUtilization > 0 ? `${summaryStats.avgUtilization}%` : '-'}</p>
           <p className="text-sm text-gray-600">Equipment Utilization</p>
+        </div>
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+          <div className="flex items-center justify-between">
+            <div className={`p-2 rounded-lg ${criticalStats && criticalStats.criticalResults > 0 ? 'bg-red-100' : 'bg-gray-100'}`}>
+              <AlertCircle className={`w-5 h-5 ${criticalStats && criticalStats.criticalResults > 0 ? 'text-red-600' : 'text-gray-500'}`} />
+            </div>
+          </div>
+          <p className={`text-2xl font-bold mt-3 ${criticalStats && criticalStats.criticalResults > 0 ? 'text-red-600' : 'text-gray-900'}`}>
+            {criticalStats ? criticalStats.criticalResults : '—'}
+          </p>
+          <p className="text-sm text-gray-600">Critical Findings</p>
+          <p className="text-xs text-gray-500 mt-0.5">
+            {!criticalStats
+              ? 'Not available'
+              : criticalStats.criticalRate === null
+                ? 'No reports in period'
+                : `${criticalStats.criticalRate}% of ${criticalStats.reportedResults} reported`}
+          </p>
         </div>
       </div>
 

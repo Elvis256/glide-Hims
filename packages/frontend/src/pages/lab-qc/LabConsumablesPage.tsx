@@ -34,6 +34,10 @@ interface Consumable {
   maxStockLevel?: number;
   unitCost: number;
   supplier: string;
+  /** Aggregated per-lot expiry from the list endpoint. */
+  earliestExpiryDate: string | null;
+  expiringSoonLots: number;
+  expiredLots: number;
 }
 
 /** Real ReagentCategory enum members — the previous list ('Blood Collection',
@@ -101,6 +105,9 @@ export default function LabConsumablesPage() {
             // decimal column — arrives as a string
             unitCost: Number(r.unitCost ?? 0),
             supplier: r.manufacturer || '',
+            earliestExpiryDate: r.earliestExpiryDate ?? null,
+            expiringSoonLots: Number(r.expiringSoonLots ?? 0),
+            expiredLots: Number(r.expiredLots ?? 0),
           }));
         }
       } catch (error) {
@@ -164,10 +171,15 @@ export default function LabConsumablesPage() {
     return <AccessDenied />;
   }
 
-  // Expiry-based tiers used to live here, but expiry is a reagent_lots column
-  // and the reagent list endpoint does not join lots — the field was always
-  // undefined, so those badges never rendered. Stock tiers below use the only
-  // thresholds the entity actually carries.
+  // Expiry is orthogonal to stock level: a well-stocked reagent with an expired
+  // lot still cannot be used, so it gets its own badge rather than competing for
+  // the stock-status slot.
+  const getExpiryStatus = (item: Consumable) => {
+    if (item.expiredLots > 0) return 'EXPIRED';
+    if (item.expiringSoonLots > 0) return 'EXPIRING_SOON';
+    return 'OK';
+  };
+
   const getStockStatus = (item: Consumable) => {
     if (item.stockQuantity <= 0) return 'OUT_OF_STOCK';
     if (item.stockQuantity <= item.reorderLevel) return 'LOW';
@@ -214,8 +226,30 @@ export default function LabConsumablesPage() {
     }
   };
 
+  const getExpiryBadge = (item: Consumable) => {
+    const status = getExpiryStatus(item);
+    if (status === 'OK') return null;
+    const expiry = item.earliestExpiryDate
+      ? new Date(item.earliestExpiryDate).toLocaleDateString()
+      : null;
+    if (status === 'EXPIRED') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-red-100 text-red-700 rounded-full">
+          <AlertTriangle className="w-3 h-3" /> Expired{expiry ? ` ${expiry}` : ''}
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-orange-100 text-orange-700 rounded-full">
+        <Calendar className="w-3 h-3" /> Expires{expiry ? ` ${expiry}` : ' soon'}
+      </span>
+    );
+  };
+
   const lowStockCount = consumables?.filter((c) => getStockStatus(c) === 'LOW').length || 0;
   const outOfStockCount = consumables?.filter((c) => getStockStatus(c) === 'OUT_OF_STOCK').length || 0;
+  const expiringSoonCount = consumables?.filter((c) => getExpiryStatus(c) === 'EXPIRING_SOON').length || 0;
+  const expiredCount = consumables?.filter((c) => getExpiryStatus(c) === 'EXPIRED').length || 0;
 
   return (
     <div className="space-y-6">
@@ -235,7 +269,7 @@ export default function LabConsumablesPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-white p-4 rounded-xl border shadow-sm">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-blue-100 rounded-lg">
@@ -266,6 +300,20 @@ export default function LabConsumablesPage() {
             <div>
               <p className="text-sm text-gray-600">Out of Stock</p>
               <p className="text-xl font-bold text-red-600">{outOfStockCount}</p>
+            </div>
+          </div>
+        </div>
+        <div className="bg-white p-4 rounded-xl border shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-orange-100 rounded-lg">
+              <Calendar className="w-5 h-5 text-orange-600" />
+            </div>
+            <div>
+              <p className="text-sm text-gray-600">Expiring Soon</p>
+              <p className="text-xl font-bold text-orange-600">{expiringSoonCount}</p>
+              {expiredCount > 0 && (
+                <p className="text-xs text-red-600">{expiredCount} already expired</p>
+              )}
             </div>
           </div>
         </div>
@@ -337,6 +385,7 @@ export default function LabConsumablesPage() {
                   <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Category</th>
                   <th className="px-4 py-3 text-right text-sm font-medium text-gray-600">Stock</th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Status</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Expiry</th>
                   <th className="px-4 py-3 text-right text-sm font-medium text-gray-600">Unit Cost</th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Supplier</th>
                   <th className="px-4 py-3 text-right text-sm font-medium text-gray-600">Reorder Level</th>
@@ -366,6 +415,15 @@ export default function LabConsumablesPage() {
                       </div>
                     </td>
                     <td className="px-4 py-3">{getStatusBadge(item)}</td>
+                    <td className="px-4 py-3">
+                      {getExpiryBadge(item) ?? (
+                        <span className="text-sm text-gray-500">
+                          {item.earliestExpiryDate
+                            ? new Date(item.earliestExpiryDate).toLocaleDateString()
+                            : 'No lots'}
+                        </span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-right text-sm">{formatCurrency(item.unitCost)}</td>
                     <td className="px-4 py-3 text-sm text-gray-600">{item.supplier}</td>
                     <td className="px-4 py-3 text-right text-sm text-gray-600">{item.reorderLevel}</td>

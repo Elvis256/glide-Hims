@@ -614,4 +614,44 @@ export class RadiologyService {
       totalOrders: orders.length,
     };
   }
+
+  // ============ CRITICAL FINDINGS ============
+
+  // isCritical lives on imaging_results, which carries no facilityId — the
+  // facility scope has to come from the joined order.
+  async getCriticalFindingsStats(
+    facilityId: string,
+    startDate: string,
+    endDate: string,
+    tenantId?: string,
+  ): Promise<{ reportedResults: number; criticalResults: number; criticalRate: number | null }> {
+    const tid = requireTenantId(tenantId);
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+
+    const scopedQb = () =>
+      this.resultRepo
+        .createQueryBuilder('result')
+        .innerJoin('result.imagingOrder', 'imgOrder')
+        .where('result.tenantId = :tenantId', { tenantId: tid })
+        .andWhere('imgOrder.facilityId = :facilityId', { facilityId })
+        .andWhere('result.reportedAt BETWEEN :start AND :end', { start, end });
+
+    const [reportedResults, criticalResults] = await Promise.all([
+      scopedQb().getCount(),
+      // Mirrors the flagging rule in createResult: either flag makes it critical.
+      scopedQb()
+        .andWhere('(result.isCritical = true OR result.findingCategory = :critical)', {
+          critical: FindingCategory.CRITICAL,
+        })
+        .getCount(),
+    ]);
+
+    return {
+      reportedResults,
+      criticalResults,
+      criticalRate:
+        reportedResults > 0 ? Math.round((criticalResults / reportedResults) * 1000) / 10 : null,
+    };
+  }
 }

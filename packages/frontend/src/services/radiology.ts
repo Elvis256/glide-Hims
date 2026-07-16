@@ -21,9 +21,7 @@ export interface ImagingOrder {
   patient?: {
     id: string;
     mrn: string;
-    firstName: string;
-    lastName: string;
-    fullName?: string;
+    fullName: string;
   };
   encounterId?: string;
   modalityId: string;
@@ -101,6 +99,14 @@ export interface CreateImagingResultDto {
   isCritical?: boolean;
 }
 
+/** Mirrors RadiologyService.getCriticalFindingsStats. criticalRate is null when
+ *  nothing was reported in the period — that is "no data", not "0% critical". */
+export interface CriticalFindingsStats {
+  reportedResults: number;
+  criticalResults: number;
+  criticalRate: number | null;
+}
+
 export const radiologyService = {
   // Dashboard - matches backend /radiology/dashboard
   dashboard: {
@@ -110,6 +116,16 @@ export const radiologyService = {
     },
     getTurnaroundStats: async (facilityId: string, startDate: string, endDate: string): Promise<any[]> => {
       const response = await api.get('/radiology/stats/turnaround', { params: { facilityId, startDate, endDate } });
+      return response.data;
+    },
+    getCriticalFindingsStats: async (
+      facilityId: string,
+      startDate: string,
+      endDate: string
+    ): Promise<CriticalFindingsStats> => {
+      const response = await api.get('/radiology/stats/critical-findings', {
+        params: { facilityId, startDate, endDate },
+      });
       return response.data;
     },
   },

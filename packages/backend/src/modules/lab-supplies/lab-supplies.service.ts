@@ -24,6 +24,22 @@ import {
 import { AuditLogService } from '../../common/interceptors/audit-log.service';
 import { requireTenantId } from '../../common/utils/tenant.util';
 
+const EXPIRING_SOON_DAYS = 30;
+
+export interface ReagentLotExpirySummary {
+  /** Earliest expiry across the reagent's usable lots; null when it has none. */
+  earliestExpiryDate: string | null;
+  expiringSoonLots: number;
+  expiredLots: number;
+}
+
+/** expiry_date is a DATE column: keep it date-only so no timezone shift can
+ *  move a lot across the expiry boundary. */
+function toDateOnly(value: Date | string | null): string | null {
+  if (!value) return null;
+  return value instanceof Date ? value.toISOString().split('T')[0] : String(value).split('T')[0];
+}
+
 @Injectable()
 export class LabSuppliesService {
   private readonly logger = new Logger(LabSuppliesService.name);
@@ -84,11 +100,72 @@ export class LabSuppliesService {
     facilityId: string,
     category?: string,
     tenantId?: string,
-  ): Promise<LabReagent[]> {
-    const where: any = { facilityId };
+  ): Promise<Array<LabReagent & ReagentLotExpirySummary>> {
+    const tid = requireTenantId(tenantId);
+    const where: any = { facilityId, tenantId: tid };
     if (category) where.category = category;
-    where.tenantId = requireTenantId(tenantId);
-    return this.reagentRepo.find({ where, order: { name: 'ASC' } });
+    const reagents = await this.reagentRepo.find({ where, order: { name: 'ASC' } });
+    if (reagents.length === 0) return [];
+
+    const expiryByReagent = await this.getLotExpirySummaries(
+      reagents.map((r) => r.id),
+      tid,
+    );
+
+    return reagents.map((reagent) =>
+      Object.assign(
+        reagent,
+        expiryByReagent.get(reagent.id) ?? {
+          earliestExpiryDate: null,
+          expiringSoonLots: 0,
+          expiredLots: 0,
+        },
+      ),
+    );
+  }
+
+  // Expiry is per-LOT, so the reagent list has to aggregate reagent_lots to say
+  // anything about it. Only lots that can still be used against a test count:
+  // consumed (currentQuantity = 0) or retired lots cannot invalidate a result.
+  private async getLotExpirySummaries(
+    reagentIds: string[],
+    tenantId: string,
+  ): Promise<Map<string, ReagentLotExpirySummary>> {
+    const soonDate = new Date();
+    soonDate.setDate(soonDate.getDate() + EXPIRING_SOON_DAYS);
+
+    const rows = await this.lotRepo
+      .createQueryBuilder('lot')
+      .select('lot.reagentId', 'reagentId')
+      .addSelect('MIN(lot.expiry_date)', 'earliestExpiryDate')
+      .addSelect('COUNT(*) FILTER (WHERE lot.expiry_date < CURRENT_DATE)', 'expiredLots')
+      .addSelect(
+        'COUNT(*) FILTER (WHERE lot.expiry_date >= CURRENT_DATE AND lot.expiry_date <= :soonDate)',
+        'expiringSoonLots',
+      )
+      .where('lot.reagentId IN (:...reagentIds)', { reagentIds })
+      .andWhere('lot.tenant_id = :tenantId', { tenantId })
+      .andWhere('lot.currentQuantity > 0')
+      .andWhere('lot.isActive = true')
+      .setParameter('soonDate', soonDate)
+      .groupBy('lot.reagent_id')
+      .getRawMany<{
+        reagentId: string;
+        earliestExpiryDate: Date | string | null;
+        expiredLots: string;
+        expiringSoonLots: string;
+      }>();
+
+    return new Map(
+      rows.map((row) => [
+        row.reagentId,
+        {
+          earliestExpiryDate: toDateOnly(row.earliestExpiryDate),
+          expiringSoonLots: Number(row.expiringSoonLots),
+          expiredLots: Number(row.expiredLots),
+        },
+      ]),
+    );
   }
 
   async getLowStockReagents(facilityId: string, tenantId?: string): Promise<LabReagent[]> {
