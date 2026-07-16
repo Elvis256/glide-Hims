@@ -40,6 +40,14 @@ class PrescriptionItemDto {
   @MaxLength(128)
   duration: string;
 
+  // Route of administration. Optional so pre-existing clients keep working;
+  // without it here, forbidNonWhitelisted silently DISCARDED the route the
+  // prescriber selected on every submit.
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  route?: string;
+
   @Type(() => Number)
   @IsNumber({ allowNaN: false, allowInfinity: false })
   @Min(1)
