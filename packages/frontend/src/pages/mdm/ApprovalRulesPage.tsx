@@ -27,6 +27,9 @@ import {
 
 const emptyForm = {
   entityType: 'service' as MasterDataEntityType,
+  // Default ON: a rule exists to require approval. requiresApproval is the only
+  // field the engine reads, so a rule created with it false gates nothing.
+  requiresApproval: true,
   approverRoleId: '',
   minApprovers: 1,
   notifyOnChange: false,
@@ -62,6 +65,7 @@ export default function ApprovalRulesPage() {
       .filter(Boolean);
     return {
       entityType: data.entityType,
+      requiresApproval: data.requiresApproval,
       minApprovers: data.minApprovers,
       notifyOnChange: data.notifyOnChange,
       ...(data.approverRoleId ? { approverRoleId: data.approverRoleId } : {}),
@@ -100,6 +104,7 @@ export default function ApprovalRulesPage() {
   const handleEdit = (rule: ApprovalRule) => {
     setFormData({
       entityType: rule.entityType,
+      requiresApproval: !!rule.requiresApproval,
       approverRoleId: rule.approverRoleId || '',
       minApprovers: rule.minApprovers ?? 1,
       notifyOnChange: !!rule.notifyOnChange,
@@ -347,6 +352,22 @@ export default function ApprovalRulesPage() {
                       </option>
                     ))}
                   </select>
+                </div>
+                <div>
+                  <label className="flex items-start gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="mt-1"
+                      checked={formData.requiresApproval}
+                      onChange={(e) => setFormData({ ...formData, requiresApproval: e.target.checked })}
+                    />
+                    <span>
+                      <span className="block text-sm font-medium text-gray-700">Require approval</span>
+                      <span className="block text-xs text-gray-500">
+                        When off, changes to this data type are auto-approved — the rule enforces nothing.
+                      </span>
+                    </span>
+                  </label>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
