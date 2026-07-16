@@ -33,6 +33,7 @@ import {
 import { labService, type LabOrder } from '../../services';
 import { providersService } from '../../services/providers';
 import { useAuthStore } from '../../store/auth';
+import { ROLES } from '../../components/RoleRoute';
 import { queueService } from '../../services/queue';
 import { useFacilityId } from '../../lib/facility';
 import api, { getApiErrorMessage } from '../../services/api';
@@ -76,6 +77,7 @@ export default function LabQueuePage() {
   const navigate = useNavigate();
   const facilityId = useFacilityId();
   const currentUser = useAuthStore((state) => state.user);
+  const hasAnyRole = useAuthStore((state) => state.hasAnyRole);
   const [filterStatus, setFilterStatus] = useState<Status | 'all'>('all');
   const [filterPriority, setFilterPriority] = useState<Priority | 'all'>('all');
   const [filterTest, setFilterTest] = useState('');
@@ -1050,7 +1052,10 @@ export default function LabQueuePage() {
                   Collect Sample
                 </button>
               )}
-              {selectedOrder.encounterId && (
+              {/* /encounters/:id is gated by ClinicalRoute (Doctor|Nurse). A
+                  lab-tech-only user would land on AccessDenied, so only offer
+                  it to users who can actually reach it. */}
+              {selectedOrder.encounterId && hasAnyRole([ROLES.DOCTOR, ROLES.NURSE]) && (
                 <button
                   onClick={() => navigate(`/encounters/${selectedOrder.encounterId}`)}
                   className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-2"
