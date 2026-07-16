@@ -8,7 +8,12 @@ import {
   VersionAction,
   ApprovalStatus,
 } from '../../database/entities/master-data-version.entity';
-import { MasterDataVersionQueryDto, ApproveVersionDto, CreateApprovalRuleDto } from './dto/mdm.dto';
+import {
+  MasterDataVersionQueryDto,
+  ApproveVersionDto,
+  CreateApprovalRuleDto,
+  UpdateApprovalRuleDto,
+} from './dto/mdm.dto';
 import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
@@ -320,7 +325,7 @@ export class MdmService {
 
   async updateApprovalRule(
     id: string,
-    dto: Partial<CreateApprovalRuleDto>,
+    dto: UpdateApprovalRuleDto,
     tenantId?: string,
   ): Promise<MasterDataApprovalRule> {
     const tid = requireTenantId(tenantId);

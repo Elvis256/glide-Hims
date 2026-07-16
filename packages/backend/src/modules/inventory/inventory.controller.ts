@@ -18,6 +18,7 @@ import {
   StockReceiveDto,
   StockAdjustmentDto,
   StockTransferDto,
+  ConsumptionReportQueryDto,
 } from './dto/inventory.dto';
 import { MovementType } from '../../database/entities/inventory.entity';
 import { RequireModule } from '../auth/decorators/module.decorator';
@@ -183,15 +184,15 @@ export class InventoryController {
   @AuthWithPermissions('inventory.read')
   async getConsumptionReport(
     @Request() req: any,
-    @Query('period') period: string = 'month',
-    @Query('department') department?: string,
-    @Query('category') category?: string,
+    @Query() query: ConsumptionReportQueryDto,
   ) {
     return this.inventoryService.getConsumptionReport(
       req.user?.tenantId,
-      period,
-      department,
-      category,
+      query.period ?? 'month',
+      query.department,
+      query.category,
+      query.startDate,
+      query.endDate,
     );
   }
 
