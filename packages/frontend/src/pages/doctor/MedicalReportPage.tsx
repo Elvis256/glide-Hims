@@ -1,7 +1,6 @@
 import React, { useRef, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { type Encounter, type Prescription, type LabResult } from '../../types/clinical';
 import {
   Printer,
   FileText,
@@ -39,19 +38,20 @@ export default function MedicalReportPage() {
   const [additionalRecommendations, setAdditionalRecommendations] = useState('');
 
   // --- Data fetching ---
-  const { data: encounter, isLoading: loadingEnc } = useQuery<Encounter>({
+  const { data: encounter, isLoading: loadingEnc } = useQuery({
     queryKey: ['encounter', encounterId],
     queryFn: () => encountersService.getById(encounterId),
     enabled: !!encounterId,
   });
 
-  const { data: clinicalNotes = [] } = useQuery<Array<{ id: string; content: string; createdAt: string }>>({
+  const { data: clinicalNotes = [] } = useQuery({
     queryKey: ['clinical-notes', encounterId],
     queryFn: () => clinicalNotesService.getByEncounter(encounterId),
     enabled: !!encounterId,
   });
 
-  const { data: vitals = [] } = useQuery<Array<{ id: string; temp: number; bp: string }>>({
+  // Ordered recordedAt DESC by the API, so [0] is the most recent set.
+  const { data: vitals = [] } = useQuery({
     queryKey: ['vitals-enc', encounterId],
     queryFn: () => vitalsService.getByEncounter(encounterId),
     enabled: !!encounterId,
@@ -144,15 +144,18 @@ export default function MedicalReportPage() {
   // Aggregate diagnoses from clinical notes and problems
   const allDiagnoses = useMemo(() => {
     const diags: { code: string; description: string; type: string; source: string }[] = [];
-    clinicalNotes.forEach((note: any) => {
-      (note.diagnoses || []).forEach((d: any) => {
+    clinicalNotes.forEach((note) => {
+      (note.diagnoses || []).forEach((d) => {
         diags.push({ ...d, source: 'clinical_note' });
       });
     });
-    problems.forEach((p: any) => {
+    // /problems already flattens the diagnosis relation: the API returns
+    // `diagnosis`/`icdCode` as strings resolved from the ICD-10 row or the
+    // problem's custom_diagnosis/custom_icd_code columns.
+    problems.forEach((p) => {
       diags.push({
         code: p.icdCode || '',
-        description: p.diagnosis || p.customDiagnosis || '',
+        description: p.diagnosis || '',
         type: p.status === 'active' ? 'primary' : 'secondary',
         source: 'problem_list',
       });
@@ -169,7 +172,9 @@ export default function MedicalReportPage() {
 
   const latestVitals = vitals[0] || null;
   const latestNote = clinicalNotes[0] || null;
-  const doctorName = (encounter as any)?.attendingProvider?.fullName || (encounter as any)?.doctor?.fullName || 'N/A';
+  // Encounters carry the provider as `attendingProvider` (encounter.entity.ts);
+  // GET /encounters/:id joins it. There is no `doctor` relation on an encounter.
+  const doctorName = encounter?.attendingProvider?.fullName || 'N/A';
 
   // Patient search
   const { data: patientResults } = useQuery({
@@ -246,7 +251,7 @@ export default function MedicalReportPage() {
                   >
                     <div>
                       <span className="font-medium">{enc.visitNumber}</span>
-                      <span className="text-gray-500 ml-2">{new Date(enc.visitDate || enc.createdAt).toLocaleDateString()}</span>
+                      <span className="text-gray-500 ml-2">{new Date(enc.startTime).toLocaleDateString()}</span>
                       <span className="text-gray-500 ml-2 capitalize">({enc.type})</span>
                     </div>
                     <span className={`px-2 py-0.5 text-xs rounded-full ${
@@ -334,7 +339,7 @@ export default function MedicalReportPage() {
           </div>
           <div className="space-y-1">
             <p><span className="font-semibold">Visit No:</span> {encounter.visitNumber}</p>
-            <p><span className="font-semibold">Visit Date:</span> {new Date(encounter.visitDate || encounter.createdAt).toLocaleDateString()}</p>
+            <p><span className="font-semibold">Visit Date:</span> {new Date(encounter.startTime).toLocaleDateString()}</p>
             <p><span className="font-semibold">Visit Type:</span> {(encounter.type || '').toUpperCase()}</p>
             <p><span className="font-semibold">Attending Doctor:</span> Dr. {doctorName}</p>
           </div>
@@ -362,8 +367,10 @@ export default function MedicalReportPage() {
               {latestVitals.temperature != null && (
                 <VitalItem icon={<Thermometer className="w-3 h-3" />} label="Temperature" value={`${latestVitals.temperature} °C`} />
               )}
-              {(latestVitals.bloodPressureSystolic != null || (latestVitals as any).bpSystolic != null) && (
-                <VitalItem icon={<Activity className="w-3 h-3" />} label="Blood Pressure" value={`${latestVitals.bloodPressureSystolic || (latestVitals as any).bpSystolic}/${latestVitals.bloodPressureDiastolic || (latestVitals as any).bpDiastolic} mmHg`} />
+              {/* vitals columns are bp_systolic/bp_diastolic — `bloodPressureSystolic`
+                  belongs to emergency_cases, not to a Vital. */}
+              {latestVitals.bpSystolic != null && latestVitals.bpDiastolic != null && (
+                <VitalItem icon={<Activity className="w-3 h-3" />} label="Blood Pressure" value={`${latestVitals.bpSystolic}/${latestVitals.bpDiastolic} mmHg`} />
               )}
               {latestVitals.pulse != null && (
                 <VitalItem label="Pulse" value={`${latestVitals.pulse} bpm`} />

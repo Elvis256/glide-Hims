@@ -70,8 +70,11 @@ export interface LabResult {
   referenceMin?: number;
   referenceMax?: number;
   referenceRange?: string;
-  abnormalFlag?: 'normal' | 'low' | 'high' | 'critical_low' | 'critical_high' | 'critical';
-  flag?: 'normal' | 'low' | 'high' | 'critical';
+  /** Mirrors backend AbnormalFlag (lab-result.entity.ts). 'abnormal' is a real
+   *  member — the lab's fail-closed "out of range, direction unknown" signal —
+   *  and was missing here; 'critical' is not a member and was invented. */
+  abnormalFlag?: 'normal' | 'low' | 'high' | 'critical_low' | 'critical_high' | 'abnormal';
+  flag?: 'normal' | 'low' | 'high' | 'critical_low' | 'critical_high' | 'abnormal';
   status: 'entered' | 'validated' | 'released' | 'amended';
   enteredById?: string;
   enteredBy?: { firstName: string; lastName: string };
@@ -85,8 +88,13 @@ export interface LabResult {
   releasedAt?: string;
   comments?: string;
   interpretation?: string;
-  // Legacy support for pages expecting array of parameters
-  parameters?: Array<{ name: string; value: string; unit: string; referenceRange: string; flag?: string }>;
+  /** lab_results is ONE ROW PER PARAMETER, so orders.list groups a test's rows
+   *  under `result.parameters`. They are full result rows — the old
+   *  {name,value,unit,referenceRange,flag} shape declared here matched neither
+   *  the entity nor what this service actually builds, so readers of
+   *  param.parameter / .numericValue / .abnormalFlag saw type errors while the
+   *  data was there all along. */
+  parameters?: LabResult[];
   createdAt: string;
 }
 

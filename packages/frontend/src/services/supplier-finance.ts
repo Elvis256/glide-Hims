@@ -1,4 +1,5 @@
 import api from './api';
+import type { Supplier } from './suppliers';
 
 export interface PaymentVoucherItem {
   id: string;
@@ -98,32 +99,43 @@ export interface CreditNote {
   createdAt: string;
 }
 
-export interface SupplierLedger {
-  supplierId: string;
-  supplierName: string;
-  totalPurchases: number;
-  totalPayments: number;
-  totalCredits: number;
-  outstandingBalance: number;
-  entries: LedgerEntry[];
-}
-
+/** One row of the ledger, assembled by getSupplierLedger from GRNs, paid
+ *  payment vouchers and approved credit/debit notes. These rows are built in
+ *  memory — they carry no id and no description. `credit` increases the
+ *  payable (GRN, debit note), `debit` reduces it (payment, credit note). */
 export interface LedgerEntry {
-  id: string;
   date: string;
-  type: 'invoice' | 'payment' | 'credit_note' | 'debit_note';
+  type: 'GRN' | 'Payment' | 'Credit Note' | 'Debit Note';
   reference: string;
-  description: string;
   debit: number;
   credit: number;
   balance: number;
 }
 
+export interface SupplierLedger {
+  supplier: Supplier;
+  openingBalance: number;
+  transactions: LedgerEntry[];
+  closingBalance: number;
+}
+
+/** Buckets are keyed by GRN age: current ≤30d, days30 31-60, days60 61-90,
+ *  days90 91-120, over90 >120. `total` is the supplier's outstanding balance
+ *  (posted GRNs minus paid vouchers), so it does not equal the bucket sum. */
 export interface AgingBucket {
-  range: string;
-  amount: number;
-  count: number;
-  suppliers: string[];
+  supplierId: string;
+  supplierName: string;
+  current: number;
+  days30: number;
+  days60: number;
+  days90: number;
+  over90: number;
+  total: number;
+}
+
+export interface SupplierAgingReport {
+  suppliers: AgingBucket[];
+  totals: Omit<AgingBucket, 'supplierId' | 'supplierName'>;
 }
 
 export const supplierFinanceService = {
@@ -188,13 +200,22 @@ export const supplierFinanceService = {
     },
   },
   reports: {
-    getLedger: async (supplierId: string): Promise<SupplierLedger> => {
-      const response = await api.get(`/supplier-finance/reports/supplier-ledger/${supplierId}`);
+    // startDate/endDate are REQUIRED — the controller feeds them straight to
+    // new Date(), so omitting them makes the query range an Invalid Date.
+    getLedger: async (
+      supplierId: string,
+      startDate: string,
+      endDate: string,
+    ): Promise<SupplierLedger> => {
+      const response = await api.get(`/supplier-finance/reports/supplier-ledger/${supplierId}`, {
+        params: { startDate, endDate },
+      });
       return response.data;
     },
-    getAging: async (): Promise<AgingBucket[]> => {
-      const response = await api.get('/supplier-finance/reports/aging');
-      return response.data?.data || response.data || [];
+    // facilityId is REQUIRED — the GRN/payment lookups filter on it.
+    getAging: async (facilityId: string): Promise<SupplierAgingReport> => {
+      const response = await api.get('/supplier-finance/reports/aging', { params: { facilityId } });
+      return response.data;
     },
     getPaymentSummary: async (params?: Record<string, any>): Promise<any> => {
       const response = await api.get('/supplier-finance/reports/payment-summary', { params });

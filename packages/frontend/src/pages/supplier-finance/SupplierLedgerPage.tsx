@@ -1,129 +1,75 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { toast } from 'sonner';
 import { formatCurrency } from '../../lib/currency';
 import { supplierFinanceService } from '../../services/supplier-finance';
 import { supplierService } from '../../services/suppliers';
+import { useFacilityId } from '../../lib/facility';
 import {
   BookOpen,
-  Search,
-  Filter,
   ChevronDown,
   Loader2,
   Building2,
   Calendar,
-  ArrowUpCircle,
-  ArrowDownCircle,
   TrendingUp,
   TrendingDown,
-  FileText,
-  Download,
 } from 'lucide-react';
 
-interface LedgerEntry {
-  id: string;
-  date: string;
-  type: 'INVOICE' | 'PAYMENT' | 'CREDIT_NOTE' | 'DEBIT_NOTE' | 'OPENING_BALANCE';
-  reference: string;
-  description: string;
-  debit: number;
-  credit: number;
-  balance: number;
-}
-
-interface SupplierLedger {
-  supplierId: string;
-  supplierName: string;
-  openingBalance: number;
-  totalDebits: number;
-  totalCredits: number;
-  closingBalance: number;
-  entries: LedgerEntry[];
-}
-
-interface AgingBucket {
-  supplierId: string;
-  supplierName: string;
-  current: number;
-  days30: number;
-  days60: number;
-  days90: number;
-  over90: number;
-  total: number;
-}
-
-const FALLBACK_SUPPLIERS = ['MedPharm Supplies Ltd', 'Uganda Lab Equipment Co', 'AfriMed Pharmaceuticals', 'East Africa Medical'];
+const EMPTY_TOTALS = { current: 0, days30: 0, days60: 0, days90: 0, over90: 0, total: 0 };
 
 export default function SupplierLedgerPage() {
-  const [selectedSupplier, setSelectedSupplier] = useState('');
+  const facilityId = useFacilityId();
+  const [selectedSupplierId, setSelectedSupplierId] = useState('');
   const [showSupplierDropdown, setShowSupplierDropdown] = useState(false);
   const [startDate, setStartDate] = useState(new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
   const [activeTab, setActiveTab] = useState<'ledger' | 'aging'>('ledger');
 
-  // Fetch real supplier list
   const { data: supplierList = [] } = useQuery({
-    queryKey: ['suppliers-active'],
+    queryKey: ['suppliers-active', facilityId],
     queryFn: async () => {
-      try {
-        const res = await supplierService.list('', {});
-        return res.data ?? [];
-      } catch (error) { console.error('Failed to load suppliers:', error); return []; }
+      const res = await supplierService.list(facilityId, { status: 'active', limit: 200 });
+      return res.data ?? [];
     },
   });
-  const supplierNames = (supplierList as any[]).map((s: any) => s.name).filter(Boolean);
-  const suppliers = ['All', ...(supplierNames.length > 0 ? supplierNames : FALLBACK_SUPPLIERS)];
+
+  const selectedSupplier = supplierList.find((s) => s.id === selectedSupplierId);
 
   const { data: ledger, isLoading: ledgerLoading } = useQuery({
-    queryKey: ['supplier-ledger', selectedSupplier, startDate, endDate],
-    queryFn: () => supplierFinanceService.reports.getLedger(selectedSupplier),
-    enabled: !!selectedSupplier && selectedSupplier !== 'All',
+    queryKey: ['supplier-ledger', selectedSupplierId, startDate, endDate],
+    queryFn: () => supplierFinanceService.reports.getLedger(selectedSupplierId, startDate, endDate),
+    enabled: !!selectedSupplierId,
   });
 
   const { data: agingReport, isLoading: agingLoading } = useQuery({
-    queryKey: ['supplier-aging'],
-    queryFn: () => supplierFinanceService.reports.getAging(),
+    queryKey: ['supplier-aging', facilityId],
+    queryFn: () => supplierFinanceService.reports.getAging(facilityId),
+    enabled: !!facilityId,
   });
 
   const getEntryTypeColor = (type: string) => {
     switch (type) {
-      case 'INVOICE': return 'text-red-600';
-      case 'PAYMENT': return 'text-green-600';
-      case 'CREDIT_NOTE': return 'text-green-600';
-      case 'DEBIT_NOTE': return 'text-red-600';
-      case 'OPENING_BALANCE': return 'text-gray-600';
+      case 'GRN': return 'text-red-600';
+      case 'Payment': return 'text-green-600';
+      case 'Credit Note': return 'text-green-600';
+      case 'Debit Note': return 'text-red-600';
       default: return 'text-gray-600';
     }
   };
 
-  const getEntryTypeLabel = (type: string) => {
-    switch (type) {
-      case 'INVOICE': return 'Invoice';
-      case 'PAYMENT': return 'Payment';
-      case 'CREDIT_NOTE': return 'Credit Note';
-      case 'DEBIT_NOTE': return 'Debit Note';
-      case 'OPENING_BALANCE': return 'Opening';
-      default: return type;
-    }
-  };
+  const agingRows = agingReport?.suppliers ?? [];
+  const agingTotals = agingReport?.totals ?? EMPTY_TOTALS;
+  const overdue = agingTotals.days60 + agingTotals.days90 + agingTotals.over90;
 
-  const agingData = agingReport || [];
-  
-  const totalPayables = agingData.reduce((sum, s) => sum + s.total, 0);
-  const overdue = agingData.reduce((sum, s) => sum + s.days60 + s.days90 + s.over90, 0);
+  // The backend supplies no debit/credit totals — derive them from the rows it returned.
+  const totalDebits = ledger?.transactions.reduce((sum, t) => sum + t.debit, 0) ?? 0;
+  const totalCredits = ledger?.transactions.reduce((sum, t) => sum + t.credit, 0) ?? 0;
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Supplier Ledger & Aging</h1>
-          <p className="text-gray-600">View supplier account history and payables aging</p>
-        </div>
-        <button className="flex items-center gap-2 px-4 py-2 border rounded-lg hover:bg-gray-50">
-          <Download className="w-4 h-4" />
-          Export Report
-        </button>
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900">Supplier Ledger & Aging</h1>
+        <p className="text-gray-600">View supplier account history and payables aging</p>
       </div>
 
       {/* Stats */}
@@ -134,8 +80,8 @@ export default function SupplierLedgerPage() {
               <Building2 className="w-5 h-5 text-blue-600" />
             </div>
             <div>
-              <p className="text-sm text-gray-600">Total Suppliers</p>
-              <p className="text-xl font-bold text-gray-900">{agingData.length}</p>
+              <p className="text-sm text-gray-600">Suppliers with Balances</p>
+              <p className="text-xl font-bold text-gray-900">{agingRows.length}</p>
             </div>
           </div>
         </div>
@@ -146,7 +92,7 @@ export default function SupplierLedgerPage() {
             </div>
             <div>
               <p className="text-sm text-gray-600">Total Payables</p>
-              <p className="text-xl font-bold text-red-600">{formatCurrency(totalPayables)}</p>
+              <p className="text-xl font-bold text-red-600">{formatCurrency(agingTotals.total)}</p>
             </div>
           </div>
         </div>
@@ -168,9 +114,7 @@ export default function SupplierLedgerPage() {
             </div>
             <div>
               <p className="text-sm text-gray-600">Current (0-30 days)</p>
-              <p className="text-xl font-bold text-green-600">
-                {formatCurrency(agingData.reduce((sum, s) => sum + s.current, 0))}
-              </p>
+              <p className="text-xl font-bold text-green-600">{formatCurrency(agingTotals.current)}</p>
             </div>
           </div>
         </div>
@@ -220,23 +164,27 @@ export default function SupplierLedgerPage() {
                   className="flex items-center gap-2 px-4 py-2 border rounded-lg hover:bg-gray-50"
                 >
                   <Building2 className="w-4 h-4" />
-                  {selectedSupplier}
+                  {selectedSupplier?.name ?? 'Select supplier'}
                   <ChevronDown className="w-4 h-4" />
                 </button>
                 {showSupplierDropdown && (
-                  <div className="absolute top-full mt-1 w-64 bg-white border rounded-lg shadow-lg z-10">
-                    {suppliers.filter(s => s !== 'All').map((supplier) => (
-                      <button
-                        key={supplier}
-                        onClick={() => {
-                          setSelectedSupplier(supplier);
-                          setShowSupplierDropdown(false);
-                        }}
-                        className="w-full px-4 py-2 text-left hover:bg-gray-50"
-                      >
-                        {supplier}
-                      </button>
-                    ))}
+                  <div className="absolute top-full mt-1 w-64 bg-white border rounded-lg shadow-lg z-10 max-h-72 overflow-y-auto">
+                    {supplierList.length === 0 ? (
+                      <p className="px-4 py-2 text-sm text-gray-500">No active suppliers</p>
+                    ) : (
+                      supplierList.map((supplier) => (
+                        <button
+                          key={supplier.id}
+                          onClick={() => {
+                            setSelectedSupplierId(supplier.id);
+                            setShowSupplierDropdown(false);
+                          }}
+                          className="w-full px-4 py-2 text-left hover:bg-gray-50"
+                        >
+                          {supplier.name}
+                        </button>
+                      ))
+                    )}
                   </div>
                 )}
               </div>
@@ -270,12 +218,12 @@ export default function SupplierLedgerPage() {
                   <p className="font-medium text-gray-900">{formatCurrency(ledger.openingBalance)}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-gray-500">Total Debits (Invoices)</p>
-                  <p className="font-medium text-red-600">{formatCurrency(ledger.totalDebits)}</p>
+                  <p className="text-xs text-gray-500">Total Debits (Payments & Credit Notes)</p>
+                  <p className="font-medium text-green-600">{formatCurrency(totalDebits)}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-gray-500">Total Credits (Payments)</p>
-                  <p className="font-medium text-green-600">{formatCurrency(ledger.totalCredits)}</p>
+                  <p className="text-xs text-gray-500">Total Credits (GRNs & Debit Notes)</p>
+                  <p className="font-medium text-red-600">{formatCurrency(totalCredits)}</p>
                 </div>
                 <div>
                   <p className="text-xs text-gray-500">Closing Balance</p>
@@ -296,29 +244,27 @@ export default function SupplierLedgerPage() {
                     <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Date</th>
                     <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Type</th>
                     <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Reference</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Description</th>
                     <th className="px-4 py-3 text-right text-sm font-medium text-gray-600">Debit</th>
                     <th className="px-4 py-3 text-right text-sm font-medium text-gray-600">Credit</th>
                     <th className="px-4 py-3 text-right text-sm font-medium text-gray-600">Balance</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {ledger.entries.map((entry) => (
-                    <tr key={entry.id} className="hover:bg-gray-50">
+                  {ledger.transactions.map((entry, index) => (
+                    <tr key={`${entry.type}-${entry.reference}-${index}`} className="hover:bg-gray-50">
                       <td className="px-4 py-3 text-sm text-gray-700">
                         {new Date(entry.date).toLocaleDateString()}
                       </td>
                       <td className="px-4 py-3">
                         <span className={`text-sm font-medium ${getEntryTypeColor(entry.type)}`}>
-                          {getEntryTypeLabel(entry.type)}
+                          {entry.type}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-700">{entry.reference}</td>
-                      <td className="px-4 py-3 text-sm text-gray-700">{entry.description}</td>
-                      <td className="px-4 py-3 text-sm text-right text-red-600">
+                      <td className="px-4 py-3 text-sm text-right text-green-600">
                         {entry.debit > 0 ? formatCurrency(entry.debit) : '—'}
                       </td>
-                      <td className="px-4 py-3 text-sm text-right text-green-600">
+                      <td className="px-4 py-3 text-sm text-right text-red-600">
                         {entry.credit > 0 ? formatCurrency(entry.credit) : '—'}
                       </td>
                       <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">
@@ -326,6 +272,13 @@ export default function SupplierLedgerPage() {
                       </td>
                     </tr>
                   ))}
+                  {ledger.transactions.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                        No transactions in this date range
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             ) : (
@@ -344,21 +297,21 @@ export default function SupplierLedgerPage() {
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
               </div>
-            ) : agingReport && agingReport.length > 0 ? (
+            ) : agingRows.length > 0 ? (
               <table className="w-full">
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Supplier</th>
-                    <th className="px-4 py-3 text-right text-sm font-medium text-gray-600">Current</th>
-                    <th className="px-4 py-3 text-right text-sm font-medium text-gray-600">1-30 Days</th>
+                    <th className="px-4 py-3 text-right text-sm font-medium text-gray-600">Current (0-30)</th>
                     <th className="px-4 py-3 text-right text-sm font-medium text-gray-600">31-60 Days</th>
                     <th className="px-4 py-3 text-right text-sm font-medium text-gray-600">61-90 Days</th>
-                    <th className="px-4 py-3 text-right text-sm font-medium text-gray-600">90+ Days</th>
-                    <th className="px-4 py-3 text-right text-sm font-medium text-gray-600">Total</th>
+                    <th className="px-4 py-3 text-right text-sm font-medium text-gray-600">91-120 Days</th>
+                    <th className="px-4 py-3 text-right text-sm font-medium text-gray-600">120+ Days</th>
+                    <th className="px-4 py-3 text-right text-sm font-medium text-gray-600">Outstanding</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {agingReport?.map((supplier) => (
+                  {agingRows.map((supplier) => (
                     <tr key={supplier.supplierId} className="hover:bg-gray-50">
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
@@ -389,24 +342,12 @@ export default function SupplierLedgerPage() {
                   {/* Totals Row */}
                   <tr className="bg-gray-100 font-bold">
                     <td className="px-4 py-3 text-gray-900">Total</td>
-                    <td className="px-4 py-3 text-right text-green-600">
-                      {formatCurrency(agingReport?.reduce((sum, s) => sum + s.current, 0) || 0)}
-                    </td>
-                    <td className="px-4 py-3 text-right text-blue-600">
-                      {formatCurrency(agingReport?.reduce((sum, s) => sum + s.days30, 0) || 0)}
-                    </td>
-                    <td className="px-4 py-3 text-right text-yellow-600">
-                      {formatCurrency(agingReport?.reduce((sum, s) => sum + s.days60, 0) || 0)}
-                    </td>
-                    <td className="px-4 py-3 text-right text-orange-600">
-                      {formatCurrency(agingReport?.reduce((sum, s) => sum + s.days90, 0) || 0)}
-                    </td>
-                    <td className="px-4 py-3 text-right text-red-600">
-                      {formatCurrency(agingReport?.reduce((sum, s) => sum + s.over90, 0) || 0)}
-                    </td>
-                    <td className="px-4 py-3 text-right text-gray-900">
-                      {formatCurrency(agingReport?.reduce((sum, s) => sum + s.total, 0) || 0)}
-                    </td>
+                    <td className="px-4 py-3 text-right text-green-600">{formatCurrency(agingTotals.current)}</td>
+                    <td className="px-4 py-3 text-right text-blue-600">{formatCurrency(agingTotals.days30)}</td>
+                    <td className="px-4 py-3 text-right text-yellow-600">{formatCurrency(agingTotals.days60)}</td>
+                    <td className="px-4 py-3 text-right text-orange-600">{formatCurrency(agingTotals.days90)}</td>
+                    <td className="px-4 py-3 text-right text-red-600">{formatCurrency(agingTotals.over90)}</td>
+                    <td className="px-4 py-3 text-right text-gray-900">{formatCurrency(agingTotals.total)}</td>
                   </tr>
                 </tbody>
               </table>

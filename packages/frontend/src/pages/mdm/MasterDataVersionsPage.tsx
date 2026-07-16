@@ -1,6 +1,16 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { mdmService } from '../../services/mdm';
+import {
+  mdmService,
+  ENTITY_TYPE_LABELS,
+  MASTER_DATA_ENTITY_TYPES,
+  VERSION_ACTIONS,
+  APPROVAL_STATUSES,
+  type DataVersion,
+  type MasterDataEntityType,
+  type VersionAction,
+  type ApprovalStatus,
+} from '../../services/mdm';
 import {
   History,
   Search,
@@ -8,79 +18,88 @@ import {
   ChevronDown,
   Loader2,
   Eye,
-  GitCompare,
-  RotateCcw,
-  Database,
-  Calendar,
   User,
-  FileText,
   CheckCircle,
   Clock,
   XCircle,
 } from 'lucide-react';
 
-interface DataVersion {
-  id: string;
-  entityType: string;
-  entityId: string;
-  entityName: string;
-  version: number;
-  action: 'CREATE' | 'UPDATE' | 'DELETE';
-  changedBy: string;
-  changedAt: string;
-  status: 'APPROVED' | 'PENDING' | 'REJECTED';
-  changes: Record<string, { old: any; new: any }>;
-  approvedBy?: string;
-  approvedAt?: string;
-}
+const actionLabels: Record<VersionAction, string> = {
+  create: 'Create',
+  update: 'Update',
+  delete: 'Delete',
+  restore: 'Restore',
+  approve: 'Approve',
+  reject: 'Reject',
+};
 
-const entityTypes = ['All', 'Drug', 'Supplier', 'Service', 'Department', 'Ward', 'Equipment'];
-const actions = ['All', 'CREATE', 'UPDATE', 'DELETE'];
-const statuses = ['All', 'APPROVED', 'PENDING', 'REJECTED'];
+const statusLabels: Record<ApprovalStatus, string> = {
+  pending: 'Pending',
+  approved: 'Approved',
+  rejected: 'Rejected',
+  auto_approved: 'Auto-approved',
+};
+
+const formatValue = (value: any): string => {
+  if (value === null || value === undefined) return '—';
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+};
+
+// The backend only computes changedFields for updates; creates and deletes
+// carry the whole record in currentData instead.
+const getFieldChanges = (version: DataVersion) =>
+  (version.changedFields || []).map((field) => ({
+    field,
+    old: version.previousData?.[field],
+    new: version.currentData?.[field],
+  }));
+
+const changedByName = (version: DataVersion) => version.changedByUser?.fullName || version.changedBy;
 
 export default function MasterDataVersionsPage() {
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedEntityType, setSelectedEntityType] = useState('All');
-  const [selectedAction, setSelectedAction] = useState('All');
-  const [selectedStatus, setSelectedStatus] = useState('All');
+  const [selectedEntityType, setSelectedEntityType] = useState<'All' | MasterDataEntityType>('All');
+  const [selectedAction, setSelectedAction] = useState<'All' | VersionAction>('All');
+  const [selectedStatus, setSelectedStatus] = useState<'All' | ApprovalStatus>('All');
   const [showFilters, setShowFilters] = useState(false);
   const [selectedVersion, setSelectedVersion] = useState<DataVersion | null>(null);
-  const [compareVersions, setCompareVersions] = useState<DataVersion[]>([]);
 
   const { data: versions, isLoading } = useQuery({
-    queryKey: ['mdm-versions', selectedEntityType, selectedAction, selectedStatus],
-    queryFn: () => mdmService.versions.list({
-      entityType: selectedEntityType !== 'All' ? selectedEntityType : undefined,
-      action: selectedAction !== 'All' ? selectedAction : undefined,
-      status: selectedStatus !== 'All' ? selectedStatus : undefined,
-    }),
+    queryKey: ['mdm-versions', selectedEntityType, selectedStatus],
+    queryFn: () =>
+      mdmService.versions.list({
+        entityType: selectedEntityType !== 'All' ? selectedEntityType : undefined,
+        approvalStatus: selectedStatus !== 'All' ? selectedStatus : undefined,
+      }),
   });
 
   const filteredVersions = versions?.filter((v) => {
+    const term = searchTerm.toLowerCase();
     const matchesSearch =
-      v.entityName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      v.changedBy.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesType = selectedEntityType === 'All' || v.entityType === selectedEntityType;
+      ENTITY_TYPE_LABELS[v.entityType]?.toLowerCase().includes(term) ||
+      v.entityId?.toLowerCase().includes(term) ||
+      changedByName(v)?.toLowerCase().includes(term);
     const matchesAction = selectedAction === 'All' || v.action === selectedAction;
-    const matchesStatus = selectedStatus === 'All' || v.status === selectedStatus;
-    return matchesSearch && matchesType && matchesAction && matchesStatus;
+    return matchesSearch && matchesAction;
   });
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: ApprovalStatus) => {
     switch (status) {
-      case 'APPROVED':
+      case 'approved':
+      case 'auto_approved':
         return (
           <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-green-100 text-green-700 rounded-full">
-            <CheckCircle className="w-3 h-3" /> Approved
+            <CheckCircle className="w-3 h-3" /> {statusLabels[status]}
           </span>
         );
-      case 'PENDING':
+      case 'pending':
         return (
           <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-yellow-100 text-yellow-700 rounded-full">
             <Clock className="w-3 h-3" /> Pending
           </span>
         );
-      case 'REJECTED':
+      case 'rejected':
         return (
           <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-red-100 text-red-700 rounded-full">
             <XCircle className="w-3 h-3" /> Rejected
@@ -91,18 +110,25 @@ export default function MasterDataVersionsPage() {
     }
   };
 
-  const getActionBadge = (action: string) => {
+  const getActionBadge = (action: VersionAction) => {
     switch (action) {
-      case 'CREATE':
-        return <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-700 rounded">Create</span>;
-      case 'UPDATE':
-        return <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-700 rounded">Update</span>;
-      case 'DELETE':
-        return <span className="px-2 py-1 text-xs font-medium bg-red-100 text-red-700 rounded">Delete</span>;
+      case 'create':
+      case 'restore':
+        return <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-700 rounded">{actionLabels[action]}</span>;
+      case 'update':
+      case 'approve':
+        return <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-700 rounded">{actionLabels[action]}</span>;
+      case 'delete':
+      case 'reject':
+        return <span className="px-2 py-1 text-xs font-medium bg-red-100 text-red-700 rounded">{actionLabels[action]}</span>;
       default:
         return null;
     }
   };
+
+  const approvedCount =
+    versions?.filter((v) => v.approvalStatus === 'approved' || v.approvalStatus === 'auto_approved')
+      .length || 0;
 
   return (
     <div className="space-y-6">
@@ -134,9 +160,7 @@ export default function MasterDataVersionsPage() {
             </div>
             <div>
               <p className="text-sm text-gray-600">Approved</p>
-              <p className="text-xl font-bold text-green-600">
-                {versions?.filter((v) => v.status === 'APPROVED').length || 0}
-              </p>
+              <p className="text-xl font-bold text-green-600">{approvedCount}</p>
             </div>
           </div>
         </div>
@@ -148,7 +172,7 @@ export default function MasterDataVersionsPage() {
             <div>
               <p className="text-sm text-gray-600">Pending</p>
               <p className="text-xl font-bold text-yellow-600">
-                {versions?.filter((v) => v.status === 'PENDING').length || 0}
+                {versions?.filter((v) => v.approvalStatus === 'pending').length || 0}
               </p>
             </div>
           </div>
@@ -161,7 +185,7 @@ export default function MasterDataVersionsPage() {
             <div>
               <p className="text-sm text-gray-600">Rejected</p>
               <p className="text-xl font-bold text-red-600">
-                {versions?.filter((v) => v.status === 'REJECTED').length || 0}
+                {versions?.filter((v) => v.approvalStatus === 'rejected').length || 0}
               </p>
             </div>
           </div>
@@ -175,7 +199,7 @@ export default function MasterDataVersionsPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
-              placeholder="Search by entity name or user..."
+              placeholder="Search by entity type, record ID or user..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
@@ -196,36 +220,39 @@ export default function MasterDataVersionsPage() {
           <div className="p-4 bg-gray-50 border-b flex flex-wrap gap-4">
             <select
               value={selectedEntityType}
-              onChange={(e) => setSelectedEntityType(e.target.value)}
+              onChange={(e) => setSelectedEntityType(e.target.value as 'All' | MasterDataEntityType)}
               className="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
             >
-              {entityTypes.map((type) => (
+              <option value="All">All Entity Types</option>
+              {MASTER_DATA_ENTITY_TYPES.map((type) => (
                 <option key={type} value={type}>
-                  {type === 'All' ? 'All Entity Types' : type}
+                  {ENTITY_TYPE_LABELS[type]}
                 </option>
               ))}
             </select>
 
             <select
               value={selectedAction}
-              onChange={(e) => setSelectedAction(e.target.value)}
+              onChange={(e) => setSelectedAction(e.target.value as 'All' | VersionAction)}
               className="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
             >
-              {actions.map((action) => (
+              <option value="All">All Actions</option>
+              {VERSION_ACTIONS.map((action) => (
                 <option key={action} value={action}>
-                  {action === 'All' ? 'All Actions' : action}
+                  {actionLabels[action]}
                 </option>
               ))}
             </select>
 
             <select
               value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value)}
+              onChange={(e) => setSelectedStatus(e.target.value as 'All' | ApprovalStatus)}
               className="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
             >
-              {statuses.map((status) => (
+              <option value="All">All Statuses</option>
+              {APPROVAL_STATUSES.map((status) => (
                 <option key={status} value={status}>
-                  {status === 'All' ? 'All Statuses' : status}
+                  {statusLabels[status]}
                 </option>
               ))}
             </select>
@@ -255,22 +282,24 @@ export default function MasterDataVersionsPage() {
                 <tr key={version.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3">
                     <div>
-                      <p className="font-medium text-gray-900">{version.entityName}</p>
-                      <p className="text-sm text-gray-500">{version.entityType}</p>
+                      <p className="font-medium text-gray-900">
+                        {ENTITY_TYPE_LABELS[version.entityType] || version.entityType}
+                      </p>
+                      <p className="text-xs text-gray-500 font-mono">{version.entityId}</p>
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-700">v{version.version}</td>
+                  <td className="px-4 py-3 text-sm text-gray-700">v{version.versionNumber}</td>
                   <td className="px-4 py-3">{getActionBadge(version.action)}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
                       <User className="w-4 h-4 text-gray-400" />
-                      <span className="text-sm text-gray-700">{version.changedBy}</span>
+                      <span className="text-sm text-gray-700">{changedByName(version)}</span>
                     </div>
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-700">
-                    {new Date(version.changedAt).toLocaleString()}
+                    {new Date(version.createdAt).toLocaleString()}
                   </td>
-                  <td className="px-4 py-3">{getStatusBadge(version.status)}</td>
+                  <td className="px-4 py-3">{getStatusBadge(version.approvalStatus)}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-2">
                       <button
@@ -279,17 +308,6 @@ export default function MasterDataVersionsPage() {
                         title="View Changes"
                       >
                         <Eye className="w-4 h-4 text-gray-500" />
-                      </button>
-                      <button
-                        onClick={() => {
-                          if (compareVersions.length < 2) {
-                            setCompareVersions([...compareVersions, version]);
-                          }
-                        }}
-                        className="p-1 hover:bg-gray-100 rounded"
-                        title="Compare"
-                      >
-                        <GitCompare className="w-4 h-4 text-gray-500" />
                       </button>
                     </div>
                   </td>
@@ -311,13 +329,22 @@ export default function MasterDataVersionsPage() {
           <div className="bg-white rounded-xl w-full max-w-2xl max-h-[80vh] overflow-auto">
             <div className="p-6 border-b">
               <h2 className="text-xl font-bold text-gray-900">Version Details</h2>
-              <p className="text-gray-600">{selectedVersion.entityName} - v{selectedVersion.version}</p>
+              <p className="text-gray-600">
+                {ENTITY_TYPE_LABELS[selectedVersion.entityType] || selectedVersion.entityType} - v
+                {selectedVersion.versionNumber}
+              </p>
             </div>
             <div className="p-6 space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-sm text-gray-500">Entity Type</p>
-                  <p className="font-medium">{selectedVersion.entityType}</p>
+                  <p className="font-medium">
+                    {ENTITY_TYPE_LABELS[selectedVersion.entityType] || selectedVersion.entityType}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Record ID</p>
+                  <p className="font-medium font-mono text-sm">{selectedVersion.entityId}</p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Action</p>
@@ -325,25 +352,49 @@ export default function MasterDataVersionsPage() {
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Changed By</p>
-                  <p className="font-medium">{selectedVersion.changedBy}</p>
+                  <p className="font-medium">{changedByName(selectedVersion)}</p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Changed At</p>
-                  <p className="font-medium">{new Date(selectedVersion.changedAt).toLocaleString()}</p>
+                  <p className="font-medium">{new Date(selectedVersion.createdAt).toLocaleString()}</p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Status</p>
-                  {getStatusBadge(selectedVersion.status)}
+                  {getStatusBadge(selectedVersion.approvalStatus)}
                 </div>
                 {selectedVersion.approvedBy && (
                   <div>
                     <p className="text-sm text-gray-500">Approved By</p>
-                    <p className="font-medium">{selectedVersion.approvedBy}</p>
+                    <p className="font-medium">
+                      {selectedVersion.approvedByUser?.fullName || selectedVersion.approvedBy}
+                    </p>
+                  </div>
+                )}
+                {selectedVersion.approvedAt && (
+                  <div>
+                    <p className="text-sm text-gray-500">Approved At</p>
+                    <p className="font-medium">
+                      {new Date(selectedVersion.approvedAt).toLocaleString()}
+                    </p>
                   </div>
                 )}
               </div>
 
-              {Object.keys(selectedVersion.changes).length > 0 && (
+              {selectedVersion.changeReason && (
+                <div>
+                  <p className="text-sm text-gray-500">Change Reason</p>
+                  <p className="text-sm text-gray-700">{selectedVersion.changeReason}</p>
+                </div>
+              )}
+
+              {selectedVersion.approvalNotes && (
+                <div>
+                  <p className="text-sm text-gray-500">Approval Notes</p>
+                  <p className="text-sm text-gray-700">{selectedVersion.approvalNotes}</p>
+                </div>
+              )}
+
+              {getFieldChanges(selectedVersion).length > 0 ? (
                 <div>
                   <p className="text-sm font-medium text-gray-700 mb-2">Changes</p>
                   <div className="bg-gray-50 rounded-lg p-4">
@@ -356,16 +407,23 @@ export default function MasterDataVersionsPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {Object.entries(selectedVersion.changes).map(([field, change]) => (
-                          <tr key={field}>
-                            <td className="py-1 font-medium">{field}</td>
-                            <td className="py-1 text-red-600">{String(change.old)}</td>
-                            <td className="py-1 text-green-600">{String(change.new)}</td>
+                        {getFieldChanges(selectedVersion).map((change) => (
+                          <tr key={change.field}>
+                            <td className="py-1 font-medium">{change.field}</td>
+                            <td className="py-1 text-red-600">{formatValue(change.old)}</td>
+                            <td className="py-1 text-green-600">{formatValue(change.new)}</td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
                   </div>
+                </div>
+              ) : (
+                <div>
+                  <p className="text-sm font-medium text-gray-700 mb-2">Record Data</p>
+                  <pre className="bg-gray-50 rounded-lg p-4 text-xs overflow-auto max-h-64">
+                    {JSON.stringify(selectedVersion.currentData, null, 2)}
+                  </pre>
                 </div>
               )}
             </div>
