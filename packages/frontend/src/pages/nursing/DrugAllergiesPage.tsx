@@ -149,7 +149,10 @@ export default function DrugAllergiesPage() {
         allergen: form.allergen.trim(),
         type: form.type,
         category: form.category,
-        severity: lifeThreat ? 'severe' : form.severity,
+        // Compare inline rather than via `lifeThreat`: narrowing through a
+        // boolean doesn't exclude 'life-threatening' from form.severity, and
+        // AllergySeverity has no such member.
+        severity: form.severity === 'life-threatening' ? 'severe' : form.severity,
         criticality: lifeThreat ? 'high' : 'low',
         reaction: form.reaction.trim() || undefined,
         verification: form.verification,

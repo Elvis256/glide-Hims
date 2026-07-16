@@ -350,8 +350,8 @@ export default function ApproveQuotationsPage() {
                         >
                           <span>{name}</span>
                           <span className="text-gray-600 tabular-nums">
-                            {qty} {unit} × ${unitPrice.toLocaleString()} ={' '}
-                            <strong>${lineTotal.toLocaleString()}</strong>
+                            {qty} {unit} × {formatCurrency(unitPrice)} ={' '}
+                            <strong>{formatCurrency(lineTotal)}</strong>
                           </span>
                         </div>
                       );

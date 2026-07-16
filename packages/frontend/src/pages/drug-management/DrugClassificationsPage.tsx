@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { pharmacyService } from '../../services/pharmacy';
 import {
+  drugManagementService,
   DrugSchedule,
   TherapeuticClass,
   type DrugClassification,
@@ -48,9 +48,11 @@ export default function DrugClassificationsPage() {
   const [showScheduleDropdown, setShowScheduleDropdown] = useState(false);
   const [showClassDropdown, setShowClassDropdown] = useState(false);
 
+  // drugManagementService mirrors the real drug_classifications columns; the
+  // pharmacyService copy of this type is a drifted duplicate of the same endpoint.
   const { data: classifications, isLoading } = useQuery({
     queryKey: ['drug-classifications'],
-    queryFn: () => pharmacyService.drugs.listClassifications(),
+    queryFn: async () => (await drugManagementService.classifications.list()).data,
   });
 
   const updateMutation = useMutation({
@@ -401,7 +403,7 @@ export default function DrugClassificationsPage() {
                     className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                   >
                     {schedules.filter(s => s !== 'All').map(schedule => (
-                      <option key={schedule} value={schedule}>{schedule.replace('_', ' ')}</option>
+                      <option key={schedule} value={schedule}>{humanise(schedule)}</option>
                     ))}
                   </select>
                 </div>
@@ -412,7 +414,7 @@ export default function DrugClassificationsPage() {
                     className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                   >
                     {therapeuticClasses.filter(c => c !== 'All').map(cls => (
-                      <option key={cls} value={cls}>{cls.replace('_', ' ')}</option>
+                      <option key={cls} value={cls}>{humanise(cls)}</option>
                     ))}
                   </select>
                 </div>
@@ -423,7 +425,7 @@ export default function DrugClassificationsPage() {
                 <input
                   type="text"
                   defaultValue={editingDrug?.maxDailyDose}
-                  placeholder="e.g., 4g"
+                  placeholder="Numeric max daily dose"
                   className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -467,8 +469,7 @@ export default function DrugClassificationsPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Contraindications</label>
                 <textarea
                   rows={2}
-                  defaultValue={editingDrug?.contraindications.join(', ')}
-                  placeholder="Comma-separated list"
+                  defaultValue={editingDrug?.contraindications}
                   className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -477,8 +478,7 @@ export default function DrugClassificationsPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Warnings</label>
                 <textarea
                   rows={2}
-                  defaultValue={editingDrug?.warnings.join(', ')}
-                  placeholder="Comma-separated list"
+                  defaultValue={editingDrug?.warnings}
                   className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                 />
               </div>

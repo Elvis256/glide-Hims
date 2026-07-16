@@ -18,10 +18,12 @@ const certPath = resolve(certsDir, 'cert.pem')
 
 // Load certs only if they exist (for development)
 const hasSSL = existsSync(keyPath) && existsSync(certPath)
+// undefined, not false: server.https takes ServerOptions | undefined, and
+// `false` is not assignable to it.
 const httpsConfig = hasSSL ? {
   key: readFileSync(keyPath),
   cert: readFileSync(certPath),
-} : false
+} : undefined
 
 // https://vite.dev/config/
 export default defineConfig({
