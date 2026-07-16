@@ -584,6 +584,10 @@ export class StoresService {
         unit: item.unit,
         unitCost: Number(item.unitCost) || 0,
         sellingPrice: Number(item.sellingPrice) || 0,
+        // Nullable columns: null means "not priced yet", which callers must not
+        // conflate with a price of 0.
+        retailPrice: item.retailPrice != null ? Number(item.retailPrice) : null,
+        wholesalePrice: item.wholesalePrice != null ? Number(item.wholesalePrice) : null,
         lastUpdated:
           balance?.lastMovementAt?.toISOString() ||
           item.updatedAt?.toISOString() ||

@@ -81,7 +81,8 @@ export type ReagentStatus = 'active' | 'low_stock' | 'out_of_stock' | 'expired' 
 /** Mirrors lab_reagents (lab-reagent.entity.ts); listReagents returns raw
  *  entities. Stock lives on stockQuantity/reorderLevel/maxStockLevel — there is
  *  no minStock/reorderPoint/currentStock column. Expiry is per-LOT
- *  (reagent_lots) and is NOT joined by the list endpoint. */
+ *  (reagent_lots); the list endpoint aggregates the usable lots into the
+ *  earliestExpiryDate/expiringSoonLots/expiredLots fields below. */
 export interface LabReagent {
   id: string;
   facilityId: string;
@@ -100,6 +101,12 @@ export interface LabReagent {
   storageConditions?: string;
   status: ReagentStatus;
   isActive: boolean;
+  /** Aggregated from reagent_lots by GET /lab-supplies/reagents. Only lots with
+   *  stock left and isActive count. Date-only ('YYYY-MM-DD'); null = no lots. */
+  earliestExpiryDate?: string | null;
+  /** Lots expiring within the backend's 30-day window. */
+  expiringSoonLots?: number;
+  expiredLots?: number;
 }
 
 /** Mirrors backend ReceiveLotDto (modules/lab-supplies/dto). The backend runs

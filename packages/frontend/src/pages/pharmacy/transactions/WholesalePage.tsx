@@ -50,14 +50,17 @@ interface Product {
   name: string;
   genericName: string;
   category: string;
-  retailPrice: number;
-  wholesalePrice: number;
+  // null = the item has no price set; never fabricated from cost.
+  retailPrice: number | null;
+  wholesalePrice: number | null;
   stock: number;
   unit: string;
   minOrder: number;
 }
 
+/** Only priced products can be ordered, so wholesalePrice is non-null here. */
 interface OrderItem extends Product {
+  wholesalePrice: number;
   quantity: number;
   discount: number;
 }
@@ -121,12 +124,10 @@ export default function WholesalePage() {
       name: item.name,
       genericName: item.name,
       category: item.category,
-      // items carries retail_price/wholesale_price, but GET /stores/inventory
-      // returns a fixed projection that omits both — reading them here always
-      // yielded undefined and silently fell through to the values below.
-      // Surfacing true wholesale pricing needs that projection extended.
-      retailPrice: Number(item.sellingPrice) || Number(item.unitCost || 0) * 1.3,
-      wholesalePrice: Number(item.unitCost) || 0,
+      // Real price columns from GET /stores/inventory. null means the item has
+      // no price set — surfaced honestly below rather than guessed from cost.
+      retailPrice: item.retailPrice != null ? Number(item.retailPrice) : null,
+      wholesalePrice: item.wholesalePrice != null ? Number(item.wholesalePrice) : null,
       stock: item.currentStock,
       unit: item.unit,
       minOrder: 10,
@@ -172,6 +173,13 @@ export default function WholesalePage() {
   }, [productSearch, products]);
 
   const addToOrder = (product: Product) => {
+    if (product.wholesalePrice == null) return; // unpriced item cannot be sold
+    const priced: OrderItem = {
+      ...product,
+      wholesalePrice: product.wholesalePrice,
+      quantity: product.minOrder,
+      discount: 0,
+    };
     setOrderItems((prev) => {
       const existing = prev.find((item) => item.id === product.id);
       if (existing) {
@@ -179,7 +187,7 @@ export default function WholesalePage() {
           item.id === product.id ? { ...item, quantity: item.quantity + product.minOrder } : item
         );
       }
-      return [...prev, { ...product, quantity: product.minOrder, discount: 0 }];
+      return [...prev, priced];
     });
   };
 
@@ -416,15 +424,26 @@ export default function WholesalePage() {
                             <p className="text-xs text-gray-500">{product.unit}</p>
                           </td>
                           <td className="text-right p-2">
-                            <p className="font-semibold text-green-600">{formatCurrency(product.wholesalePrice)}</p>
-                            <p className="text-xs text-gray-400 line-through">{formatCurrency(product.retailPrice)}</p>
+                            {product.wholesalePrice != null ? (
+                              <>
+                                <p className="font-semibold text-green-600">{formatCurrency(product.wholesalePrice)}</p>
+                                {product.retailPrice != null && (
+                                  <p className="text-xs text-gray-400 line-through">{formatCurrency(product.retailPrice)}</p>
+                                )}
+                              </>
+                            ) : (
+                              <span className="inline-flex items-center px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-700 rounded-full">
+                                Needs pricing
+                              </span>
+                            )}
                           </td>
                           <td className="text-right p-2 text-gray-600">{product.stock.toLocaleString()}</td>
                           <td className="text-center p-2 text-gray-600">{product.minOrder}</td>
                           <td className="p-2">
                             <button
                               onClick={() => addToOrder(product)}
-                              disabled={!selectedFacility}
+                              disabled={!selectedFacility || product.wholesalePrice == null}
+                              title={product.wholesalePrice == null ? 'No wholesale price set for this item' : undefined}
                               className="p-1.5 bg-blue-100 text-blue-600 rounded hover:bg-blue-200 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                               <Plus className="w-4 h-4" />

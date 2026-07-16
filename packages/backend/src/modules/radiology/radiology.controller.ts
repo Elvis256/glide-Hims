@@ -214,4 +214,27 @@ export class RadiologyController {
       req?.user?.tenantId,
     );
   }
+
+  @Get('stats/critical-findings')
+  @AuthWithPermissions('radiology.reports.read')
+  @ApiOperation({ summary: 'Get critical findings stats' })
+  @ApiQuery({ name: 'facilityId', required: true })
+  @ApiQuery({ name: 'startDate', required: true })
+  @ApiQuery({ name: 'endDate', required: true })
+  async getCriticalFindingsStats(
+    @Query('facilityId') facilityId: string,
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+    @Request() req?: any,
+  ) {
+    if (!facilityId || !UUID_REGEX.test(facilityId)) {
+      throw new BadRequestException('Valid facilityId UUID is required');
+    }
+    return this.radiologyService.getCriticalFindingsStats(
+      facilityId,
+      startDate,
+      endDate,
+      req?.user?.tenantId,
+    );
+  }
 }
