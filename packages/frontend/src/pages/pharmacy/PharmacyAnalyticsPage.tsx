@@ -128,8 +128,8 @@ export default function PharmacyAnalyticsPage() {
     if (salesHistory?.length && salesHistory.length >= 2) {
       const sorted = [...salesHistory].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
       const mid = Math.floor(sorted.length / 2);
-      const firstRevenue = sorted.slice(0, mid).reduce((sum, s) => sum + s.totalAmount, 0);
-      const secondRevenue = sorted.slice(mid).reduce((sum, s) => sum + s.totalAmount, 0);
+      const firstRevenue = sorted.slice(0, mid).reduce((sum, s) => sum + Number(s.totalAmount || 0), 0);
+      const secondRevenue = sorted.slice(mid).reduce((sum, s) => sum + Number(s.totalAmount || 0), 0);
       if (firstRevenue > 0) {
         revenueChange = Math.round(((secondRevenue - firstRevenue) / firstRevenue) * 100);
       }
@@ -167,7 +167,7 @@ export default function PharmacyAnalyticsPage() {
       if (!grouped[date]) {
         grouped[date] = { revenue: 0, prescriptions: 0 };
       }
-      grouped[date].revenue += sale.totalAmount;
+      grouped[date].revenue += Number(sale.totalAmount || 0);
       grouped[date].prescriptions += 1;
     });
 
@@ -202,8 +202,8 @@ export default function PharmacyAnalyticsPage() {
         if (!itemMap[item.itemId]) {
           itemMap[item.itemId] = { name: item.itemName, quantity: 0, revenue: 0 };
         }
-        itemMap[item.itemId].quantity += item.quantity;
-        itemMap[item.itemId].revenue += item.totalPrice;
+        itemMap[item.itemId].quantity += Number(item.quantity || 0);
+        itemMap[item.itemId].revenue += Number(item.totalPrice || 0);
       });
     });
 

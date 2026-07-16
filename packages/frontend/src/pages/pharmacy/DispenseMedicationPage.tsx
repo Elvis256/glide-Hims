@@ -32,6 +32,9 @@ import {
 import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
 import { prescriptionsService, type Prescription, type PrescriptionItem } from '../../services/prescriptions';
+import { allergiesService } from '../../services/allergies';
+import { getApiErrorMessage } from '../../services/api';
+import { confirmDialog } from '../../components/ConfirmDialog';
 import { storesService } from '../../services/stores';
 import { printService } from '../../lib/print';
 import { pharmacyService, type BatchStock } from '../../services/pharmacy';
@@ -219,24 +222,56 @@ export default function DispenseMedicationPage() {
     return null;
   };
 
-  // Patient allergies – read from the patient record embedded in the prescription
+  // Structured allergies — the SAME source backend dispense enforcement reads
+  // (patient_allergies table via /patients/:id/allergies). The jsonb
+  // patient.allergies column embedded in the prescription is only a summary and
+  // can be empty even when the patient has recorded allergies, so relying on it
+  // alone gave the pharmacist a falsely-clear banner while the backend would
+  // still (correctly) block the dispense. Merge both, structured first.
+  const allergyPatientId = selectedPrescription?.patientId || (selectedPrescription?.patient as any)?.id;
+  const { data: structuredAllergies } = useQuery({
+    queryKey: ['patient-allergies', allergyPatientId],
+    queryFn: () => allergiesService.list(allergyPatientId!),
+    enabled: !!allergyPatientId,
+    staleTime: 60000,
+  });
+
   const patientAllergies = useMemo(() => {
+    const out: Array<{ allergen: string; severity: string; reaction?: string }> = [];
+    const seen = new Set<string>();
+    const add = (allergen: string, severity: string, reaction?: string) => {
+      const key = allergen.trim().toLowerCase();
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      out.push({ allergen, severity, reaction });
+    };
+    // Structured (active/unconfirmed, not resolved/entered-in-error) first.
+    for (const a of structuredAllergies || []) {
+      if (a.status === 'resolved' || a.status === 'entered-in-error') continue;
+      add(a.allergen, a.severity || 'unknown', a.reaction);
+    }
+    // jsonb summary column as a fallback for older records.
     const patient = selectedPrescription?.patient as any;
-    if (!patient) return [];
-    const raw: any[] = patient.allergies || patient.knownAllergies || [];
-    return raw.map((a: any) =>
-      typeof a === 'string'
-        ? { allergen: a, severity: 'unknown' as const }
-        : { allergen: a.allergen || a.name || String(a), severity: a.severity || 'unknown', reaction: a.reaction }
-    ) as Array<{ allergen: string; severity: string; reaction?: string }>;
-  }, [selectedPrescription?.patient]);
+    const raw: any[] = patient?.allergies || patient?.knownAllergies || [];
+    for (const a of raw) {
+      if (typeof a === 'string') add(a, 'unknown');
+      else add(a.allergen || a.name || String(a), a.severity || 'unknown', a.reaction);
+    }
+    return out;
+  }, [structuredAllergies, selectedPrescription?.patient]);
 
   // High-alert drugs from drug-management
   const { data: highAlertDrugs } = useQuery({
     queryKey: ['drug-management', 'high-alert'],
     queryFn: async () => {
-      const res = await import('../../services/api').then(m => m.default.get('/drug-management/classifications', { params: { type: 'high-alert' } }));
-      const list: string[] = (asList(res.data)).map((d: any) => (d.genericName || d.name || '').toLowerCase());
+      // Use the dedicated high-alert endpoint. The generic /classifications route
+      // has no `type` filter — passing `type: 'high-alert'` was silently ignored,
+      // so it returned EVERY classified drug and flagged all of them HIGH-ALERT.
+      const res = await import('../../services/api').then(m => m.default.get('/drug-management/classifications/high-alert'));
+      const list: string[] = (asList(res.data))
+        .flatMap((d: any) => [d.genericName, d.brandName])
+        .filter(Boolean)
+        .map((n: string) => n.toLowerCase());
       return new Set(list);
     },
     staleTime: 600000,
@@ -309,7 +344,9 @@ export default function DispenseMedicationPage() {
       setBatchSelections({});
     },
     onError: (err: any) => {
-      toast.error(err.message || 'Failed to dispense');
+      // Surface the backend reason (e.g. "MEDICATION SAFETY BLOCK: ALLERGY ...") —
+      // err.message on an axios error is only the generic "status code 400".
+      toast.error(getApiErrorMessage(err, 'Failed to dispense'));
     },
   });
 
@@ -327,7 +364,7 @@ export default function DispenseMedicationPage() {
       setEditValues({});
       toast.success('Item updated');
     },
-    onError: (err: any) => toast.error(err.message || 'Failed to update item'),
+    onError: (err: any) => toast.error(getApiErrorMessage(err, 'Failed to update item')),
   });
 
   // Remove item mutation
@@ -344,7 +381,7 @@ export default function DispenseMedicationPage() {
       }
       toast.success('Item removed from prescription');
     },
-    onError: (err: any) => toast.error(err.message || 'Failed to remove item'),
+    onError: (err: any) => toast.error(getApiErrorMessage(err, 'Failed to remove item')),
   });
 
   const startEditing = (item: PrescriptionItem) => {
@@ -372,9 +409,15 @@ export default function DispenseMedicationPage() {
     setEditValues({});
   };
 
-  const handleRemoveItem = (item: PrescriptionItem) => {
+  const handleRemoveItem = async (item: PrescriptionItem) => {
     if (!selectedPrescription) return;
-    if (!confirm(`Remove ${item.drugName} from this prescription? This will also remove it from the bill.`)) return;
+    const ok = await confirmDialog({
+      title: 'Remove medication',
+      message: `Remove ${item.drugName} from this prescription? This will also remove it from the bill.`,
+      confirmLabel: 'Remove',
+      variant: 'danger',
+    });
+    if (!ok) return;
     removeItemMutation.mutate({ prescriptionId: selectedPrescription.id, itemId: item.id });
   };
 
