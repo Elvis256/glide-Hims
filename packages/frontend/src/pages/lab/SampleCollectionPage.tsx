@@ -155,7 +155,7 @@ export default function SampleCollectionPage() {
   // from queue" mismatch.
   const { data: apiOrders, isLoading, refetch } = useQuery({
     queryKey: ['lab-orders', 'pending-collection', facilityId],
-    queryFn: () => labService.orders.getPending({ facilityId }),
+    queryFn: () => labService.orders.getPending({ facilityId, limit: 200 }),
     enabled: !!facilityId,
     staleTime: 15000,
     refetchInterval: 15000,

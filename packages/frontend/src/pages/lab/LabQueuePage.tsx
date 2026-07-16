@@ -113,7 +113,11 @@ export default function LabQueuePage() {
   // Fetch lab orders
   const { data: ordersData, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['lab-orders', facilityId],
-    queryFn: () => labService.orders.list({ facilityId }),
+    // Explicit high limit: the /orders endpoint defaults to 20 rows (createdAt
+    // DESC), so without this a busy lab silently drops older PENDING orders off
+    // the queue once 20 newer orders (incl. completed) exist — a vanishing
+    // worklist. 200 covers a live lab's active load.
+    queryFn: () => labService.orders.list({ facilityId, limit: 200 }),
     staleTime: 15000,
     refetchInterval: 20000,
     retry: 1,

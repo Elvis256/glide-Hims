@@ -220,8 +220,14 @@ export const labService = {
       const response = await api.patch(`/lab/tests/${id}`, data);
       return response.data;
     },
-    toggleActive: async (id: string): Promise<LabTest> => {
-      const response = await api.patch(`/lab/tests/${id}`, { isActive: true }); // Toggle handled by backend or caller
+    // The backend UpdateLabTestDto has NO `isActive` field — activation is driven
+    // by the `status` enum ('active' | 'inactive'). Sending `isActive` tripped
+    // forbidNonWhitelisted and 400'd every toggle (and it never actually flipped
+    // — it always sent true). Caller passes the CURRENT active state; we flip it.
+    toggleActive: async (id: string, currentlyActive: boolean): Promise<LabTest> => {
+      const response = await api.patch(`/lab/tests/${id}`, {
+        status: currentlyActive ? 'inactive' : 'active',
+      });
       return response.data;
     },
   },
@@ -305,7 +311,7 @@ export const labService = {
 
   // Legacy orders support (uses /orders endpoint for backwards compatibility)
   orders: {
-    list: async (params?: { status?: string; patientId?: string; date?: string; facilityId?: string; orderedById?: string; excludeReviewed?: boolean }): Promise<LabOrder[]> => {
+    list: async (params?: { status?: string; patientId?: string; date?: string; facilityId?: string; orderedById?: string; excludeReviewed?: boolean; limit?: number }): Promise<LabOrder[]> => {
       const { excludeReviewed, ...rest } = params || {};
       const response = await api.get<{ data: any[]; total: number; page: number; limit: number }>('/orders', { params: { ...rest, orderType: 'lab', ...(excludeReviewed ? { excludeReviewed: 'true' } : {}) } });
       // Transform orders API response to LabOrder format
@@ -378,8 +384,8 @@ export const labService = {
         };
       });
     },
-    getPending: async (params?: { facilityId?: string }): Promise<LabOrder[]> => {
-      const response = await api.get<{ data: any[]; total: number; page: number; limit: number }>('/orders', { params: { orderType: 'lab', status: 'pending', ...(params?.facilityId ? { facilityId: params.facilityId } : {}) } });
+    getPending: async (params?: { facilityId?: string; limit?: number }): Promise<LabOrder[]> => {
+      const response = await api.get<{ data: any[]; total: number; page: number; limit: number }>('/orders', { params: { orderType: 'lab', status: 'pending', limit: params?.limit ?? 200, ...(params?.facilityId ? { facilityId: params.facilityId } : {}) } });
       const orders = response.data?.data || [];
       return orders.map(order => ({
         id: order.id,

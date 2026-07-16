@@ -60,7 +60,7 @@ export default function LabAnalyticsPage() {
 
   const { data: completedOrders = [] } = useQuery({
     queryKey: ['lab-orders-completed', facilityId],
-    queryFn: () => labService.orders.list({ facilityId, status: 'completed' }),
+    queryFn: () => labService.orders.list({ facilityId, status: 'completed', limit: 200 }),
     enabled: !!facilityId,
   });
 
