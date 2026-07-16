@@ -19,7 +19,9 @@ import {
   X,
   Trash2,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { labService, type LabTest as APILabTest } from '../../../services';
+import { getApiErrorMessage } from '../../../services/api';
 import { CURRENCY_SYMBOL, formatCurrency } from '../../../lib/currency';
 import { toCsv, downloadBlob } from '../../reports/_reportUtils';
 
@@ -171,10 +173,12 @@ export default function TestCatalogPage() {
 
   // Toggle test status mutation
   const toggleMutation = useMutation({
-    mutationFn: (id: string) => labService.tests.toggleActive(id),
+    mutationFn: ({ id, currentlyActive }: { id: string; currentlyActive: boolean }) =>
+      labService.tests.toggleActive(id, currentlyActive),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['lab-tests'] });
     },
+    onError: (e) => toast.error(getApiErrorMessage(e)),
   });
 
   // Create test mutation
@@ -184,6 +188,7 @@ export default function TestCatalogPage() {
       queryClient.invalidateQueries({ queryKey: ['lab-tests'] });
       closeModal();
     },
+    onError: (e) => toast.error(getApiErrorMessage(e)),
   });
 
   // Update test mutation
@@ -193,6 +198,7 @@ export default function TestCatalogPage() {
       queryClient.invalidateQueries({ queryKey: ['lab-tests'] });
       closeModal();
     },
+    onError: (e) => toast.error(getApiErrorMessage(e)),
   });
 
   const openAddModal = () => {
@@ -278,7 +284,20 @@ export default function TestCatalogPage() {
     };
 
     if (editingTest) {
-      updateMutation.mutate({ id: editingTest.id, data: testData });
+      // UpdateLabTestDto only whitelists a subset — code / sampleType /
+      // requiresFasting / specialInstructions are NOT accepted on update and
+      // would trip forbidNonWhitelisted (400 on every edit). Send only the
+      // updatable fields. (Editing sampleType/fasting/instructions is a known
+      // backend gap — see review notes.)
+      const updatePayload: Partial<APILabTest> = {
+        name: formData.name,
+        description: formData.description || undefined,
+        category: formData.category,
+        price: formData.price,
+        turnaroundTimeMinutes: formData.turnaroundTimeMinutes,
+        referenceRanges: cleanedRanges.length > 0 ? cleanedRanges : undefined,
+      };
+      updateMutation.mutate({ id: editingTest.id, data: updatePayload });
     } else {
       createMutation.mutate(testData);
     }
@@ -294,8 +313,8 @@ export default function TestCatalogPage() {
     });
   }, [tests, searchTerm, selectedCategory, selectedSampleType]);
 
-  const toggleTestStatus = (id: string) => {
-    toggleMutation.mutate(id);
+  const toggleTestStatus = (test: LabTest) => {
+    toggleMutation.mutate({ id: test.id, currentlyActive: test.isActive });
   };
 
   const handleExportCSV = () => {
@@ -550,7 +569,7 @@ export default function TestCatalogPage() {
                         <Edit2 className="w-4 h-4" />
                       </button>
                       <button
-                        onClick={() => toggleTestStatus(test.id)}
+                        onClick={() => toggleTestStatus(test)}
                         className={`p-1.5 rounded ${
                           test.isActive
                             ? 'text-gray-500 hover:text-red-600 hover:bg-red-50'

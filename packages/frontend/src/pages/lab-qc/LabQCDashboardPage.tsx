@@ -115,35 +115,15 @@ function NewQCRunModal({ open, onClose, testOptions, defaultRunBy, onSuccess }: 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (zscore === null) { toast.error('Please fill in valid numeric values for Value, Mean, and SD'); return; }
-    setSubmitting(true);
-    try {
-      const payload = {
-        testName: form.testName,
-        analyte: form.analyte,
-        controlLevel: form.controlLevel,
-        measuredValue: parseFloat(form.measuredValue),
-        expectedMean: parseFloat(form.expectedMean),
-        standardDeviation: parseFloat(form.standardDeviation),
-        zscore,
-        status,
-        lotNumber: form.lotNumber,
-        equipment: form.equipment,
-        runDate: form.runDate,
-        runBy: form.runBy,
-      };
-      const svc = labService as any;
-      if (svc.qc?.addRun) {
-        await svc.qc.addRun(payload);
-      }
-      toast.success('QC run recorded successfully');
-      setForm({ ...EMPTY_FORM, runBy: defaultRunBy });
-      onSuccess();
-      onClose();
-    } catch {
-      toast.error('Failed to record QC run');
-    } finally {
-      setSubmitting(false);
-    }
+    // SAFETY: there is NO endpoint that accepts this ad-hoc QC shape. The backend
+    // records a QC run via POST /lab-supplies/qc-results, which requires a
+    // pre-defined QC material (qcMaterialId) and recomputes the z-score/Westgard
+    // status server-side — this free-text form has no material to reference.
+    // `labService.qc.addRun` does not exist, so the previous code silently made
+    // NO request and then showed "recorded successfully" — a fake pass on quality
+    // control. Surface the truth instead of a dangerous illusion until a QC
+    // material picker is wired up. (Flagged in review as P0.)
+    toast.error('QC run recording is not available yet — configure QC materials first.');
   };
 
   if (!open) return null;
