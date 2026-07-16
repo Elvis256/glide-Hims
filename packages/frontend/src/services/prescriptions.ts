@@ -41,6 +41,10 @@ export interface PrescriptionItem {
   dose: string;
   frequency: string;
   duration: string;
+  /** Route of administration. Nullable — items written before the route column
+   *  existed have none recorded, and assuming one would fabricate clinical
+   *  data. Render a blank, never a default. */
+  route?: string;
   quantity: number;
   dispensedQuantity: number;
   instructions?: string;
@@ -89,6 +93,8 @@ export interface CreatePrescriptionItemDto {
   dose: string;
   frequency: string;
   duration: string;
+  /** Route of administration — optional on PrescriptionItemDto. */
+  route?: string;
   quantity: number;
   instructions?: string;
 }

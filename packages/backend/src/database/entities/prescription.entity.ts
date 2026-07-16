@@ -95,6 +95,13 @@ export class PrescriptionItem extends BaseEntity {
   @Column()
   duration: string; // e.g., "5 days"
 
+  // Route of administration, e.g. "PO (Oral)", "IV (Intravenous)", "Topical".
+  // Nullable: items written before migration 1782900000080 have no route, and
+  // a wrong route is more dangerous than a blank one — dispensing labels must
+  // print nothing rather than assume oral.
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  route?: string;
+
   @Column()
   quantity: number;
 

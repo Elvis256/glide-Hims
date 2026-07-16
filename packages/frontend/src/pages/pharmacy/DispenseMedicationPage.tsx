@@ -550,7 +550,7 @@ export default function DispenseMedicationPage() {
         <span><b>Date:</b> ${dateStr}</span>
       </div>
       <div class="drug">${item.drugName}</div>
-      <div class="dosage">${item.dose} — ${item.frequency} — ${item.duration}</div>
+      <div class="dosage">${item.dose} — ${item.frequency} — ${item.duration}${item.route ? ` — ${item.route}` : ''}</div>
       ${item.instructions ? `<div class="instructions">📋 ${item.instructions}</div>` : ''}
       ${isHighAlert ? '<div class="warn">⚠ HIGH-ALERT MEDICATION</div>' : ''}
       <div class="grid">

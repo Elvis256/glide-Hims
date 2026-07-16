@@ -278,6 +278,10 @@ export default function WritePrescriptionPage() {
         dose: `${item.dose} ${item.drug?.unit || ''}`.trim(),
         frequency: item.frequency.split(' ')[0], // Extract code like "BD"
         duration: item.duration,
+        // The prescriber picks a route (PO/IV/IM/Topical/...). It was collected
+        // and then dropped on submit — no DTO field, no column — so every
+        // dispensing label printed "Oral".
+        route: item.route || undefined,
         quantity: item.quantity,
         instructions: item.instructions || undefined,
       })),
