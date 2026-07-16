@@ -91,6 +91,60 @@ Baseline is 0 as of Block 3.5 — any new error is a regression, not noise.
 ## Findings log
 (append per block: P0 fixed inline w/ hash · P1 deferred · feature ideas)
 
+### Block 3.5 — tsc gate repair + repo-wide type sweep (2026-07-16) ✅ 493 → 0
+Triggered by asking for Block 3 recommendations. The gate itself was broken:
+`npx tsc --noEmit` checks ZERO files (root tsconfig is `files: []` + refs), and
+`--incremental false` was missing so the tsbuildinfo cache served stale "clean"
+results. Blocks 1–3 were signed off against a no-op. Real count was 493.
+Commits: a042ea2e · 913c4e33 · d061262c · 77944bc7 · d8a80721 · 41d62efb ·
+19021590 · 84f2bc1d. Both tsc projects now 0 from a cold cache; vite build
+passes; backend tsc 0.
+
+**PATIENT SAFETY (fixed)**: LabResultsPage `transformFlag()` mapped
+AbnormalFlag.ABNORMAL → 'Normal' (green). ABNORMAL is the lab's FAIL-CLOSED
+signal (raised when reference ranges can't resolve; escalated as critical by
+`toCriticalSeverity`). `recalculateFlag()` couldn't rescue it either — it trusts
+anything already 'Normal'. Now a distinct 'Abnormal' on the orange path via
+`isAbnormalFlag()`.
+
+**Backend fixes**: referrals `getIncomingReferrals` hardcoded PENDING (accepted
+referrals vanished → inbound workflow dead-ended); `checkLicenseExpiry` hid
+already-expired licences (added `includeExpired`).
+
+**NEEDS A HUMAN DECISION (all verified, none acted on):**
+1. **`employees` table is EMPTY (0 rows) while `users` has 21.** `GET
+   /hr/employees` is marked canonical (/hr/staff deprecated, sunset 2026-09-01)
+   so StaffDirectory / Attendance / Appraisals / HRPage employees tab render
+   empty for every tenant. `createStaff` only writes `users` — the user/employee
+   merge looks half-done. Architectural.
+2. **MDM module is never fed**: `MdmService.recordVersion` has ZERO callers
+   outside its own file; `master_data_versions` and `master_data_approval_rules`
+   are both 0 rows in prod. All three MDM pages are correct now but stay empty
+   until the write paths call it.
+3. **`CreateApprovalRuleDto.requiresApproval` has no class-validator decorator**
+   → forbidNonWhitelisted rejects it → no rule created via the API can ever gate
+   anything (it's the only field the engine reads). One-line fix: `@IsBoolean()`.
+   Also `PUT /approval-rules/:id` takes `Partial<CreateApprovalRuleDto>`, which
+   erases to `Object` → ValidationPipe skips it entirely → unvalidated
+   mass-assignment surface.
+4. **Supplier aging buckets don't tie to their total** (backend): `total` is
+   posted GRNs − paid vouchers, but the five buckets distribute GROSS GRN value
+   with payments never subtracted. Needs per-invoice aging.
+5. **Consumption report "Custom" date range silently shows this month**:
+   `GET /inventory/consumption` accepts only `period|department|category`;
+   `period='custom'` hits `default:`. Its `department` param is accepted but
+   never applied.
+6. **Patient insurance fields are fantasy across the app**:
+   `paymentType`/`membershipType`/`insuranceProvider`/`weight`/`height` are not
+   columns (paymentType lives in `metadata->>'paymentType'`). PatientSearch's
+   Insurance/VIP badges never render. Spans PatientsPage/CashierPage/OPDTokenPage
+   — needs a coordinated fix.
+7. `Encounter.department` is typed `string` but the backend joins a Department
+   object (or null). PatientDetailPage currently routes through a local guard.
+8. `services/encounters.ts` still carries fantasy `visitDate`/`doctor`/`doctorId`
+   read by 8 pages (PatientHistory, DoctorDashboard, TodaySchedule, …), all
+   silently rendering undefined. Worth a sweep.
+
 ### Block 1 — Registration (2026-07-14)
 P0s fixed inline (backend deployed, migrations 77+78 applied, frontend built to dist):
 - Appointments trio incoherent: Book created FOLLOW-UPS, View listed the (empty) appointments module, Manage edited follow-ups — bookings invisible, View→Manage deep link never matched. All three wired to the appointments module (create / list+check-in / reschedule+cancel). E2E: book→view→manage→cancel live via UI.
