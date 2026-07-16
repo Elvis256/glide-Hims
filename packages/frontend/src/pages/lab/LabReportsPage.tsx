@@ -23,6 +23,9 @@ interface TestResult {
   displayValue: string;
   unit: string;
   status: 'Normal' | 'Abnormal' | 'Critical';
+  /** The lab's stored flag, kept so the printed/PDF report can use the
+   *  authoritative value instead of recomputing (and downgrading) it. */
+  abnormalFlag?: LabResult['abnormalFlag'];
   referenceRange: string;
   referenceMin?: number;
   referenceMax?: number;
@@ -200,6 +203,7 @@ export default function LabReportsPage() {
             : (r.abnormalFlag === 'low' || r.abnormalFlag === 'high' || r.abnormalFlag === 'abnormal')
               ? 'Abnormal' as const
               : 'Normal' as const,
+          abnormalFlag: r.abnormalFlag,
           referenceRange: r.referenceRange || '',
           referenceMin: r.referenceMin,
           referenceMax: r.referenceMax,
@@ -276,6 +280,7 @@ export default function LabReportsPage() {
       normalMin: r.referenceMin,
       normalMax: r.referenceMax,
       referenceRange: r.referenceRange,
+      abnormalFlag: r.abnormalFlag,
     })),
   });
 
@@ -303,6 +308,7 @@ export default function LabReportsPage() {
         normalMin: r.referenceMin,
         normalMax: r.referenceMax,
         referenceRange: r.referenceRange,
+        abnormalFlag: r.abnormalFlag,
       }))
     ),
   });

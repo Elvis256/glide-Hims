@@ -41,6 +41,12 @@ export interface LabReportParam {
   criticalLow?: number;
   criticalHigh?: number;
   textNormal?: string;
+  /** The lab's stored, authoritative flag (backend AbnormalFlag). When present
+   *  it OVERRIDES numeric recomputation — otherwise the printed report could
+   *  disagree with the screen: a value with missing/uncomputable reference
+   *  bounds, or the fail-closed 'abnormal' flag, would recompute to Normal on
+   *  paper while the screen (which reads this flag) shows Abnormal/Critical. */
+  abnormalFlag?: 'normal' | 'low' | 'high' | 'critical_low' | 'critical_high' | 'abnormal';
 }
 
 export interface LabReportData {
@@ -101,8 +107,23 @@ function getPaperConfig(preset?: PagePreset): PaperConfig {
 
 // ─── Flag helpers ───────────────────────────────────────────────────
 
+// '‡' = ABNORMAL: out of range, direction unknown (the lab's fail-closed flag,
+// escalated as critical by the backend). Rendered red — never as normal.
 function getFlag(p: LabReportParam): string {
   if (!p.value || p.value === '—') return '';
+
+  // The stored flag is authoritative — prefer it over numeric recomputation so
+  // the paper report can never downgrade a critical/abnormal result to Normal.
+  switch (p.abnormalFlag) {
+    case 'critical_low': return '**';
+    case 'critical_high': return '##';
+    case 'low': return '*';
+    case 'high': return '#';
+    case 'abnormal': return '‡';
+    case 'normal': return '';
+    // undefined → fall through to numeric recompute below
+  }
+
   const num = parseFloat(p.value);
   if (isNaN(num)) {
     if (p.textNormal && p.value.toLowerCase() !== p.textNormal.toLowerCase()) return '#';
@@ -121,12 +142,13 @@ function getFlagLabel(flag: string): string {
     case '##': return 'CRIT HIGH';
     case '*': return 'LOW';
     case '#': return 'HIGH';
+    case '‡': return 'ABNORMAL';
     default: return '';
   }
 }
 
 function getFlagColor(flag: string): readonly [number, number, number] {
-  if (flag === '##' || flag === '**') return RED;
+  if (flag === '##' || flag === '**' || flag === '‡') return RED;
   if (flag === '#' || flag === '*') return AMBER;
   return SLATE;
 }
