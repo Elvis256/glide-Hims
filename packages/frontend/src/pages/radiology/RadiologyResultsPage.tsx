@@ -159,7 +159,7 @@ export default function RadiologyResultsPage() {
       id: order.id,
       patientName: order.patient?.fullName || 'Unknown',
       patientId: order.patientId,
-      studyType: order.examType || 'Imaging Study',
+      studyType: order.studyType || order.examType || 'Imaging Study',
       modality: getModalityString(order.modality),
       studyDate: order.orderedAt?.split('T')[0] || new Date().toISOString().split('T')[0],
       acquisitionTime: order.scheduledAt ? new Date(order.scheduledAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : 'N/A',
@@ -176,12 +176,18 @@ export default function RadiologyResultsPage() {
 
   // Sign report mutation
   const signReportMutation = useMutation({
-    mutationFn: (data: { orderId: string; findings: string; impression: string; recommendations: string }) =>
+    mutationFn: (data: { orderId: string; findings: string; impression: string; recommendations: string; isCritical: boolean }) =>
       radiologyService.results.create({
         imagingOrderId: data.orderId,
         findings: data.findings,
         impression: data.impression,
         recommendations: data.recommendations,
+        // Patient-safety: the "Critical Finding Alert" checkbox must reach the
+        // backend so a closed-loop critical-result alert is raised and the
+        // ordering clinician is notified. Without this the flag was silently
+        // dropped and the finding persisted as a normal report.
+        isCritical: data.isCritical,
+        findingCategory: data.isCritical ? 'critical' : undefined,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['radiology-orders'] });
@@ -250,6 +256,7 @@ export default function RadiologyResultsPage() {
       findings: reportContent.findings,
       impression: reportContent.impression,
       recommendations: reportContent.recommendations,
+      isCritical: showCriticalAlert,
     });
   };
 

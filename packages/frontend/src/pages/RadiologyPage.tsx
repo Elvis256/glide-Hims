@@ -520,15 +520,19 @@ function CompleteImagingModal({
     e.preventDefault();
     setSubmitting(true);
     try {
-      await api.post(`/radiology/orders/${order.id}/complete`, {
-        findings: findings || undefined,
-        impression: impression || undefined,
-        technologistId: userId,
-        performedAt: new Date(),
-      });
+      // The /complete endpoint (PerformImagingDto) only accepts
+      // technologistNotes/accessionNumber/imageCount. Sending findings/
+      // impression/technologistId/performedAt tripped forbidNonWhitelisted and
+      // 400'd the whole request. Fold the tech's brief notes into
+      // technologistNotes (the backend stamps performedBy/performedAt itself).
+      const technologistNotes =
+        [findings && `Findings: ${findings}`, impression && `Impression: ${impression}`]
+          .filter(Boolean)
+          .join('\n') || undefined;
+      await api.post(`/radiology/orders/${order.id}/complete`, { technologistNotes });
       onSuccess();
-    } catch (error) {
-      console.error('Error completing imaging:', error);
+    } catch (error: any) {
+      toast.error(error?.response?.data?.message || 'Failed to complete imaging');
     } finally {
       setSubmitting(false);
     }

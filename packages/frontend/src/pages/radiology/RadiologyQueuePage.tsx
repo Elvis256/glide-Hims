@@ -111,7 +111,7 @@ export default function RadiologyQueuePage() {
       const matchesSearch =
         item.patient?.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         item.patient?.mrn?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.examType?.toLowerCase().includes(searchTerm.toLowerCase());
+        (item.studyType || item.examType)?.toLowerCase().includes(searchTerm.toLowerCase());
       const modalityStr = getModalityString(item.modality);
       const matchesModality = selectedModality === 'all' || modalityStr === selectedModality;
       const matchesPriority = selectedPriority === 'all' || item.priority === selectedPriority;
@@ -383,7 +383,7 @@ export default function RadiologyQueuePage() {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <p className="text-gray-900">{item.examType}</p>
+                      <p className="text-gray-900">{item.studyType || item.examType}</p>
                       <p className="text-sm text-gray-500">{item.orderNumber || item.id}</p>
                     </td>
                     <td className="px-4 py-3">
