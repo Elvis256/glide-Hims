@@ -141,13 +141,14 @@ export interface ApprovalRule {
   createdAt: string;
 }
 
-// Mirrors CreateApprovalRuleDto. `requiresApproval` is deliberately absent:
-// the DTO property carries no class-validator decorator, so the global
-// ValidationPipe (forbidNonWhitelisted) rejects the whole request when it is
-// sent. New rules therefore land on the column default (false).
+// Mirrors CreateApprovalRuleDto. `requiresApproval` now carries @IsOptional()
+// @IsBoolean() (migration-free DTO fix), so it is accepted by the pipe again —
+// and it is the ONLY field the approval engine reads, so a rule with
+// requiresApproval:false gates nothing.
 export interface CreateApprovalRuleInput {
   facilityId?: string;
   entityType: MasterDataEntityType;
+  requiresApproval?: boolean;
   approverRoleId?: string;
   minApprovers?: number;
   notifyOnChange?: boolean;
