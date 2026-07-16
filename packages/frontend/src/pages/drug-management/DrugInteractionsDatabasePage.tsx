@@ -77,11 +77,18 @@ export default function DrugInteractionsDatabasePage() {
 
   const items = interactions || [];
 
+  // NOTE: this page is built against a fantasy shape — drug_interactions has
+  // drugAId/drugBId (UUIDs, no joined names), lowercase severity, clinicalEffects
+  // (not clinicalEffect), and no delete route. It needs a rewrite + backend
+  // name-join before it is functional (see 05-pharmacy.md). Guard the reads so
+  // it degrades to a blank list instead of white-screening if rows ever exist.
+  const q = searchTerm.toLowerCase();
   const filteredInteractions = items.filter((interaction) => {
-    const matchesSearch = 
-      interaction.drug1Name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      interaction.drug2Name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      interaction.description.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch =
+      !q ||
+      interaction.drug1Name?.toLowerCase().includes(q) ||
+      interaction.drug2Name?.toLowerCase().includes(q) ||
+      interaction.description?.toLowerCase().includes(q);
     const matchesSeverity = selectedSeverity === 'All' || interaction.severity === selectedSeverity;
     return matchesSearch && matchesSeverity;
   });
