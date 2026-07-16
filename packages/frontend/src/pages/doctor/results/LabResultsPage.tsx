@@ -51,13 +51,24 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { printService } from '../../../lib/print';
 
+/** Display flag for a result parameter.
+ *
+ *  'Abnormal' carries the backend's AbnormalFlag.ABNORMAL — "out of range,
+ *  direction unknown", raised fail-closed when reference ranges cannot be
+ *  resolved. It must render on the same alarming path as High/Low, never as
+ *  Normal. */
+type LabFlag = 'Normal' | 'High' | 'Low' | 'Abnormal' | 'Critical';
+
+/** True for anything the clinician must not read as reassurance. */
+const isAbnormalFlag = (f: LabFlag): boolean => f === 'High' || f === 'Low' || f === 'Abnormal';
+
 interface LabParameter {
   id: string;
   name: string;
   result: number | string;
   units: string;
   referenceRange: string;
-  flag: 'Normal' | 'High' | 'Low' | 'Critical';
+  flag: LabFlag;
   previousResults?: { date: string; value: number }[];
   acknowledged: boolean;
 }
@@ -76,7 +87,7 @@ interface LabOrder {
   id: string;
   orderDate: string;
   orderedBy: string;
-  status: 'Pending' | 'Complete' | 'Partial';
+  status: 'Pending' | 'Complete' | 'Partial' | 'Cancelled';
   tests: LabTest[];
   reviewedAt?: string;
   reviewedBy?: string;
@@ -87,22 +98,32 @@ interface Patient {
   id: string;
   name: string;
   mrn: string;
-  pendingResults: number;
   orders: LabOrder[];
 }
 
 // Transform API flag to local format
-const transformFlag = (flag?: string): 'Normal' | 'High' | 'Low' | 'Critical' => {
+/** Backend AbnormalFlag (lab-result.entity.ts):
+ *  normal | low | high | critical_low | critical_high | ABNORMAL.
+ *
+ *  'abnormal' is the lab's FAIL-CLOSED signal: lab.service.ts raises it when a
+ *  parameter's reference ranges cannot be resolved, and toCriticalSeverity()
+ *  escalates it as a critical result. It means "out of range, direction
+ *  unknown" — NOT normal. This function used to fall through to 'Normal',
+ *  painting that alarm green for the doctor, and recalculateFlag() could not
+ *  rescue it either (it trusts anything already 'Normal', and the reference
+ *  range it would recompute from is the very thing that failed to resolve). */
+const transformFlag = (flag?: string): LabFlag => {
   if (!flag) return 'Normal';
   const lowerFlag = flag.toLowerCase();
   if (lowerFlag.includes('critical')) return 'Critical';
-  if (lowerFlag === 'high' || lowerFlag === 'critical_high') return 'High';
-  if (lowerFlag === 'low' || lowerFlag === 'critical_low') return 'Low';
+  if (lowerFlag === 'high') return 'High';
+  if (lowerFlag === 'low') return 'Low';
+  if (lowerFlag === 'abnormal') return 'Abnormal';
   return 'Normal';
 };
 
 // Recalculate flag from value and reference range string (safety net for bad stored data)
-const recalculateFlag = (value: number | string, referenceRange: string, storedFlag: 'Normal' | 'High' | 'Low' | 'Critical'): 'Normal' | 'High' | 'Low' | 'Critical' => {
+const recalculateFlag = (value: number | string, referenceRange: string, storedFlag: LabFlag): LabFlag => {
   if (storedFlag !== 'Normal') return storedFlag; // Trust non-Normal flags
   const numVal = typeof value === 'number' ? value : parseFloat(String(value));
   if (isNaN(numVal) || !referenceRange) return storedFlag;
@@ -116,17 +137,16 @@ const recalculateFlag = (value: number | string, referenceRange: string, storedF
   return 'Normal';
 };
 
-// Transform API status to local format
-const transformStatus = (status: ApiLabOrder['status']): 'Pending' | 'Complete' | 'Partial' => {
+// Transform API status to local format. A lab order is an Order row, so the
+// only values it can carry are the four OrderStatus members (order.entity.ts).
+const transformStatus = (status: ApiLabOrder['status']): LabOrder['status'] => {
   switch (status) {
     case 'completed':
-    case 'verified':
-    case 'released':
-    case 'validated':
       return 'Complete';
-    case 'processing':
-    case 'in-progress':
+    case 'in_progress':
       return 'Partial';
+    case 'cancelled':
+      return 'Cancelled';
     default:
       return 'Pending';
   }
@@ -192,7 +212,7 @@ const transformOrders = (orders: ApiLabOrder[]): LabOrder[] => {
         }];
       }
       
-      const hasAbnormal = parameters.some(p => p.flag === 'High' || p.flag === 'Low');
+      const hasAbnormal = parameters.some(p => isAbnormalFlag(p.flag));
       const hasCritical = parameters.some(p => p.flag === 'Critical');
       
       return {
@@ -292,7 +312,6 @@ export default function LabResultsPage() {
       id: p.id,
       name: p.fullName,
       mrn: p.mrn,
-      pendingResults: 0, // Will be updated when orders are fetched
       orders: [],
     }));
   }, [patientsData]);
@@ -328,7 +347,7 @@ export default function LabResultsPage() {
   // Build trend data points for the selected parameter from historical orders
   const trendData = useMemo(() => {
     if (!trendParam || previousOrdersData.length === 0) return [];
-    const points: { date: string; value: number; flag: string }[] = [];
+    const points: { date: string; value: number; flag: LabFlag }[] = [];
     for (const order of previousOrdersData) {
       for (const test of order.tests) {
         if (test.testCode === trendParam.testCode) {
@@ -393,14 +412,7 @@ export default function LabResultsPage() {
   const selectedPatient = useMemo(() => {
     const patient = patients.find((p) => p.id === selectedPatientId);
     if (!patient) return null;
-    return {
-      ...patient,
-      orders,
-      pendingResults: orders.reduce(
-        (acc, order) => acc + order.tests.filter((t) => !t.acknowledged).length,
-        0
-      ),
-    };
+    return { ...patient, orders };
   }, [patients, selectedPatientId, orders]);
 
   const toggleOrder = (orderId: string) => {
@@ -460,7 +472,7 @@ export default function LabResultsPage() {
       th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
       th { background: #f5f5f5; }
       .flag-normal { color: green; }
-      .flag-high, .flag-low { color: #ea580c; font-weight: bold; }
+      .flag-high, .flag-low, .flag-abnormal { color: #ea580c; font-weight: bold; }
       .flag-critical { color: #dc2626; font-weight: bold; background: #fef2f2; }
       .row-critical { background: #fef2f2; }
       .row-abnormal { background: #fff7ed; }
@@ -530,7 +542,7 @@ export default function LabResultsPage() {
                   </thead>
                   <tbody>
                     ${test.parameters.map(p => `
-                      <tr class="${p.flag === 'Critical' ? 'row-critical' : (p.flag === 'High' || p.flag === 'Low') ? 'row-abnormal' : ''}">
+                      <tr class="${p.flag === 'Critical' ? 'row-critical' : isAbnormalFlag(p.flag) ? 'row-abnormal' : ''}">
                         <td>${p.name}</td>
                         <td><strong>${formatResult(p.result)}</strong></td>
                         <td>${p.units}</td>
@@ -743,13 +755,13 @@ export default function LabResultsPage() {
               },
               didParseCell: (data) => {
                 if (data.section === 'body') {
-                  const flag = tableData[data.row.index]?.[4];
+                  const flag = tableData[data.row.index]?.[4] as LabFlag;
                   // Color-code flag column
                   if (data.column.index === 4) {
                     if (flag === 'Critical') {
                       data.cell.styles.textColor = [220, 38, 38];
                       data.cell.styles.fontStyle = 'bold';
-                    } else if (flag === 'High' || flag === 'Low') {
+                    } else if (isAbnormalFlag(flag)) {
                       data.cell.styles.textColor = [234, 88, 12];
                     } else {
                       data.cell.styles.textColor = [22, 163, 74];
@@ -759,14 +771,14 @@ export default function LabResultsPage() {
                   if (data.column.index === 1) {
                     if (flag === 'Critical') {
                       data.cell.styles.textColor = [220, 38, 38];
-                    } else if (flag === 'High' || flag === 'Low') {
+                    } else if (isAbnormalFlag(flag)) {
                       data.cell.styles.textColor = [234, 88, 12];
                     }
                   }
                   // Highlight row background for critical/abnormal
                   if (flag === 'Critical') {
                     data.cell.styles.fillColor = [254, 242, 242];
-                  } else if (flag === 'High' || flag === 'Low') {
+                  } else if (isAbnormalFlag(flag)) {
                     data.cell.styles.fillColor = [255, 247, 237];
                   }
                 }
@@ -865,7 +877,7 @@ export default function LabResultsPage() {
   };
 
   // Visual reference range bar component
-  const ReferenceRangeBar = ({ value, referenceRange, flag }: { value: number | string; referenceRange: string; flag: string }) => {
+  const ReferenceRangeBar = ({ value, referenceRange, flag }: { value: number | string; referenceRange: string; flag: LabFlag }) => {
     const numValue = typeof value === 'number' ? value : parseFloat(String(value));
     const parsed = parseReferenceRange(referenceRange);
     if (!parsed || isNaN(numValue)) return null;
@@ -882,7 +894,7 @@ export default function LabResultsPage() {
     const rangeStart = ((min - viewMin) / viewSpan) * 100;
     const rangeWidth = ((max - min) / viewSpan) * 100;
 
-    const dotColor = flag === 'Critical' ? '#dc2626' : flag === 'High' || flag === 'Low' ? '#ea580c' : '#16a34a';
+    const dotColor = flag === 'Critical' ? '#dc2626' : isAbnormalFlag(flag) ? '#ea580c' : '#16a34a';
 
     return (
       <div className="w-24 h-3 relative mt-0.5" title={`Value: ${formatResult(value)} | Range: ${referenceRange}`}>
@@ -1169,7 +1181,9 @@ export default function LabResultsPage() {
                                 ? 'bg-green-100 text-green-700'
                                 : order.status === 'Partial'
                                   ? 'bg-yellow-100 text-yellow-700'
-                                  : 'bg-gray-100 text-gray-700'
+                                  : order.status === 'Cancelled'
+                                    ? 'bg-red-50 text-red-700'
+                                    : 'bg-gray-100 text-gray-700'
                             }`}
                           >
                             {order.status}
@@ -1427,8 +1441,8 @@ export default function LabResultsPage() {
                     <YAxis tick={{ fontSize: 11 }} domain={['auto', 'auto']} width={45} />
                     <Tooltip
                       formatter={(value: number) => [`${value} ${trendParam.unit}`, trendParam.paramName]}
-                      labelFormatter={(label: string) =>
-                        new Date(label).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+                      labelFormatter={(label) =>
+                        new Date(String(label)).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
                       }
                     />
                     {/* Reference range shaded zone */}

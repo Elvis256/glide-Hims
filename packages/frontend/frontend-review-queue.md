@@ -43,13 +43,19 @@ inline, log the rest. No view is done until its element table is complete.
    - PII ciphertext display (displayable() guard pattern)
 3. E2E probe on tesy tenant (Dan login; playwright at /root/pro/node_modules/playwright; creds/method in memory). Exercise the module's main flow live.
 4. Fix P0s immediately in the block's commit; log P1s/features here.
-5. tsc gate: **`npm run typecheck`** (= `tsc --noEmit -p tsconfig.app.json`), then
+5. tsc gate: **`npm run typecheck`**
+   (= `tsc --noEmit -p tsconfig.app.json --incremental false`), then
    `| grep <touched>`; build to /tmp to verify, real build only when deploying
    (dist/ is production).
-   ⚠️ NEVER use bare `npx tsc --noEmit` — the root tsconfig.json is `files: []`
-   + references, so it type-checks ZERO files and always exits clean. That
-   no-op was the "gate" for Blocks 1–3 and hid 493 real errors (incl. a dead
-   page and two latent white-screens in already-signed-off blocks).
+   ⚠️ TWO ways this gate silently reports success on broken code — both bit us:
+   - NEVER use bare `npx tsc --noEmit`. The root tsconfig.json is `files: []`
+     + references, so it type-checks ZERO files and always exits clean. That
+     no-op was the "gate" for Blocks 1–3 and hid 493 real errors (incl. a dead
+     page and two latent white-screens in already-signed-off blocks).
+   - NEVER drop `--incremental false`. The `node_modules/.tmp/
+     tsconfig.app.tsbuildinfo` cache serves stale results and can report a
+     file (or the whole repo) clean when it is not. If a result looks
+     surprisingly clean, it IS suspect — re-run and confirm.
 
 **Step 0 of every block: run `npm run typecheck` and triage the block's files
 FIRST, before the manual read.** tsc finds the campaign's own hunt-list classes

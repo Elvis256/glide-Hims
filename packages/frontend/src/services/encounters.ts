@@ -5,6 +5,9 @@ export interface Encounter {
   id: string;
   visitNumber: string;
   patientId: string;
+  /** Non-nullable `facility_id` column on encounter.entity.ts — always
+   *  returned, but was missing from this read type. */
+  facilityId: string;
   patient?: {
     id: string;
     mrn: string;
@@ -22,12 +25,21 @@ export interface Encounter {
     fullName: string;
     specialization?: string;
   };
+  /** The encounter's provider (encounter.entity.ts `attending_provider_id`).
+   *  Joined by GET /encounters/:id and the list query. The `doctor`/`doctorId`
+   *  fields above have no counterpart on the encounters entity. */
+  attendingProviderId?: string;
+  attendingProvider?: {
+    id: string;
+    fullName: string;
+  };
   chiefComplaint?: string;
   notes?: string;
   payerType?: PayerType;
   insurancePolicyId?: string;
   visitDate?: string;
-  startTime?: string;
+  /** Non-nullable column with a CURRENT_TIMESTAMP default — always present. */
+  startTime: string;
   metadata?: Record<string, any>;
   createdAt: string;
   updatedAt: string;

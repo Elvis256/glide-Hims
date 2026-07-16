@@ -100,11 +100,29 @@ interface Diagnosis {
   type: 'primary' | 'secondary' | 'differential';
 }
 
+/** Per-type extras on a plan item. Prescription items carry the drug fields;
+ *  other types keep their own keys, hence the index signature. Declaring the
+ *  known keys keeps reads typed — as a bare Record<string, unknown> every read
+ *  was `unknown` and could not be rendered without a cast. */
+interface PlanItemDetails {
+  drugCode?: string;
+  drugId?: string;
+  drugName?: string;
+  dose?: string;
+  strength?: string;
+  frequency?: string;
+  duration?: string;
+  quantity?: string | number;
+  route?: string;
+  instructions?: string;
+  [key: string]: unknown;
+}
+
 interface PlanItem {
   id: string;
   type: 'prescription' | 'lab' | 'imaging' | 'referral' | 'followup' | 'education';
   description: string;
-  details?: Record<string, unknown>;
+  details?: PlanItemDetails;
 }
 
 interface ReviewOfSystemsItem {
@@ -979,11 +997,16 @@ export default function NewConsultationPage() {
       await queueService.startService(entry.id);
       // Use existing encounter from queue entry if available, otherwise create new
       if (entry.encounterId) {
-        const enc = await encountersService.update(entry.encounterId, {
-          chiefComplaint: form.chiefComplaint || undefined,
-          status: 'in_consultation',
-        });
-        return enc;
+        // status is deliberately NOT on UpdateEncounterDto — transitions must go
+        // through PATCH :id/status so they are checked against VALID_TRANSITIONS.
+        // Sending it here tripped forbidNonWhitelisted and 400'd the whole
+        // request, so starting a consultation from a queued encounter failed.
+        if (form.chiefComplaint) {
+          await encountersService.update(entry.encounterId, {
+            chiefComplaint: form.chiefComplaint,
+          });
+        }
+        return encountersService.updateStatus(entry.encounterId, 'in_consultation');
       }
       return encountersService.create({
         patientId: entry.patientId,
@@ -1694,7 +1717,10 @@ export default function NewConsultationPage() {
       const recentLabResults: Array<{ test: string; value: string; unit: string; date: string; abnormal: boolean }> = [];
       
       if (patientLabResults && patientLabResults.length > 0) {
-        const completedOrders = patientLabResults.filter(o => ['completed', 'verified', 'released', 'validated'].includes(o.status));
+        // A lab order is an Order row: OrderStatus is only
+        // pending|in_progress|completed|cancelled. 'verified'/'released'/
+        // 'validated' are lab_results statuses and can never appear here.
+        const completedOrders = patientLabResults.filter(o => o.status === 'completed');
         for (const order of completedOrders.slice(0, 3)) {
           for (const test of order.tests || []) {
             if (test.result) {
@@ -1702,7 +1728,7 @@ export default function NewConsultationPage() {
               const params = result.parameters || [result];
               for (const param of params.slice(0, 2)) {
                 recentLabResults.push({
-                  test: param.parameter || param.name || test.testName || test.name || 'Test',
+                  test: param.parameter || test.testName || test.name || 'Test',
                   value: String(param.numericValue ?? param.value ?? '-'),
                   unit: param.unit || '',
                   date: new Date(order.completedAt || order.createdAt).toLocaleDateString(),
@@ -1716,9 +1742,7 @@ export default function NewConsultationPage() {
       
       setPatientSummary(prev => ({
         ...prev,
-        allergies: typeof patientDetails.allergies === 'string'
-          ? patientDetails.allergies.split(',').map((a: string) => a.trim()).filter(Boolean)
-          : (patientDetails.allergies as unknown as string[] | null) || [],
+        allergies: patientDetails.allergies || [],
         recentVitals: patientVitals || null,
         recentLabResults: recentLabResults.slice(0, 5),
       }));
@@ -1746,6 +1770,8 @@ export default function NewConsultationPage() {
             // Queue lookup is non-critical
           }
 
+          // Synthesised view-model entry for an encounter opened directly (not
+          // via the queue). QueuePriority.ROUTINE = 10 is the column default.
           const patientEntry: QueueEntry = {
             id: queueEntryId || `no-queue-${encounter.id}`,
             patientId: encounter.patientId,
@@ -1753,9 +1779,11 @@ export default function NewConsultationPage() {
             facilityId: encounter.facilityId,
             servicePoint: 'consultation',
             status: 'in_service',
+            priority: 10,
             ticketNumber: encounter.visitNumber || '',
             notes: encounter.chiefComplaint || '',
             patient: encounter.patient,
+            createdAt: encounter.createdAt,
           };
           setSelectedPatient(patientEntry);
           // Pre-populate form with existing encounter data
@@ -1831,15 +1859,19 @@ export default function NewConsultationPage() {
       // Fetch the patient and create a temporary queue entry
       patientsService.getById(urlPatientId).then(patient => {
         if (patient) {
+          // Synthesised view-model entry for a patient opened straight from the
+          // patient record — no queue ticket exists yet.
           const patientEntry: QueueEntry = {
             id: `temp-${patient.id}`,
             patientId: patient.id,
             facilityId: '',
             servicePoint: 'consultation',
             status: 'waiting',
+            priority: 10,
             ticketNumber: '',
             notes: '',
             patient: patient,
+            createdAt: new Date().toISOString(),
           };
           setSelectedPatient(patientEntry);
         }
@@ -4287,7 +4319,7 @@ export default function NewConsultationPage() {
                                       {!isDispensed && (
                                         <button
                                           onClick={async () => {
-                                            if (await confirmDialog({ title: 'Remove Item', message: `Remove ${item.drugName} from prescription? Stock will be released.`, variant: 'destructive' })) {
+                                            if (await confirmDialog({ title: 'Remove Item', message: `Remove ${item.drugName} from prescription? Stock will be released.`, variant: 'danger' })) {
                                               removeRxItemMutation.mutate({ prescriptionId: rx.id, itemId: item.id });
                                             }
                                           }}

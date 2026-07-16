@@ -1,6 +1,14 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { mdmService } from '../../services/mdm';
+import {
+  mdmService,
+  ENTITY_TYPE_LABELS,
+  MASTER_DATA_ENTITY_TYPES,
+  type ApprovalRule,
+  type CreateApprovalRuleInput,
+  type MasterDataEntityType,
+} from '../../services/mdm';
+import { rolesService } from '../../services/roles';
 import {
   Settings,
   Plus,
@@ -10,62 +18,63 @@ import {
   Loader2,
   Edit,
   Trash2,
-  ToggleLeft,
-  ToggleRight,
   Shield,
   Users,
   Database,
+  Bell,
   CheckCircle,
-  AlertCircle,
 } from 'lucide-react';
 
-interface ApprovalRule {
-  id: string;
-  name: string;
-  entityType: string;
-  action: 'CREATE' | 'UPDATE' | 'DELETE' | 'ALL';
-  condition: string;
-  requiredApprovers: number;
-  approverRoles: string[];
-  priority: number;
-  isActive: boolean;
-  createdAt: string;
-  createdBy: string;
-}
-
-const entityTypes = ['Drug', 'Supplier', 'Service', 'Ward', 'Department', 'Equipment', 'User'];
-const actions = ['CREATE', 'UPDATE', 'DELETE', 'ALL'];
-const roles = ['Hospital Admin', 'Finance Manager', 'Pharmacy Manager', 'Procurement Manager', 'Department Head', 'Medical Director', 'CEO', 'Lab Manager'];
+const emptyForm = {
+  entityType: 'service' as MasterDataEntityType,
+  approverRoleId: '',
+  minApprovers: 1,
+  notifyOnChange: false,
+  notificationEmails: '',
+};
 
 export default function ApprovalRulesPage() {
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedEntityType, setSelectedEntityType] = useState('All');
+  const [selectedEntityType, setSelectedEntityType] = useState<'All' | MasterDataEntityType>('All');
   const [showFilters, setShowFilters] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editingRule, setEditingRule] = useState<ApprovalRule | null>(null);
-
-  const [formData, setFormData] = useState({
-    name: '',
-    entityType: 'Drug',
-    action: 'UPDATE' as 'CREATE' | 'UPDATE' | 'DELETE' | 'ALL',
-    condition: '',
-    requiredApprovers: 1,
-    approverRoles: [] as string[],
-    priority: 1,
-  });
+  const [formData, setFormData] = useState(emptyForm);
 
   const { data: rules, isLoading } = useQuery({
-    queryKey: ['approval-rules', selectedEntityType],
+    queryKey: ['approval-rules'],
     queryFn: () => mdmService.rules.list(),
   });
+
+  const { data: roles } = useQuery({
+    queryKey: ['roles'],
+    queryFn: () => rolesService.list(),
+  });
+
+  const roleName = (roleId?: string) =>
+    roleId ? roles?.find((r) => r.id === roleId)?.name || roleId : undefined;
+
+  const toPayload = (data: typeof formData): CreateApprovalRuleInput => {
+    const emails = data.notificationEmails
+      .split(',')
+      .map((e) => e.trim())
+      .filter(Boolean);
+    return {
+      entityType: data.entityType,
+      minApprovers: data.minApprovers,
+      notifyOnChange: data.notifyOnChange,
+      ...(data.approverRoleId ? { approverRoleId: data.approverRoleId } : {}),
+      ...(emails.length ? { notificationEmails: emails } : {}),
+    };
+  };
 
   const saveMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
       if (editingRule) {
-        return mdmService.rules.update(editingRule.id, data);
+        return mdmService.rules.update(editingRule.id, toPayload(data));
       }
-      return mdmService.rules.create(data);
+      return mdmService.rules.create(toPayload(data));
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['approval-rules'] });
@@ -73,17 +82,7 @@ export default function ApprovalRulesPage() {
     },
   });
 
-  const toggleMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const rule = rules?.find((r) => r.id === id);
-      return mdmService.rules.update(id, { isActive: !rule?.isActive });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['approval-rules'] });
-    },
-  });
-
-  const deleteMutation = useMutation({
+  const deactivateMutation = useMutation({
     mutationFn: async (id: string) => {
       return mdmService.rules.update(id, { isActive: false });
     },
@@ -93,62 +92,31 @@ export default function ApprovalRulesPage() {
   });
 
   const resetForm = () => {
-    setFormData({
-      name: '',
-      entityType: 'Drug',
-      action: 'UPDATE',
-      condition: '',
-      requiredApprovers: 1,
-      approverRoles: [],
-      priority: 1,
-    });
+    setFormData(emptyForm);
     setEditingRule(null);
     setShowModal(false);
   };
 
   const handleEdit = (rule: ApprovalRule) => {
     setFormData({
-      name: rule.name,
       entityType: rule.entityType,
-      action: rule.action,
-      condition: rule.condition,
-      requiredApprovers: rule.requiredApprovers,
-      approverRoles: [...rule.approverRoles],
-      priority: rule.priority,
+      approverRoleId: rule.approverRoleId || '',
+      minApprovers: rule.minApprovers ?? 1,
+      notifyOnChange: !!rule.notifyOnChange,
+      notificationEmails: (rule.notificationEmails || []).join(', '),
     });
     setEditingRule(rule);
     setShowModal(true);
   };
 
-  const handleRoleToggle = (role: string) => {
-    setFormData((prev) => ({
-      ...prev,
-      approverRoles: prev.approverRoles.includes(role)
-        ? prev.approverRoles.filter((r) => r !== role)
-        : [...prev.approverRoles, role],
-    }));
-  };
-
   const filteredRules = rules?.filter((r) => {
-    const matchesSearch = r.name.toLowerCase().includes(searchTerm.toLowerCase());
+    const term = searchTerm.toLowerCase();
+    const matchesSearch =
+      ENTITY_TYPE_LABELS[r.entityType]?.toLowerCase().includes(term) ||
+      (roleName(r.approverRoleId) || '').toLowerCase().includes(term);
     const matchesType = selectedEntityType === 'All' || r.entityType === selectedEntityType;
     return matchesSearch && matchesType;
   });
-
-  const getActionBadge = (action: string) => {
-    switch (action) {
-      case 'CREATE':
-        return <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-700 rounded">Create</span>;
-      case 'UPDATE':
-        return <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-700 rounded">Update</span>;
-      case 'DELETE':
-        return <span className="px-2 py-1 text-xs font-medium bg-red-100 text-red-700 rounded">Delete</span>;
-      case 'ALL':
-        return <span className="px-2 py-1 text-xs font-medium bg-purple-100 text-purple-700 rounded">All</span>;
-      default:
-        return null;
-    }
-  };
 
   return (
     <div className="space-y-6">
@@ -175,7 +143,7 @@ export default function ApprovalRulesPage() {
               <Settings className="w-5 h-5 text-blue-600" />
             </div>
             <div>
-              <p className="text-sm text-gray-600">Total Rules</p>
+              <p className="text-sm text-gray-600">Active Rules</p>
               <p className="text-xl font-bold text-gray-900">{rules?.length || 0}</p>
             </div>
           </div>
@@ -186,9 +154,9 @@ export default function ApprovalRulesPage() {
               <CheckCircle className="w-5 h-5 text-green-600" />
             </div>
             <div>
-              <p className="text-sm text-gray-600">Active Rules</p>
+              <p className="text-sm text-gray-600">Requiring Approval</p>
               <p className="text-xl font-bold text-green-600">
-                {rules?.filter((r) => r.isActive).length || 0}
+                {rules?.filter((r) => r.requiresApproval).length || 0}
               </p>
             </div>
           </div>
@@ -196,12 +164,12 @@ export default function ApprovalRulesPage() {
         <div className="bg-white p-4 rounded-xl border shadow-sm">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-gray-100 rounded-lg">
-              <AlertCircle className="w-5 h-5 text-gray-600" />
+              <Bell className="w-5 h-5 text-gray-600" />
             </div>
             <div>
-              <p className="text-sm text-gray-600">Inactive Rules</p>
+              <p className="text-sm text-gray-600">Notify on Change</p>
               <p className="text-xl font-bold text-gray-600">
-                {rules?.filter((r) => !r.isActive).length || 0}
+                {rules?.filter((r) => r.notifyOnChange).length || 0}
               </p>
             </div>
           </div>
@@ -228,7 +196,7 @@ export default function ApprovalRulesPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
-              placeholder="Search rules..."
+              placeholder="Search by entity type or approver role..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
@@ -249,13 +217,13 @@ export default function ApprovalRulesPage() {
           <div className="p-4 bg-gray-50 border-b">
             <select
               value={selectedEntityType}
-              onChange={(e) => setSelectedEntityType(e.target.value)}
+              onChange={(e) => setSelectedEntityType(e.target.value as 'All' | MasterDataEntityType)}
               className="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
             >
               <option value="All">All Entity Types</option>
-              {entityTypes.map((type) => (
+              {MASTER_DATA_ENTITY_TYPES.map((type) => (
                 <option key={type} value={type}>
-                  {type}
+                  {ENTITY_TYPE_LABELS[type]}
                 </option>
               ))}
             </select>
@@ -270,53 +238,59 @@ export default function ApprovalRulesPage() {
         ) : filteredRules && filteredRules.length > 0 ? (
           <div className="divide-y">
             {filteredRules.map((rule) => (
-              <div key={rule.id} className={`p-4 ${!rule.isActive ? 'opacity-60' : ''}`}>
+              <div key={rule.id} className="p-4">
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-2">
-                      <Shield className={`w-5 h-5 ${rule.isActive ? 'text-blue-600' : 'text-gray-400'}`} />
-                      <h3 className="font-medium text-gray-900">{rule.name}</h3>
-                      {getActionBadge(rule.action)}
+                      <Shield
+                        className={`w-5 h-5 ${rule.requiresApproval ? 'text-blue-600' : 'text-gray-400'}`}
+                      />
+                      <h3 className="font-medium text-gray-900">
+                        {ENTITY_TYPE_LABELS[rule.entityType] || rule.entityType}
+                      </h3>
+                      {rule.requiresApproval ? (
+                        <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-700 rounded">
+                          Requires approval
+                        </span>
+                      ) : (
+                        <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-600 rounded">
+                          Auto-approve
+                        </span>
+                      )}
                       <span className="px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded">
-                        Priority: {rule.priority}
+                        {rule.facilityId ? 'Facility rule' : 'Global rule'}
                       </span>
                     </div>
                     <div className="flex items-center gap-4 text-sm text-gray-500 mb-2">
                       <span className="flex items-center gap-1">
-                        <Database className="w-4 h-4" />
-                        {rule.entityType}
-                      </span>
-                      <span className="flex items-center gap-1">
                         <Users className="w-4 h-4" />
-                        {rule.requiredApprovers} approver(s) required
+                        {rule.minApprovers} approver(s) required
                       </span>
+                      {rule.approverRoleId && (
+                        <span className="flex items-center gap-1">
+                          <Shield className="w-4 h-4" />
+                          {roleName(rule.approverRoleId)}
+                        </span>
+                      )}
+                      {rule.notifyOnChange && (
+                        <span className="flex items-center gap-1">
+                          <Bell className="w-4 h-4" />
+                          Notify on change
+                        </span>
+                      )}
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      {rule.approverRoles.map((role) => (
+                      {(rule.notificationEmails || []).map((email) => (
                         <span
-                          key={role}
+                          key={email}
                           className="px-2 py-1 text-xs bg-blue-50 text-blue-700 rounded-full"
                         >
-                          {role}
+                          {email}
                         </span>
                       ))}
                     </div>
-                    <p className="mt-2 text-sm text-gray-500">
-                      Condition: <code className="bg-gray-100 px-1 rounded">{rule.condition}</code>
-                    </p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => toggleMutation.mutate(rule.id)}
-                      className="p-2 hover:bg-gray-100 rounded-lg"
-                      title={rule.isActive ? 'Deactivate' : 'Activate'}
-                    >
-                      {rule.isActive ? (
-                        <ToggleRight className="w-6 h-6 text-green-600" />
-                      ) : (
-                        <ToggleLeft className="w-6 h-6 text-gray-400" />
-                      )}
-                    </button>
                     <button
                       onClick={() => handleEdit(rule)}
                       className="p-2 hover:bg-gray-100 rounded-lg"
@@ -325,9 +299,10 @@ export default function ApprovalRulesPage() {
                       <Edit className="w-5 h-5 text-gray-500" />
                     </button>
                     <button
-                      onClick={() => deleteMutation.mutate(rule.id)}
+                      onClick={() => deactivateMutation.mutate(rule.id)}
+                      disabled={deactivateMutation.isPending}
                       className="p-2 hover:bg-red-50 rounded-lg"
-                      title="Delete"
+                      title="Deactivate"
                     >
                       <Trash2 className="w-5 h-5 text-red-500" />
                     </button>
@@ -354,19 +329,6 @@ export default function ApprovalRulesPage() {
               </h2>
             </div>
             <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Rule Name <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                  placeholder="e.g., Drug Price Changes"
-                />
-              </div>
-
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -374,101 +336,74 @@ export default function ApprovalRulesPage() {
                   </label>
                   <select
                     value={formData.entityType}
-                    onChange={(e) => setFormData({ ...formData, entityType: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, entityType: e.target.value as MasterDataEntityType })
+                    }
                     className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                   >
-                    {entityTypes.map((type) => (
+                    {MASTER_DATA_ENTITY_TYPES.map((type) => (
                       <option key={type} value={type}>
-                        {type}
+                        {ENTITY_TYPE_LABELS[type]}
                       </option>
                     ))}
                   </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Action <span className="text-red-500">*</span>
+                    Minimum Approvers
                   </label>
-                  <select
-                    value={formData.action}
-                    onChange={(e) => setFormData({ ...formData, action: e.target.value as any })}
+                  <input
+                    type="number"
+                    min={1}
+                    value={formData.minApprovers}
+                    onChange={(e) =>
+                      setFormData({ ...formData, minApprovers: parseInt(e.target.value) || 1 })
+                    }
                     className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                  >
-                    {actions.map((action) => (
-                      <option key={action} value={action}>
-                        {action}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Approver Role</label>
+                <select
+                  value={formData.approverRoleId}
+                  onChange={(e) => setFormData({ ...formData, approverRoleId: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Not set</option>
+                  {roles?.map((role) => (
+                    <option key={role.id} value={role.id}>
+                      {role.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={formData.notifyOnChange}
+                    onChange={(e) => setFormData({ ...formData, notifyOnChange: e.target.checked })}
+                    className="rounded border-gray-300"
+                  />
+                  Notify on change
+                </label>
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Condition
+                  Notification Emails
                 </label>
                 <input
                   type="text"
-                  value={formData.condition}
-                  onChange={(e) => setFormData({ ...formData, condition: e.target.value })}
+                  value={formData.notificationEmails}
+                  onChange={(e) => setFormData({ ...formData, notificationEmails: e.target.value })}
                   className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                  placeholder="e.g., field:price changed, always, field:amount > 1000000"
+                  placeholder="e.g., admin@hospital.org, finance@hospital.org"
                 />
-                <p className="text-xs text-gray-500 mt-1">
-                  Use 'always' to apply to all changes, or specify field conditions
-                </p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Required Approvers
-                  </label>
-                  <input
-                    type="number"
-                    min={1}
-                    value={formData.requiredApprovers}
-                    onChange={(e) =>
-                      setFormData({ ...formData, requiredApprovers: parseInt(e.target.value) || 1 })
-                    }
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Priority (lower = higher)
-                  </label>
-                  <input
-                    type="number"
-                    min={1}
-                    value={formData.priority}
-                    onChange={(e) =>
-                      setFormData({ ...formData, priority: parseInt(e.target.value) || 1 })
-                    }
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Approver Roles <span className="text-red-500">*</span>
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  {roles.map((role) => (
-                    <button
-                      key={role}
-                      type="button"
-                      onClick={() => handleRoleToggle(role)}
-                      className={`px-3 py-1 text-sm rounded-full border transition-colors ${
-                        formData.approverRoles.includes(role)
-                          ? 'bg-blue-600 text-white border-blue-600'
-                          : 'bg-white text-gray-700 border-gray-300 hover:border-blue-400'
-                      }`}
-                    >
-                      {role}
-                    </button>
-                  ))}
-                </div>
+                <p className="text-xs text-gray-500 mt-1">Comma-separated list</p>
               </div>
             </div>
             <div className="p-6 border-t flex justify-end gap-3">
@@ -480,11 +415,7 @@ export default function ApprovalRulesPage() {
               </button>
               <button
                 onClick={() => saveMutation.mutate(formData)}
-                disabled={
-                  !formData.name.trim() ||
-                  formData.approverRoles.length === 0 ||
-                  saveMutation.isPending
-                }
+                disabled={saveMutation.isPending}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
               >
                 {saveMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
