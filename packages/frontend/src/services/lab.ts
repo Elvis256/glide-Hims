@@ -315,7 +315,11 @@ export const labService = {
       const { excludeReviewed, ...rest } = params || {};
       const response = await api.get<{ data: any[]; total: number; page: number; limit: number }>('/orders', { params: { ...rest, orderType: 'lab', ...(excludeReviewed ? { excludeReviewed: 'true' } : {}) } });
       // Transform orders API response to LabOrder format
-      const orders = response.data?.data || [];
+      // /orders returns {statusCode, data:[...], meta} — the axios interceptor
+      // sets response.data to the bare array (meta on response.meta), so
+      // response.data?.data was undefined and the whole worklist came back
+      // empty. Normalise for both shapes.
+      const orders = Array.isArray(response.data) ? response.data : (response.data?.data ?? []);
       return orders.map(order => {
         // Group lab results by test code
         const labResults = order.labResults || [];
@@ -386,7 +390,7 @@ export const labService = {
     },
     getPending: async (params?: { facilityId?: string; limit?: number }): Promise<LabOrder[]> => {
       const response = await api.get<{ data: any[]; total: number; page: number; limit: number }>('/orders', { params: { orderType: 'lab', status: 'pending', limit: params?.limit ?? 200, ...(params?.facilityId ? { facilityId: params.facilityId } : {}) } });
-      const orders = response.data?.data || [];
+      const orders = Array.isArray(response.data) ? response.data : (response.data?.data ?? []);
       return orders.map(order => ({
         id: order.id,
         orderNumber: order.orderNumber,
@@ -428,7 +432,7 @@ export const labService = {
       const response = await api.get<{ data: any[]; total: number; page: number; limit: number }>('/orders', { 
         params: { patientId, orderType: 'lab', limit: 50 } 
       });
-      const orders = response.data?.data || [];
+      const orders = Array.isArray(response.data) ? response.data : (response.data?.data ?? []);
       return orders
         .filter(order => order.id !== excludeOrderId)
         .map(order => {
