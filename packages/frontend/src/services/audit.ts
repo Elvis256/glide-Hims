@@ -4,7 +4,9 @@ export interface AuditLogEntry {
   id: string;
   createdAt: string;
   userId?: string;
-  user?: { id: string; firstName?: string; lastName?: string; username?: string; email?: string };
+  // audit_logs.user is a User relation — User has only fullName. firstName/
+  // lastName are kept as a defensive fallback but the backend never sends them.
+  user?: { id: string; fullName?: string; firstName?: string; lastName?: string; username?: string; email?: string };
   action: string;
   entityType: string;
   entityId?: string;

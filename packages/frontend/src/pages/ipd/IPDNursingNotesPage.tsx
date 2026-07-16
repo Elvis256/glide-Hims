@@ -32,8 +32,7 @@ interface Admission {
   primaryDiagnosis?: string;
   patient: {
     id: string;
-    firstName: string;
-    lastName: string;
+    fullName: string;
     dateOfBirth?: string;
     gender?: string;
   };
@@ -55,7 +54,7 @@ interface NursingNote {
   shift: string;
   noteType: string;
   content: string;
-  recordedBy?: { firstName: string; lastName: string };
+  recordedBy?: { fullName: string };
 }
 
 interface MedicationAdmin {
@@ -66,7 +65,7 @@ interface MedicationAdmin {
   scheduledTime: string;
   actualTime?: string;
   status: string;
-  administeredBy?: { firstName: string; lastName: string };
+  administeredBy?: { fullName: string };
   notes?: string;
 }
 
@@ -135,7 +134,7 @@ export default function IPDNursingNotesPage() {
   const filteredAdmissions = useMemo(() => {
     return admissions.filter(
       (a) =>
-        `${a.patient.firstName} ${a.patient.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        `${a.patient.fullName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
         a.bed?.bedNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         a.admissionNumber.toLowerCase().includes(searchTerm.toLowerCase())
     );
@@ -309,7 +308,7 @@ export default function IPDNursingNotesPage() {
                       <User className="w-5 h-5 text-gray-600" />
                     </div>
                     <div>
-                      <p className="font-semibold text-gray-900">{admission.patient.firstName} {admission.patient.lastName}</p>
+                      <p className="font-semibold text-gray-900">{admission.patient.fullName}</p>
                       <p className="text-sm text-gray-500">{getAge(admission.patient.dateOfBirth)}, {admission.patient.gender || 'N/A'}</p>
                     </div>
                   </div>
@@ -420,7 +419,7 @@ export default function IPDNursingNotesPage() {
                         <p className="text-gray-700 mb-2">{note.content}</p>
                         <div className="flex items-center gap-2 text-sm text-gray-500">
                           <User className="w-4 h-4" />
-                          <span>{note.recordedBy ? `${note.recordedBy.firstName} ${note.recordedBy.lastName}` : 'Unknown'}</span>
+                          <span>{note.recordedBy ? `${note.recordedBy.fullName}` : 'Unknown'}</span>
                         </div>
                       </div>
                     ))}
@@ -488,7 +487,7 @@ export default function IPDNursingNotesPage() {
                         {med.administeredBy && (
                           <div className="mt-2 flex items-center gap-2 text-sm text-gray-500">
                             <User className="w-4 h-4" />
-                            <span>Administered by {med.administeredBy.firstName} {med.administeredBy.lastName}</span>
+                            <span>Administered by {med.administeredBy.fullName}</span>
                             {med.notes && <span className="text-gray-400">• {med.notes}</span>}
                           </div>
                         )}

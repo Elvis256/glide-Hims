@@ -125,15 +125,15 @@ export interface EmergencyCase {
     visitNumber: string;
     patient?: {
       id: string;
-      firstName: string;
-      lastName: string;
+      fullName: string;
       dateOfBirth: string;
       gender: string;
       mrn?: string;
     };
   };
-  triageNurse?: { id: string; firstName: string; lastName: string };
-  attendingDoctor?: { id: string; firstName: string; lastName: string };
+  // triageNurse/attendingDoctor are User relations — User has only fullName.
+  triageNurse?: { id: string; fullName: string };
+  attendingDoctor?: { id: string; fullName: string };
   createdAt: string;
   updatedAt: string;
 }

@@ -67,7 +67,7 @@ export default function EmergencyBillingPage() {
     return asList(casesData).map((c) => ({
       id: c.encounter?.patient?.id || c.id,
       name: c.encounter?.patient
-        ? `${c.encounter.patient.firstName} ${c.encounter.patient.lastName}`
+        ? c.encounter.patient.fullName
         : `Case ${c.caseNumber}`,
       age: c.encounter?.patient?.dateOfBirth
         ? Math.floor((Date.now() - new Date(c.encounter.patient.dateOfBirth).getTime()) / 31557600000)

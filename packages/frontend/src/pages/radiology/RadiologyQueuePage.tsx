@@ -104,11 +104,7 @@ export default function RadiologyQueuePage() {
     return modality.modalityType || modality.name || '';
   };
 
-  // Helper to get patient full name
-  const getPatientName = (patient?: { firstName?: string; lastName?: string; fullName?: string }) => {
-    if (!patient) return '';
-    return patient.fullName || `${patient.firstName || ''} ${patient.lastName || ''}`.trim();
-  };
+  const getPatientName = (patient?: { fullName?: string }) => patient?.fullName || '';
 
   const filteredQueue = useMemo(() => {
     return orders.filter((item: RadiologyOrder) => {

@@ -209,7 +209,6 @@ export default function PatientDocumentsPage() {
         const uploader = r.uploader || {};
         const uploaderName =
           uploader.fullName ||
-          [uploader.firstName, uploader.lastName].filter(Boolean).join(' ').trim() ||
           uploader.username ||
           uploader.email ||
           '—';

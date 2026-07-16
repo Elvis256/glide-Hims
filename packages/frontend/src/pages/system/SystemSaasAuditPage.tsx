@@ -10,7 +10,7 @@ import {
 interface AuditLog {
   id: string;
   userId?: string;
-  user?: { id?: string; username?: string; firstName?: string; lastName?: string; email?: string };
+  user?: { id?: string; username?: string; fullName?: string; firstName?: string; lastName?: string; email?: string };
   action: string;
   entityType: string;
   entityId?: string;
@@ -122,7 +122,7 @@ export default function SystemSaasAuditPage() {
   const userLabel = (log: AuditLog) => {
     const u = log.user;
     if (!u) return log.attemptedIdentifier || (log.userId ? log.userId.slice(0, 8) + '…' : '—');
-    const name = [u.firstName, u.lastName].filter(Boolean).join(' ');
+    const name = u.fullName || [u.firstName, u.lastName].filter(Boolean).join(' ');
     return name || u.username || u.email || (u.id ? u.id.slice(0, 8) + '…' : '—');
   };
 

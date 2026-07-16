@@ -117,7 +117,7 @@ export interface AntenatalRegistration {
   partnerName?: string;
   partnerPhone?: string;
   status: PregnancyStatus;
-  patient?: { id: string; firstName: string; lastName: string; mrn?: string };
+  patient?: { id: string; fullName: string; mrn?: string };
   createdAt: string;
   updatedAt: string;
 }

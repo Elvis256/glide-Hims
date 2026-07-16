@@ -102,7 +102,7 @@ const transformEncounterToReview = (encounter: Encounter): PendingReview => ({
   mrn: encounter.patient?.mrn || encounter.patientId,
   category: 'notes',
   type: `${(encounter.type || 'OPD').toUpperCase()} — ${getDeptName(encounter.department)}`,
-  dateSubmitted: encounter.visitDate || encounter.createdAt || new Date().toISOString(),
+  dateSubmitted: encounter.startTime || encounter.createdAt || new Date().toISOString(),
   priority: 'routine',
   description: parseEncounterDescription(encounter),
 });
@@ -164,7 +164,7 @@ export default function PendingReviewsPage() {
     queryFn: async () => {
       const result = await encountersService.list({
         status: 'completed',
-        ...(user?.id ? { doctorId: user.id } : {}),
+        ...(user?.id ? { attendingProviderId: user.id } : {}),
       });
       return result.data || [];
     },

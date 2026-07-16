@@ -75,8 +75,6 @@ export interface Patient {
   mrn: string;
   nationalId?: string;
   fullName: string;
-  firstName?: string;
-  lastName?: string;
   email?: string;
   gender: 'male' | 'female' | 'other';
   dateOfBirth: string;

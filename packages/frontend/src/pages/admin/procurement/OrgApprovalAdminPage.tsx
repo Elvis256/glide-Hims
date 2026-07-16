@@ -448,7 +448,7 @@ export function StructureTab() {
               {emps.map((e: any) => (
                 <tr key={e.id} className="border-t">
                   <td className="px-4 py-2 font-medium">
-                    {[e.firstName, e.lastName].filter(Boolean).join(' ')}
+                    {e.fullName || [e.firstName, e.lastName].filter(Boolean).join(' ')}
                     {e.userId && (
                       <div className="text-xs text-gray-400">{userLabel(userById[e.userId])}</div>
                     )}
@@ -467,7 +467,7 @@ export function StructureTab() {
                         .filter((m: any) => m.id !== e.id)
                         .map((m: any) => (
                           <option key={m.id} value={m.id}>
-                            {[m.firstName, m.lastName].filter(Boolean).join(' ')}
+                            {m.fullName || [m.firstName, m.lastName].filter(Boolean).join(' ')}
                           </option>
                         ))}
                     </select>

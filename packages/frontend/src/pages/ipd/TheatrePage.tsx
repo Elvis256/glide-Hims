@@ -41,8 +41,7 @@ interface SurgeryCase {
   surgeryType: string;
   patient: {
     id: string;
-    firstName: string;
-    lastName: string;
+    fullName: string;
     dateOfBirth?: string;
   };
   theatre: {
@@ -51,8 +50,7 @@ interface SurgeryCase {
     code: string;
   };
   leadSurgeon?: {
-    firstName: string;
-    lastName: string;
+    fullName: string;
   };
 }
 
@@ -83,8 +81,7 @@ interface Admission {
   primaryDiagnosis?: string;
   patient: {
     id: string;
-    firstName: string;
-    lastName: string;
+    fullName: string;
     dateOfBirth?: string;
     gender?: string;
   };
@@ -97,8 +94,7 @@ interface Admission {
     };
   };
   attendingDoctor?: {
-    firstName: string;
-    lastName: string;
+    fullName: string;
   };
 }
 
@@ -249,7 +245,7 @@ export default function TheatrePage() {
   const filteredAdmissions = useMemo(() => {
     return admissions.filter(
       (a) =>
-        `${a.patient.firstName} ${a.patient.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        `${a.patient.fullName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
         a.admissionNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (a.primaryDiagnosis && a.primaryDiagnosis.toLowerCase().includes(searchTerm.toLowerCase()))
     );
@@ -462,13 +458,13 @@ export default function TheatrePage() {
                               </span>
                             </div>
                             <p className="text-sm text-gray-600 mb-1">
-                              {surgery.patient.firstName} {surgery.patient.lastName} • {getAge(surgery.patient.dateOfBirth)}y
+                              {surgery.patient.fullName} • {getAge(surgery.patient.dateOfBirth)}y
                             </p>
                             <div className="flex items-center gap-4 text-xs text-gray-500">
                               <span>Theatre: {surgery.theatre.name}</span>
                               <span>Case: {surgery.caseNumber}</span>
                               {surgery.leadSurgeon && (
-                                <span>Surgeon: Dr. {surgery.leadSurgeon.lastName}</span>
+                                <span>Surgeon: Dr. {surgery.leadSurgeon.fullName}</span>
                               )}
                             </div>
                           </div>
@@ -554,7 +550,7 @@ export default function TheatrePage() {
                         <div>
                           <div className="flex items-center gap-2 mb-1">
                             <h3 className="font-semibold text-gray-900">
-                              {admission.patient.firstName} {admission.patient.lastName}
+                              {admission.patient.fullName}
                             </h3>
                             <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700 capitalize">
                               {admission.status}
@@ -623,7 +619,7 @@ export default function TheatrePage() {
                 <div className="mb-6 p-4 bg-teal-50 rounded-lg border border-teal-200">
                   <p className="text-sm text-teal-600 font-medium mb-1">Selected Patient</p>
                   <p className="font-semibold text-gray-900">
-                    {selectedPatient.patient.firstName} {selectedPatient.patient.lastName}
+                    {selectedPatient.patient.fullName}
                   </p>
                   <p className="text-sm text-gray-600">
                     #{selectedPatient.admissionNumber} • {selectedPatient.primaryDiagnosis || 'No diagnosis'}
@@ -770,7 +766,7 @@ export default function TheatrePage() {
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-gray-500">Patient</span>
-                <span className="font-medium">{selectedSurgery.patient.firstName} {selectedSurgery.patient.lastName}</span>
+                <span className="font-medium">{selectedSurgery.patient.fullName}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-gray-500">Procedure</span>
@@ -797,7 +793,7 @@ export default function TheatrePage() {
               {selectedSurgery.leadSurgeon && (
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-gray-500">Lead Surgeon</span>
-                  <span className="font-medium">Dr. {selectedSurgery.leadSurgeon.firstName} {selectedSurgery.leadSurgeon.lastName}</span>
+                  <span className="font-medium">Dr. {selectedSurgery.leadSurgeon.fullName}</span>
                 </div>
               )}
 

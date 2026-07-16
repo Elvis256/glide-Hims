@@ -99,7 +99,7 @@ export interface SurgeryCase {
   anesthesiologistId?: string;
   anesthesiaType?: AnesthesiaType;
   status: SurgeryStatus;
-  patient?: { id: string; firstName: string; lastName: string; mrn?: string };
+  patient?: { id: string; fullName: string; mrn?: string };
   theatre?: Theatre;
   leadSurgeon?: { id: string; firstName: string; lastName: string };
   createdAt: string;

@@ -486,7 +486,7 @@ export default function InsuranceDashboardPage() {
                   <tr key={c.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3 text-sm font-medium text-blue-600">{c.claimNumber}</td>
                     <td className="px-4 py-3">
-                      <div className="text-sm font-medium text-gray-900">{c.patient?.fullName || c.patient?.firstName || '-'}</div>
+                      <div className="text-sm font-medium text-gray-900">{c.patient?.fullName || '-'}</div>
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-600">{c.provider?.name || '-'}</td>
                     <td className="px-4 py-3 text-sm text-right font-medium">{formatCurrency(c.totalClaimed || c.totalAmount || 0)}</td>

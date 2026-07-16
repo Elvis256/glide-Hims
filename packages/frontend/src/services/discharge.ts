@@ -140,7 +140,7 @@ export interface DischargeSummary {
   facilityId: string;
   dischargedById: string;
   attendingPhysicianId?: string;
-  patient?: { id: string; firstName: string; lastName: string; mrn?: string };
+  patient?: { id: string; fullName: string; mrn?: string };
   encounter?: { id: string; visitNumber: string };
   dischargedBy?: { id: string; firstName: string; lastName: string };
   attendingPhysician?: { id: string; firstName: string; lastName: string };

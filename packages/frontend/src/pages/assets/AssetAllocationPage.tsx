@@ -120,13 +120,7 @@ export default function AssetAllocationPage() {
     (id && departments.find((d) => d.id === id)?.name) || '—';
 
   const custodianName = (alloc: AssetAllocation) => {
-    if (alloc.custodian) {
-      const full = [alloc.custodian.firstName, alloc.custodian.lastName]
-        .filter(Boolean)
-        .join(' ')
-        .trim();
-      if (full) return full;
-    }
+    if (alloc.custodian?.fullName) return alloc.custodian.fullName;
     const u = users.find((u) => u.id === alloc.custodianId);
     return u?.fullName || alloc.custodianId;
   };

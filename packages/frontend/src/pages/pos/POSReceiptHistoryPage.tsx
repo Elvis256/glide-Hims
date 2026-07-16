@@ -23,15 +23,15 @@ interface SaleHistory {
   totalAmount: number;
   paymentMethod: string;
   createdAt: string;
-  soldBy?: { name?: string; firstName?: string; lastName?: string };
+  soldBy?: { name?: string; fullName?: string; firstName?: string; lastName?: string };
   reprintCount: number;
   status: string;
 }
 
-function getUserName(u?: { name?: string; firstName?: string; lastName?: string }): string {
+function getUserName(u?: { name?: string; fullName?: string; firstName?: string; lastName?: string }): string {
   if (!u) return 'Unknown';
   if (u.name) return u.name;
-  return [u.firstName, u.lastName].filter(Boolean).join(' ') || 'Unknown';
+  return u.fullName || [u.firstName, u.lastName].filter(Boolean).join(' ') || 'Unknown';
 }
 
 export default function POSReceiptHistoryPage() {

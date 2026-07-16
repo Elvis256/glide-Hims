@@ -10,7 +10,7 @@ import {
 interface AuditLog {
   id: string;
   userId: string;
-  user?: { id: string; username?: string; firstName?: string; lastName?: string; email?: string };
+  user?: { id: string; username?: string; fullName?: string; firstName?: string; lastName?: string; email?: string };
   action: string;
   entityType: string;
   entityId?: string;
@@ -119,7 +119,7 @@ export default function SystemAuditLogsPage() {
       if (log.userId) return log.userId.slice(0, 8) + '…';
       return '—';
     }
-    const name = [u.firstName, u.lastName].filter(Boolean).join(' ');
+    const name = u.fullName || [u.firstName, u.lastName].filter(Boolean).join(' ');
     return name || u.username || u.email || (u.id ? u.id.slice(0, 8) + '…' : '—');
   };
 
@@ -139,7 +139,7 @@ export default function SystemAuditLogsPage() {
           <button
             onClick={() => exportToCsv('audit-logs', data, [
               { header: 'Timestamp', accessor: (l) => l.createdAt },
-              { header: 'User', accessor: (l) => l.user ? [l.user.firstName, l.user.lastName].filter(Boolean).join(' ') || l.user.username || l.user.email || l.userId : l.userId },
+              { header: 'User', accessor: (l) => l.user ? (l.user.fullName || [l.user.firstName, l.user.lastName].filter(Boolean).join(' ') || l.user.username || l.user.email || l.userId) : l.userId },
               { header: 'Actor Type', accessor: (l) => l.actorType || '' },
               { header: 'Action', accessor: (l) => l.action },
               { header: 'Entity Type', accessor: (l) => l.entityType },

@@ -132,7 +132,7 @@ export default function MedicalCertificatePage() {
     if (!Array.isArray(raw)) return [];
     return (raw as any[]).map((p: any) => ({
       id: p.id,
-      name: p.fullName || `${p.firstName || ''} ${p.lastName || ''}`.trim(),
+      name: p.fullName,
       dateOfBirth: p.dateOfBirth,
       gender: (p.gender || '').charAt(0).toUpperCase() + (p.gender || '').slice(1),
       patientId: p.mrn,

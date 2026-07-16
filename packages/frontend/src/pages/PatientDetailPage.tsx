@@ -60,18 +60,6 @@ const getInitials = (name: string) => {
     .slice(0, 2);
 };
 
-// GET /encounters left-joins the Department relation, so `department` arrives as
-// a Department row (or null) even though the read type still declares a string.
-const getDepartmentName = (dept: unknown): string | undefined => {
-  if (!dept) return undefined;
-  if (typeof dept === 'string') return dept;
-  if (typeof dept === 'object' && 'name' in dept) {
-    const { name } = dept as { name?: unknown };
-    return typeof name === 'string' ? name : undefined;
-  }
-  return undefined;
-};
-
 // Tab types
 type TabType = 'overview' | 'visits' | 'billing' | 'documents' | 'notes' | 'activity';
 
@@ -84,7 +72,7 @@ export default function PatientDetailPage() {
   // State
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [expandedVisit, setExpandedVisit] = useState<string | null>(null);
-  const [visitFilters, setVisitFilters] = useState({ dateFrom: '', dateTo: '', department: '' });
+  const [visitFilters, setVisitFilters] = useState({ dateFrom: '', dateTo: '' });
   const [showFilters, setShowFilters] = useState(false);
   const [newNote, setNewNote] = useState({ type: 'administrative' as 'clinical' | 'administrative', content: '' });
   const [showNoteForm, setShowNoteForm] = useState(false);
@@ -118,7 +106,6 @@ export default function PatientDetailPage() {
       patientId: id,
       dateFrom: visitFilters.dateFrom || undefined,
       dateTo: visitFilters.dateTo || undefined,
-      department: visitFilters.department || undefined,
       limit: 50
     }),
     enabled: !!id && activeTab === 'visits',
@@ -832,20 +819,6 @@ export default function PatientDetailPage() {
                       className="input text-sm"
                     />
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
-                    <select
-                      value={visitFilters.department}
-                      onChange={(e) => setVisitFilters(prev => ({ ...prev, department: e.target.value }))}
-                      className="input text-sm"
-                    >
-                      <option value="">All Departments</option>
-                      <option value="general">General</option>
-                      <option value="emergency">Emergency</option>
-                      <option value="pediatrics">Pediatrics</option>
-                      <option value="gynecology">Gynecology</option>
-                    </select>
-                  </div>
                 </div>
               )}
 
@@ -890,10 +863,10 @@ export default function PatientDetailPage() {
                           }`} />
                           <div>
                             <div className="font-medium text-gray-900">
-                              {formatDate(visit.visitDate || visit.createdAt)}
+                              {formatDate(visit.startTime || visit.createdAt)}
                             </div>
                             <div className="text-sm text-gray-500">
-                              {visit.visitNumber} • {visit.type?.toUpperCase()} • {getDepartmentName(visit.department) || 'General'}
+                              {visit.visitNumber} • {visit.type?.toUpperCase()} • {visit.department?.name || 'General'}
                             </div>
                           </div>
                         </div>
@@ -918,7 +891,7 @@ export default function PatientDetailPage() {
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 text-sm">
                             <div>
                               <span className="text-gray-500 block">Doctor</span>
-                              <span className="text-gray-900">{visit.doctor?.fullName || 'N/A'}</span>
+                              <span className="text-gray-900">{visit.attendingProvider?.fullName || 'N/A'}</span>
                             </div>
                             <div>
                               <span className="text-gray-500 block">Chief Complaint</span>
@@ -926,7 +899,7 @@ export default function PatientDetailPage() {
                             </div>
                             <div>
                               <span className="text-gray-500 block">Department</span>
-                              <span className="text-gray-900">{getDepartmentName(visit.department) || 'N/A'}</span>
+                              <span className="text-gray-900">{visit.department?.name || 'N/A'}</span>
                             </div>
                             <div>
                               <span className="text-gray-500 block">Visit Type</span>

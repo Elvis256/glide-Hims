@@ -112,7 +112,7 @@ export default function InsuranceReportPage() {
   const age = patient?.dateOfBirth
     ? Math.floor((Date.now() - new Date(patient.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000))
     : null;
-  const doctorName = (encounter as any)?.attendingProvider?.fullName || (encounter as any)?.doctor?.fullName || 'N/A';
+  const doctorName = encounter?.attendingProvider?.fullName || 'N/A';
 
   // Cost calculations
   const subtotal = invoiceItems.reduce((sum: number, item: any) => sum + (Number(item.totalPrice || item.amount || 0)), 0);
@@ -176,7 +176,7 @@ export default function InsuranceReportPage() {
                   >
                     <div>
                       <span className="font-medium">{enc.visitNumber}</span>
-                      <span className="text-gray-500 ml-2">{new Date(enc.visitDate || enc.createdAt).toLocaleDateString()}</span>
+                      <span className="text-gray-500 ml-2">{new Date(enc.startTime || enc.createdAt).toLocaleDateString()}</span>
                       <span className="text-gray-500 ml-2 capitalize">({enc.type})</span>
                     </div>
                     <span className={`px-2 py-0.5 text-xs rounded-full ${
@@ -281,9 +281,9 @@ export default function InsuranceReportPage() {
         <Section title="Visit Details">
           <div className="grid grid-cols-2 gap-3 text-sm">
             <p><span className="font-semibold">Visit No:</span> {encounter.visitNumber}</p>
-            <p><span className="font-semibold">Visit Date:</span> {new Date(encounter.visitDate || encounter.createdAt).toLocaleDateString()}</p>
+            <p><span className="font-semibold">Visit Date:</span> {new Date(encounter.startTime || encounter.createdAt).toLocaleDateString()}</p>
             <p><span className="font-semibold">Visit Type:</span> {(encounter.type || '').toUpperCase()}</p>
-            <p><span className="font-semibold">Department:</span> {(encounter as any)?.department?.name || encounter.department || 'N/A'}</p>
+            <p><span className="font-semibold">Department:</span> {encounter.department?.name || 'N/A'}</p>
             <p><span className="font-semibold">Attending Doctor:</span> Dr. {doctorName}</p>
             <p><span className="font-semibold">Status:</span> <span className="capitalize">{encounter.status?.replace(/_/g, ' ')}</span></p>
           </div>

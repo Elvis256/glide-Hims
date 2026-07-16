@@ -36,7 +36,7 @@ interface PatientMembership {
   startDate: string;
   endDate?: string;
   status: 'active' | 'expired' | 'suspended' | 'cancelled';
-  patient?: { id: string; firstName: string; lastName: string; mrn: string };
+  patient?: { id: string; fullName: string; mrn: string };
   scheme?: MembershipScheme;
 }
 

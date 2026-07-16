@@ -38,7 +38,7 @@ interface SupportAccessRequest {
 interface SupportAccessGrant {
   id: string;
   grantedToId: string;
-  grantedTo?: { firstName: string; lastName: string; username: string };
+  grantedTo?: { fullName: string; username: string };
   accessTier: number;
   expiresAt: string;
   reason: string;
@@ -194,7 +194,7 @@ export default function SupportAccessPage() {
                       </div>
                       <div>
                         <p className="text-sm font-medium text-gray-900">
-                          {grant.grantedTo ? `${grant.grantedTo.firstName} ${grant.grantedTo.lastName}` : 'System Admin'}
+                          {grant.grantedTo ? grant.grantedTo.fullName : 'System Admin'}
                         </p>
                         <p className="text-xs text-gray-500">{grant.reason}</p>
                       </div>

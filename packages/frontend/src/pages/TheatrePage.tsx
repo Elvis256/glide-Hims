@@ -39,9 +39,10 @@ interface SurgeryCase {
   scheduledDate: string;
   scheduledTime: string;
   estimatedDurationMinutes: number;
-  patient: { id: string; firstName: string; lastName: string; mrn: string };
+  patient: { id: string; fullName: string; mrn: string };
   theatre: { id: string; name: string; code: string };
-  leadSurgeon: { id: string; firstName: string; lastName: string };
+  // User relation — User has only fullName.
+  leadSurgeon: { id: string; fullName: string };
   actualStartTime?: string;
   actualEndTime?: string;
 }
@@ -232,7 +233,7 @@ export default function TheatrePage() {
                     <div>
                       <div className="font-medium">{c.procedureName}</div>
                       <div className="text-sm text-gray-500">
-                        {c.patient?.firstName} {c.patient?.lastName} • {c.theatre?.name}
+                        {c.patient?.fullName} • {c.theatre?.name}
                       </div>
                     </div>
                     <div className="text-right">
@@ -363,7 +364,7 @@ export default function TheatrePage() {
                     <div className="text-sm text-gray-500 mt-1">
                       <span className="inline-flex items-center gap-1">
                         <User className="w-3 h-3" />
-                        {s.patient?.firstName} {s.patient?.lastName} ({s.patient?.mrn})
+                        {s.patient?.fullName} ({s.patient?.mrn})
                       </span>
                     </div>
                     <div className="text-sm text-gray-500">
@@ -373,7 +374,7 @@ export default function TheatrePage() {
                       </span>
                       <span className="inline-flex items-center gap-1">
                         <Users className="w-3 h-3" />
-                        Dr. {s.leadSurgeon?.lastName}
+                        Dr. {s.leadSurgeon?.fullName}
                       </span>
                     </div>
                   </div>
@@ -491,7 +492,7 @@ export default function TheatrePage() {
               <div>
                 <div className="text-sm text-gray-500">Patient</div>
                 <div className="font-medium">
-                  {selectedCase.patient?.firstName} {selectedCase.patient?.lastName}
+                  {selectedCase.patient?.fullName}
                 </div>
                 <div className="text-sm text-gray-400">MRN: {selectedCase.patient?.mrn}</div>
               </div>
@@ -499,7 +500,7 @@ export default function TheatrePage() {
               <div>
                 <div className="text-sm text-gray-500">Lead Surgeon</div>
                 <div className="font-medium">
-                  Dr. {selectedCase.leadSurgeon?.firstName} {selectedCase.leadSurgeon?.lastName}
+                  Dr. {selectedCase.leadSurgeon?.fullName}
                 </div>
               </div>
 

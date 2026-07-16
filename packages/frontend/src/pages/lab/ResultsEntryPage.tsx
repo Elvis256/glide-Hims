@@ -173,7 +173,7 @@ export default function ResultsEntryPage() {
       return {
         id: sample.id,
         sampleNumber: sample.sampleNumber || sample.barcode || sample.id,
-        patientName: sample.patient?.fullName || (sample.patient ? `${sample.patient.firstName || ''} ${sample.patient.lastName || ''}`.trim() : '') || 'Unknown',
+        patientName: sample.patient?.fullName || 'Unknown',
         patientId: sample.patientId,
         patientMrn: sample.patient?.mrn,
         testName: sample.labTest?.name || 'Lab Test',

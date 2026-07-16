@@ -124,7 +124,7 @@ export interface TreatmentPlan {
   previousPlanId?: string;
   progressNotes?: { date: string; note: string; provider: string }[];
   patientId: string;
-  patient?: { id: string; firstName: string; lastName: string; mrn?: string };
+  patient?: { id: string; fullName: string; mrn?: string };
   encounterId?: string;
   createdById: string;
   primaryProviderId?: string;

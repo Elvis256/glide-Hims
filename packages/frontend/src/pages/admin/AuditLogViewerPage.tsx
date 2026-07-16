@@ -47,7 +47,7 @@ const ENTITY_OPTIONS = [
 function userLabel(e: AuditLogEntry): string {
   const u = e.user;
   if (u) {
-    const name = [u.firstName, u.lastName].filter(Boolean).join(' ');
+    const name = u.fullName || [u.firstName, u.lastName].filter(Boolean).join(' ');
     return name || u.username || u.email || 'User';
   }
   if (e.actorType === 'system_admin') return 'System Admin';
