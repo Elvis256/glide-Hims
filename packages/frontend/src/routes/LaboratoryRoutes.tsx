@@ -17,12 +17,16 @@ const LabReportsPage = lazy(() => import('../pages/lab/LabReportsPage'));
 const LabAnalyticsPage = lazy(() => import('../pages/lab/LabAnalyticsPage'));
 const SampleReferralPage = lazy(() => import('../pages/lab/SampleReferralPage'));
 const CriticalResultsReadOnlyPage = lazy(() => import('../components/CriticalResultsReadOnlyPage'));
-const LabPage = lazy(() => import('../pages/LabPage'));
 
 export default function LaboratoryRoutes() {
   return (
     <Routes>
-      <Route index element={<ModuleRoute module="diagnostics"><LabTechRoute><LabPage /></LabTechRoute></ModuleRoute>} />
+      {/* LabPage was a legacy all-in-one worklist that read the wrong order
+          shape (order.encounter.patient — the list flattens patient to the top
+          level) and white-screened on any order. It is orphaned: nothing links
+          to /lab, SmartDashboard sends lab techs to /lab/queue, and the queue/
+          samples/results pages cover its function. Redirect like LabQCRoutes. */}
+      <Route index element={<Navigate to="/lab/queue" replace />} />
       <Route path="queue" element={<ModuleRoute module="diagnostics"><LabTechRoute><LabQueuePage /></LabTechRoute></ModuleRoute>} />
       <Route path="samples" element={<ModuleRoute module="diagnostics"><LabTechRoute><SampleCollectionPage /></LabTechRoute></ModuleRoute>} />
       <Route path="results" element={<ModuleRoute module="diagnostics"><LabTechRoute><ResultsEntryPage /></LabTechRoute></ModuleRoute>} />
