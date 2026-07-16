@@ -57,7 +57,12 @@ import {
 } from 'lucide-react';
 import { patientsService } from '../../services/patients';
 import { ipdService } from '../../services/ipd';
-import { nursingService, type CreateWoundAssessmentDto } from '../../services/nursing';
+import {
+  nursingService,
+  type CreateWoundAssessmentDto,
+  // Aliased: this file declares its own local WoundAssessment (the form's shape).
+  type WoundAssessment as WoundAssessmentApi,
+} from '../../services/nursing';
 import { usePermissions } from '../../components/PermissionGate';
 
 interface Patient {
@@ -614,35 +619,71 @@ export default function WoundAssessmentPage() {
     enabled: !!admission?.id,
   });
 
-  // Hydrate patientWounds from API data
+  // Hydrate patientWounds from API data.
+  //
+  // Each wound_assessments row is ONE point-in-time assessment, not a wound —
+  // the entity has no wound identity and no photo storage. `location` is the
+  // only thing that identifies a wound across assessments, so group by it and
+  // fold each row into that wound's measurement history (oldest first).
   useEffect(() => {
-    if (woundsData?.length) {
-      setPatientWounds(woundsData.map(w => ({
-        id: w.id,
-        location: w.location,
-        type: w.woundType,
-        stage: w.stage,
-        startDate: new Date(w.createdAt).toISOString().split('T')[0],
-        status: 'active' as const,
-        depth: w.depth ? String(w.depth) : '',
-        length: w.length ? String(w.length) : '',
-        width: w.width ? String(w.width) : '',
-        area: (Number(w.length || 0) * Number(w.width || 0)),
-        woundBed: w.woundBed ? {
-          granulation: String(w.woundBed.granulation || 0),
-          slough: String(w.woundBed.slough || 0),
-          eschar: '0',
-          epithelial: String(w.woundBed.epithelial || 0),
-        } : undefined,
-        exudateAmount: w.exudate?.amount || '',
-        exudateType: w.exudate?.type || '',
-        odor: '',
-        periwound: w.periwoundSkin ? [w.periwoundSkin] : [],
-        infectionSigns: [],
-        painLevel: '',
-        dressingType: w.treatment || '',
-      })));
+    if (!woundsData?.length) return;
+
+    const byLocation = new Map<string, WoundAssessmentApi[]>();
+    for (const w of woundsData) {
+      const key = w.location || 'Unspecified';
+      const list = byLocation.get(key);
+      if (list) list.push(w);
+      else byLocation.set(key, [w]);
     }
+
+    const wounds: Wound[] = [...byLocation.entries()].map(([location, rows]) => {
+      const ordered = [...rows].sort(
+        (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+      );
+      const first = ordered[0];
+      const latest = ordered[ordered.length - 1];
+
+      const measurements: WoundMeasurement[] = ordered.map((w) => ({
+        id: w.id,
+        date: new Date(w.createdAt).toISOString().split('T')[0],
+        length: Number(w.length ?? 0),
+        width: Number(w.width ?? 0),
+        depth: Number(w.depth ?? 0),
+        area: Number(w.length ?? 0) * Number(w.width ?? 0),
+        woundBed: {
+          granulation: Number(w.woundBed?.granulation ?? 0),
+          // The entity's wound_bed jsonb records `necrotic`; the UI calls the
+          // same tissue eschar.
+          eschar: Number(w.woundBed?.necrotic ?? 0),
+          slough: Number(w.woundBed?.slough ?? 0),
+          epithelial: Number(w.woundBed?.epithelial ?? 0),
+        },
+        exudate: { amount: w.exudate?.amount || '', type: w.exudate?.type || '' },
+        periwound: w.periwoundSkin ? [w.periwoundSkin] : [],
+        // No column for these — the assessment form collects them but the
+        // entity does not persist them.
+        painLevel: 0,
+        odor: '',
+        infectionSigns: [],
+      }));
+
+      return {
+        id: latest.id,
+        location,
+        type: latest.woundType,
+        stage: latest.stage,
+        startDate: new Date(first.createdAt).toISOString().split('T')[0],
+        status: 'new' as const,
+        measurements,
+        // wound_assessments has no photo storage.
+        photos: [],
+        treatmentPlan: latest.treatment
+          ? { dressingType: latest.treatment, changeFrequency: '', specialTreatments: [], consults: [] }
+          : undefined,
+      };
+    });
+
+    setPatientWounds(wounds);
   }, [woundsData]);
 
   // Create wound assessment mutation

@@ -74,9 +74,19 @@ export default function WorkloadStatsPage() {
   });
 
   // Fetch nursing staff from HR
+  // Neither /hr/staff nor /hr/employees can filter by staffCategory — the param
+  // was silently ignored, so this page counted EVERY employee as a nurse. Each
+  // row does carry staffCategory, so narrow it here instead.
   const { data: nursingStaffData, isLoading: staffLoading } = useQuery({
     queryKey: ['nursing-staff'],
-    queryFn: () => hrService.staff.list({ staffCategory: 'nursing', limit: 50 }),
+    queryFn: async () => {
+      const res = await hrService.staff.list({ limit: 200 });
+      const rows = asList(res);
+      return rows.filter(
+        (s: { staffCategory?: string }) =>
+          s.staffCategory === 'nurse' || s.staffCategory === 'nursing',
+      );
+    },
     staleTime: 300_000,
   });
 

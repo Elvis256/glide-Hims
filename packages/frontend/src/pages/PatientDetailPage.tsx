@@ -60,6 +60,18 @@ const getInitials = (name: string) => {
     .slice(0, 2);
 };
 
+// GET /encounters left-joins the Department relation, so `department` arrives as
+// a Department row (or null) even though the read type still declares a string.
+const getDepartmentName = (dept: unknown): string | undefined => {
+  if (!dept) return undefined;
+  if (typeof dept === 'string') return dept;
+  if (typeof dept === 'object' && 'name' in dept) {
+    const { name } = dept as { name?: unknown };
+    return typeof name === 'string' ? name : undefined;
+  }
+  return undefined;
+};
+
 // Tab types
 type TabType = 'overview' | 'visits' | 'billing' | 'documents' | 'notes' | 'activity';
 
@@ -881,7 +893,7 @@ export default function PatientDetailPage() {
                               {formatDate(visit.visitDate || visit.createdAt)}
                             </div>
                             <div className="text-sm text-gray-500">
-                              {visit.visitNumber} • {visit.type?.toUpperCase()} • {(typeof visit.department === 'object' ? visit.department?.name : visit.department) || 'General'}
+                              {visit.visitNumber} • {visit.type?.toUpperCase()} • {getDepartmentName(visit.department) || 'General'}
                             </div>
                           </div>
                         </div>
@@ -914,7 +926,7 @@ export default function PatientDetailPage() {
                             </div>
                             <div>
                               <span className="text-gray-500 block">Department</span>
-                              <span className="text-gray-900">{(typeof visit.department === 'object' ? visit.department?.name : visit.department) || 'N/A'}</span>
+                              <span className="text-gray-900">{getDepartmentName(visit.department) || 'N/A'}</span>
                             </div>
                             <div>
                               <span className="text-gray-500 block">Visit Type</span>

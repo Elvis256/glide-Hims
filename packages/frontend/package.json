@@ -9,7 +9,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test:unit": "vitest run",
-    "typecheck": "tsc --noEmit -p tsconfig.app.json --incremental false"
+    "typecheck": "tsc --noEmit -p tsconfig.app.json --incremental false && tsc --noEmit -p tsconfig.node.json --incremental false"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

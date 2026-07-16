@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import hrService from '../../../services/hr';
+import hrService, { type Employee } from '../../../services/hr';
 import { useAuthStore } from '../../../store/auth';
 import { toast } from 'sonner';
 import {
@@ -37,16 +37,6 @@ interface OnboardingProgress {
   total: number;
   completed: number;
   percentage: number;
-}
-
-interface Employee {
-  id: string;
-  fullName: string;
-  employeeNumber: string;
-  jobTitle: string;
-  department: string | { name: string };
-  hireDate: string;
-  status: string;
 }
 
 type TaskCategory =

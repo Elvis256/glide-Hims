@@ -31,11 +31,11 @@ interface VerificationResult {
   policyNumber: string;
   memberName: string;
   coverageType: string;
+  /** insurance_policies.annual_limit */
   coverageLimit: number;
   usedAmount: number;
   expiryDate: string;
   copay: number;
-  coveredServices: string[];
   exclusions: string[];
 }
 
@@ -76,12 +76,12 @@ export default function VerifyCoveragePage() {
         provider: policy.provider?.name || '',
         policyNumber: policy.policyNumber,
         memberName: selectedPatient?.fullName || '',
-        coverageType: policy.coverageType || 'Comprehensive',
-        coverageLimit: policy.coverageLimit || 0,
-        usedAmount: policy.usedAmount || 0,
-        expiryDate: policy.endDate || '',
-        copay: policy.copayPercentage || 0,
-        coveredServices: policy.coveredServices || [],
+        coverageType: policy.coverageType || '',
+        // decimals arrive as strings from TypeORM
+        coverageLimit: Number(policy.annualLimit ?? 0),
+        usedAmount: Number(policy.usedAmount ?? 0),
+        expiryDate: policy.expiryDate || '',
+        copay: Number(policy.copayPercentage ?? 0),
         exclusions: policy.exclusions || [],
       });
     },
@@ -264,7 +264,16 @@ export default function VerifyCoveragePage() {
                     <div className="w-full bg-gray-200 rounded-full h-2">
                       <div
                         className="bg-blue-600 h-2 rounded-full"
-                        style={{ width: `${(verificationResult.usedAmount / verificationResult.coverageLimit) * 100}%` }}
+                        style={{
+                          width: `${
+                            verificationResult.coverageLimit > 0
+                              ? Math.min(
+                                  100,
+                                  (verificationResult.usedAmount / verificationResult.coverageLimit) * 100,
+                                )
+                              : 0
+                          }%`,
+                        }}
                       />
                     </div>
                     <p className="text-xs text-gray-500 mt-2">
@@ -276,17 +285,6 @@ export default function VerifyCoveragePage() {
                 <div>
                   <h3 className="text-sm font-semibold mb-2">Co-pay</h3>
                   <p className="text-lg font-bold text-blue-600">{verificationResult.copay}%</p>
-                </div>
-
-                <div>
-                  <h3 className="text-sm font-semibold mb-2">Covered Services</h3>
-                  <div className="flex flex-wrap gap-1">
-                    {verificationResult.coveredServices.map((service) => (
-                      <span key={service} className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs">
-                        {service}
-                      </span>
-                    ))}
-                  </div>
                 </div>
 
                 <div>

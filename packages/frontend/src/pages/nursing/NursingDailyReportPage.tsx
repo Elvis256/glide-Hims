@@ -94,11 +94,14 @@ export default function NursingDailyReportPage() {
   // Staff assignments come from the shift roster (placeholder until roster API is used here)
   const staff: StaffMember[] = [];
 
+  // Only what GET /ipd/stats actually returns. Procedures performed,
+  // medications given and critical alerts have no source on this endpoint —
+  // they were rendering a hard 0, which on a nursing report reads as "none
+  // happened" rather than "not measured".
   const summaryStats = useMemo(() => ({
-    patientsCaredFor: ipdStats?.currentInpatients || 0,
-    proceduresPerformed: ipdStats?.proceduresToday ?? 0,
-    medicationsGiven: ipdStats?.medicationsToday ?? 0,
-    criticalAlerts: ipdStats?.criticalAlerts ?? 0,
+    patientsCaredFor: ipdStats?.currentInpatients ?? 0,
+    admittedToday: ipdStats?.admittedToday ?? 0,
+    dischargedToday: ipdStats?.dischargedToday ?? 0,
   }), [ipdStats]);
 
   const isLoading = statsLoading || admissionsLoading;
@@ -173,7 +176,7 @@ export default function NursingDailyReportPage() {
       </div>
 
       {/* Summary Stats */}
-      <div className="grid grid-cols-4 gap-4 mb-4">
+      <div className="grid grid-cols-3 gap-4 mb-4">
         <div className="bg-white rounded-xl border border-gray-200 p-4">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
@@ -191,6 +194,21 @@ export default function NursingDailyReportPage() {
         </div>
         <div className="bg-white rounded-xl border border-gray-200 p-4">
           <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+              <Users className="w-5 h-5 text-green-600" />
+            </div>
+            <div>
+              {isLoading ? (
+                <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+              ) : (
+                <p className="text-2xl font-bold text-gray-900">{summaryStats.admittedToday}</p>
+              )}
+              <p className="text-sm text-gray-500">Admitted Today</p>
+            </div>
+          </div>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
               <Stethoscope className="w-5 h-5 text-purple-600" />
             </div>
@@ -198,39 +216,9 @@ export default function NursingDailyReportPage() {
               {isLoading ? (
                 <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
               ) : (
-                <p className="text-2xl font-bold text-gray-900">{summaryStats.proceduresPerformed}</p>
+                <p className="text-2xl font-bold text-gray-900">{summaryStats.dischargedToday}</p>
               )}
-              <p className="text-sm text-gray-500">Procedures Performed</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-              <Pill className="w-5 h-5 text-green-600" />
-            </div>
-            <div>
-              {isLoading ? (
-                <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
-              ) : (
-                <p className="text-2xl font-bold text-gray-900">{summaryStats.medicationsGiven}</p>
-              )}
-              <p className="text-sm text-gray-500">Medications Given</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
-              <AlertCircle className="w-5 h-5 text-red-600" />
-            </div>
-            <div>
-              {isLoading ? (
-                <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
-              ) : (
-                <p className="text-2xl font-bold text-gray-900">{summaryStats.criticalAlerts}</p>
-              )}
-              <p className="text-sm text-gray-500">Critical Alerts</p>
+              <p className="text-sm text-gray-500">Discharged Today</p>
             </div>
           </div>
         </div>

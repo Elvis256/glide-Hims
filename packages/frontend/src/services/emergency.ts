@@ -154,11 +154,13 @@ export const emergencyService = {
   registerCase: (data: CreateEmergencyCaseDto) => 
     api.post<EmergencyCase>('/emergency/cases', data),
 
-  getCases: (params?: EmergencyQueryDto) => 
-    api.get<{ data: EmergencyCase[]; meta: { total: number; limit: number; offset: number } }>(
-      '/emergency/cases', 
-      { params }
-    ),
+  /** The service returns {data, meta}, but ResponseTransformInterceptor unwraps
+   *  that pair and the axios interceptor strips the StandardResponse, so
+   *  response.data is the bare array (pagination lands on response.meta).
+   *  Typing it as {data, meta} here made every caller's `response.data` look
+   *  like an envelope it never receives. */
+  getCases: (params?: EmergencyQueryDto) =>
+    api.get<EmergencyCase[]>('/emergency/cases', { params }),
 
   getCase: (id: string) => 
     api.get<EmergencyCase>(`/emergency/cases/${id}`),
