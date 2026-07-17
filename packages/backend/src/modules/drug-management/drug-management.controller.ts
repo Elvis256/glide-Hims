@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Delete,
   Param,
   Body,
   Query,
@@ -151,6 +152,13 @@ export class DrugManagementController {
     return this.drugService.updateClassification(id, dto, req.user?.tenantId);
   }
 
+  @Delete('classifications/:id')
+  @AuthWithPermissions('pharmacy.delete')
+  @ApiOperation({ summary: 'Delete drug classification' })
+  async deleteClassification(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.drugService.deleteClassification(id, req.user?.tenantId);
+  }
+
   // ==================== DRUG INTERACTIONS ====================
 
   @Post('interactions')
@@ -158,6 +166,17 @@ export class DrugManagementController {
   @ApiOperation({ summary: 'Create drug interaction' })
   async createInteraction(@Body() dto: CreateDrugInteractionDto, @Request() req: any) {
     return this.drugService.createInteraction(dto, req.user?.tenantId);
+  }
+
+  @Get('interactions')
+  @AuthWithPermissions('pharmacy.read')
+  @ApiOperation({ summary: 'List all drug interactions (with resolved drug names)' })
+  async listInteractions(
+    @Query('severity') severity?: string,
+    @Query('search') search?: string,
+    @Request() req?: any,
+  ) {
+    return this.drugService.listInteractions({ severity, search }, req?.user?.tenantId);
   }
 
   @Get('interactions/drug/:drugId')
@@ -195,6 +214,13 @@ export class DrugManagementController {
     return this.drugService.updateInteraction(id, dto, req.user?.tenantId);
   }
 
+  @Delete('interactions/:id')
+  @AuthWithPermissions('pharmacy.delete')
+  @ApiOperation({ summary: 'Delete drug interaction' })
+  async deleteInteraction(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.drugService.deleteInteraction(id, req.user?.tenantId);
+  }
+
   // ==================== ALLERGY CLASSES ====================
 
   @Post('allergy-classes')
@@ -209,6 +235,24 @@ export class DrugManagementController {
   @ApiOperation({ summary: 'List allergy classes' })
   async listAllergyClasses(@Request() req: any) {
     return this.drugService.listAllergyClasses(req.user?.tenantId);
+  }
+
+  @Put('allergy-classes/:id')
+  @AuthWithPermissions('pharmacy.update')
+  @ApiOperation({ summary: 'Update allergy class' })
+  async updateAllergyClass(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CreateAllergyClassDto,
+    @Request() req: any,
+  ) {
+    return this.drugService.updateAllergyClass(id, dto, req.user?.tenantId);
+  }
+
+  @Delete('allergy-classes/:id')
+  @AuthWithPermissions('pharmacy.delete')
+  @ApiOperation({ summary: 'Delete allergy class' })
+  async deleteAllergyClass(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.drugService.deleteAllergyClass(id, req.user?.tenantId);
   }
 
   @Post('allergy-check')
