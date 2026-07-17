@@ -19,6 +19,48 @@ export class CreateReagentDto {
   @IsString()
   name: string;
 
+  // code/unit/unitSize are NOT NULL columns; optional here because the service
+  // generates a code and defaults unit/unitSize when they are omitted.
+  @IsOptional()
+  @IsString()
+  code?: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  unitSize?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  unitCost?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  stockQuantity?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  maxStockLevel?: number;
+
+  @IsOptional()
+  @IsString()
+  storageTemperature?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+
   @IsOptional()
   @IsString()
   catalogNumber?: string;
