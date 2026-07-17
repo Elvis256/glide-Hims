@@ -24,6 +24,7 @@ import {
   Download,
 } from 'lucide-react';
 import { labService, type LabSample, type LabResult } from '../../services';
+import { getApiErrorMessage } from '../../services/api';
 import type { EnterResultDto } from '../../services/lab';
 import { useFacilityId } from '../../lib/facility';
 import { useAuthStore } from '../../store/auth';
@@ -258,8 +259,12 @@ export default function ResultsEntryPage() {
         toast.success('Results sent to attending physician');
       }
     },
-    onError: () => {
-      toast.error('Failed to send results to doctor');
+    onError: (err: any) => {
+      // Surface the real backend reason. The most common one is the two-person
+      // rule: the technician who ENTERED a result cannot also validate it — a
+      // different user must. Without this the pharmacist/tech saw only a bare
+      // console 400 and couldn't tell why "Send to Doctor" did nothing.
+      toast.error(getApiErrorMessage(err, 'Failed to send results to doctor'));
     },
   });
 
@@ -281,8 +286,8 @@ export default function ResultsEntryPage() {
       setRejectNotes('');
       toast.success('Sample rejected successfully');
     },
-    onError: () => {
-      toast.error('Failed to reject sample');
+    onError: (err: any) => {
+      toast.error(getApiErrorMessage(err, 'Failed to reject sample'));
     },
   });
   const completeMutation = useMutation({
