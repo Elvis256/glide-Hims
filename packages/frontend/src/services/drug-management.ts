@@ -157,6 +157,13 @@ export interface DrugInteraction {
   updatedAt: string;
 }
 
+/** Interaction row as returned by the management list endpoint, with each
+ *  drug's name resolved from its classification for display. */
+export interface DrugInteractionWithNames extends DrugInteraction {
+  drugAName: string;
+  drugBName: string;
+}
+
 export interface CreateDrugInteractionDto {
   drugAId: string;
   drugBId: string;
@@ -227,6 +234,9 @@ export const drugManagementService = {
     update: (id: string, data: UpdateDrugClassificationDto) =>
       api.put<DrugClassification>(`/drug-management/classifications/${id}`, data),
 
+    remove: (id: string) =>
+      api.delete<{ success: boolean }>(`/drug-management/classifications/${id}`),
+
     search: (q: string) =>
       api.get<DrugClassification[]>('/drug-management/classifications/search', { params: { q } }),
 
@@ -251,6 +261,9 @@ export const drugManagementService = {
     create: (data: CreateDrugInteractionDto) =>
       api.post<DrugInteraction>('/drug-management/interactions', data),
 
+    list: (params?: { severity?: string; search?: string }) =>
+      api.get<DrugInteractionWithNames[]>('/drug-management/interactions', { params }),
+
     getForDrug: (drugId: string) =>
       api.get<DrugInteraction[]>(`/drug-management/interactions/drug/${drugId}`),
 
@@ -262,6 +275,9 @@ export const drugManagementService = {
 
     update: (id: string, data: UpdateDrugInteractionDto) =>
       api.put<DrugInteraction>(`/drug-management/interactions/${id}`, data),
+
+    remove: (id: string) =>
+      api.delete<{ success: boolean }>(`/drug-management/interactions/${id}`),
   },
 
   // Allergy Classes
@@ -271,6 +287,12 @@ export const drugManagementService = {
 
     list: () =>
       api.get<DrugAllergyClass[]>('/drug-management/allergy-classes'),
+
+    update: (id: string, data: CreateAllergyClassDto) =>
+      api.put<DrugAllergyClass>(`/drug-management/allergy-classes/${id}`, data),
+
+    remove: (id: string) =>
+      api.delete<{ success: boolean }>(`/drug-management/allergy-classes/${id}`),
 
     checkRisk: (data: CheckAllergyRiskDto) =>
       api.post('/drug-management/allergy-check', data),

@@ -52,6 +52,15 @@ export class DrugManagementService {
     return this.classificationRepo.save(classification);
   }
 
+  async deleteClassification(id: string, tenantId?: string): Promise<{ success: true }> {
+    const classification = await this.classificationRepo.findOne({
+      where: { id, tenantId: requireTenantId(tenantId) },
+    });
+    if (!classification) throw new NotFoundException('Classification not found');
+    await this.classificationRepo.softRemove(classification);
+    return { success: true };
+  }
+
   async getClassification(itemId: string, tenantId?: string): Promise<DrugClassification | null> {
     const where: any = { itemId };
     where.tenantId = requireTenantId(tenantId);
@@ -283,6 +292,64 @@ export class DrugManagementService {
     });
   }
 
+  /**
+   * List every interaction for the management screen, with each drug's human
+   * name resolved from its classification. drugAId/drugBId are drug
+   * classification ids (the same ids the drug-database sync and the search
+   * picker use), so the UI can show "Warfarin ⇄ Aspirin" instead of two UUIDs.
+   */
+  async listInteractions(
+    filters: { severity?: string; search?: string },
+    tenantId?: string,
+  ): Promise<Array<DrugInteraction & { drugAName: string; drugBName: string }>> {
+    const tid = requireTenantId(tenantId);
+    const qb = this.interactionRepo
+      .createQueryBuilder('di')
+      .where('di.tenant_id = :tid', { tid });
+    if (filters.severity && filters.severity !== 'all') {
+      qb.andWhere('LOWER(di.severity) = LOWER(:sev)', { sev: filters.severity });
+    }
+    const interactions = await qb.orderBy('di.created_at', 'DESC').getMany();
+
+    // Resolve names in one round-trip.
+    const ids = Array.from(
+      new Set(interactions.flatMap((i) => [i.drugAId, i.drugBId])),
+    );
+    const nameById = new Map<string, string>();
+    if (ids.length) {
+      const classes = await this.classificationRepo.find({
+        where: { id: In(ids), tenantId: tid },
+      });
+      for (const c of classes) {
+        nameById.set(c.id, c.genericName || c.brandName || 'Unknown drug');
+      }
+    }
+
+    const enriched = interactions.map((i) => ({
+      ...i,
+      drugAName: nameById.get(i.drugAId) || 'Unknown drug',
+      drugBName: nameById.get(i.drugBId) || 'Unknown drug',
+    }));
+
+    const term = (filters.search || '').trim().toLowerCase();
+    if (!term) return enriched;
+    return enriched.filter(
+      (i) =>
+        i.drugAName.toLowerCase().includes(term) ||
+        i.drugBName.toLowerCase().includes(term) ||
+        (i.description || '').toLowerCase().includes(term),
+    );
+  }
+
+  async deleteInteraction(id: string, tenantId?: string): Promise<{ success: true }> {
+    const interaction = await this.interactionRepo.findOne({
+      where: { id, tenantId: requireTenantId(tenantId) },
+    });
+    if (!interaction) throw new NotFoundException('Interaction not found');
+    await this.interactionRepo.softRemove(interaction);
+    return { success: true };
+  }
+
   // ==================== ALLERGY CLASSES ====================
 
   async createAllergyClass(
@@ -298,6 +365,28 @@ export class DrugManagementService {
     const where: any = {};
     where.tenantId = requireTenantId(tenantId);
     return this.allergyClassRepo.find({ where, order: { className: 'ASC' } });
+  }
+
+  async updateAllergyClass(
+    id: string,
+    data: Partial<DrugAllergyClass>,
+    tenantId?: string,
+  ): Promise<DrugAllergyClass> {
+    const allergyClass = await this.allergyClassRepo.findOne({
+      where: { id, tenantId: requireTenantId(tenantId) },
+    });
+    if (!allergyClass) throw new NotFoundException('Allergy class not found');
+    Object.assign(allergyClass, data);
+    return this.allergyClassRepo.save(allergyClass);
+  }
+
+  async deleteAllergyClass(id: string, tenantId?: string): Promise<{ success: true }> {
+    const allergyClass = await this.allergyClassRepo.findOne({
+      where: { id, tenantId: requireTenantId(tenantId) },
+    });
+    if (!allergyClass) throw new NotFoundException('Allergy class not found');
+    await this.allergyClassRepo.softRemove(allergyClass);
+    return { success: true };
   }
 
   async checkAllergyRisk(

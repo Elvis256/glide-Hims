@@ -1,6 +1,13 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import api from '../../services/api';
+import { toast } from 'sonner';
+import {
+  drugManagementService,
+  type DrugAllergyClass,
+  type CreateAllergyClassDto,
+} from '../../services/drug-management';
+import { getApiErrorMessage } from '../../services/api';
+import { confirmDialog } from '../../components/ConfirmDialog';
 import {
   AlertCircle,
   Search,
@@ -8,99 +15,132 @@ import {
   Edit2,
   Trash2,
   Loader2,
-  Pill,
   Shield,
   X,
-  Check,
   Info,
 } from 'lucide-react';
 
-interface AllergyClass {
-  id: string;
-  name: string;
+interface FormState {
+  id?: string;
+  className: string;
   description: string;
-  commonAllergens: string[];
-  crossReactiveDrugs: string[];
-  symptoms: string[];
-  severity: 'MILD' | 'MODERATE' | 'SEVERE' | 'LIFE_THREATENING';
-  isActive: boolean;
-  createdAt: string;
+  relatedDrugs: string; // comma-separated in the form, split on save
+  crossReactiveClasses: string;
 }
 
-const severities = ['All', 'MILD', 'MODERATE', 'SEVERE', 'LIFE_THREATENING'];
+const EMPTY_FORM: FormState = {
+  className: '',
+  description: '',
+  relatedDrugs: '',
+  crossReactiveClasses: '',
+};
+
+const toList = (s: string): string[] =>
+  s
+    .split(',')
+    .map((x) => x.trim())
+    .filter(Boolean);
 
 export default function AllergyClassesPage() {
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedSeverity, setSelectedSeverity] = useState('All');
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [editingClass, setEditingClass] = useState<AllergyClass | null>(null);
-  const [viewingClass, setViewingClass] = useState<AllergyClass | null>(null);
+  const [showModal, setShowModal] = useState(false);
+  const [viewing, setViewing] = useState<DrugAllergyClass | null>(null);
+  const [form, setForm] = useState<FormState>(EMPTY_FORM);
 
-  const { data: allergyClasses, isLoading } = useQuery({
+  const {
+    data: allergyClasses,
+    isLoading,
+    isError,
+    error,
+  } = useQuery({
     queryKey: ['allergy-classes'],
     queryFn: async () => {
-      const response = await api.get<AllergyClass[]>('/drug-management/allergy-classes');
-      return response.data;
+      const res = await drugManagementService.allergyClasses.list();
+      return res.data as DrugAllergyClass[];
     },
   });
 
   const saveMutation = useMutation({
-    mutationFn: async (data: Partial<AllergyClass>) => {
-      await api.post('/drug-management/allergy-classes', data);
+    mutationFn: async (data: FormState) => {
+      const payload: CreateAllergyClassDto = {
+        className: data.className.trim(),
+        description: data.description.trim() || undefined,
+        relatedDrugs: toList(data.relatedDrugs),
+        crossReactiveClasses: toList(data.crossReactiveClasses),
+      };
+      if (data.id) {
+        await drugManagementService.allergyClasses.update(data.id, payload);
+      } else {
+        await drugManagementService.allergyClasses.create(payload);
+      }
     },
-    onSuccess: () => {
+    onSuccess: (_r, data) => {
       queryClient.invalidateQueries({ queryKey: ['allergy-classes'] });
-      setShowAddModal(false);
-      setEditingClass(null);
+      toast.success(data.id ? 'Allergy class updated' : 'Allergy class added');
+      setShowModal(false);
+      setForm(EMPTY_FORM);
     },
+    onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to save allergy class')),
   });
 
   const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      await api.delete(`/drug-management/allergy-classes/${id}`);
-    },
+    mutationFn: (id: string) => drugManagementService.allergyClasses.remove(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['allergy-classes'] });
+      toast.success('Allergy class deleted');
     },
+    onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to delete allergy class')),
   });
 
-  const items = allergyClasses || [];
-
-  // NOTE: fantasy shape — drug_allergy_classes has className/description/
-  // relatedDrugs/crossReactiveClasses only (no name/commonAllergens/severity/
-  // isActive), and no delete route. Needs a rewrite (see 05-pharmacy.md).
-  // Guard the reads so it degrades to a blank list instead of white-screening.
+  const items = allergyClasses ?? [];
   const q = searchTerm.toLowerCase();
-  const filteredClasses = items.filter((cls) => {
-    const matchesSearch =
+  const filtered = items.filter((cls) => {
+    return (
       !q ||
-      cls.name?.toLowerCase().includes(q) ||
+      cls.className?.toLowerCase().includes(q) ||
       cls.description?.toLowerCase().includes(q) ||
-      cls.commonAllergens?.some((a) => a.toLowerCase().includes(q));
-    const matchesSeverity = selectedSeverity === 'All' || cls.severity === selectedSeverity;
-    return matchesSearch && matchesSeverity;
+      cls.relatedDrugs?.some((a) => a.toLowerCase().includes(q))
+    );
   });
 
-  const getSeverityColor = (severity: string) => {
-    switch (severity) {
-      case 'MILD': return 'bg-blue-100 text-blue-700';
-      case 'MODERATE': return 'bg-yellow-100 text-yellow-700';
-      case 'SEVERE': return 'bg-orange-100 text-orange-700';
-      case 'LIFE_THREATENING': return 'bg-red-100 text-red-700';
-      default: return 'bg-gray-100 text-gray-700';
-    }
+  const openAdd = () => {
+    setForm(EMPTY_FORM);
+    setShowModal(true);
   };
 
-  const getSeverityBorder = (severity: string) => {
-    switch (severity) {
-      case 'MILD': return 'border-l-blue-500';
-      case 'MODERATE': return 'border-l-yellow-500';
-      case 'SEVERE': return 'border-l-orange-500';
-      case 'LIFE_THREATENING': return 'border-l-red-500';
-      default: return 'border-l-gray-500';
-    }
+  const openEdit = (cls: DrugAllergyClass) => {
+    setForm({
+      id: cls.id,
+      className: cls.className,
+      description: cls.description || '',
+      relatedDrugs: (cls.relatedDrugs || []).join(', '),
+      crossReactiveClasses: (cls.crossReactiveClasses || []).join(', '),
+    });
+    setViewing(null);
+    setShowModal(true);
   };
+
+  const handleDelete = async (cls: DrugAllergyClass) => {
+    const ok = await confirmDialog({
+      title: 'Delete allergy class',
+      message: `Remove the "${cls.className}" allergy class? It will no longer be used for cross-reactivity checking.`,
+      confirmLabel: 'Delete',
+      variant: 'danger',
+    });
+    if (ok) deleteMutation.mutate(cls.id);
+  };
+
+  const submit = () => {
+    if (!form.className.trim()) {
+      toast.error('Class name is required');
+      return;
+    }
+    saveMutation.mutate(form);
+  };
+
+  const totalRelated = items.reduce((n, c) => n + (c.relatedDrugs?.length || 0), 0);
+  const totalCross = items.reduce((n, c) => n + (c.crossReactiveClasses?.length || 0), 0);
 
   if (isLoading) {
     return (
@@ -119,7 +159,7 @@ export default function AllergyClassesPage() {
           <p className="text-gray-600">Manage drug allergy classes for cross-reactivity checking</p>
         </div>
         <button
-          onClick={() => setShowAddModal(true)}
+          onClick={openAdd}
           className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
         >
           <Plus className="w-4 h-4" />
@@ -127,8 +167,14 @@ export default function AllergyClassesPage() {
         </button>
       </div>
 
+      {isError && (
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-4 text-sm">
+          {getApiErrorMessage(error, 'Could not load allergy classes')}
+        </div>
+      )}
+
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-white p-4 rounded-xl border shadow-sm">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-purple-100 rounded-lg">
@@ -142,40 +188,23 @@ export default function AllergyClassesPage() {
         </div>
         <div className="bg-white p-4 rounded-xl border shadow-sm">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-red-100 rounded-lg">
-              <AlertCircle className="w-5 h-5 text-red-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-600">Life Threatening</p>
-              <p className="text-xl font-bold text-red-600">
-                {items.filter(c => c.severity === 'LIFE_THREATENING').length}
-              </p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white p-4 rounded-xl border shadow-sm">
-          <div className="flex items-center gap-3">
             <div className="p-2 bg-orange-100 rounded-lg">
               <AlertCircle className="w-5 h-5 text-orange-600" />
             </div>
             <div>
-              <p className="text-sm text-gray-600">Severe</p>
-              <p className="text-xl font-bold text-orange-600">
-                {items.filter(c => c.severity === 'SEVERE').length}
-              </p>
+              <p className="text-sm text-gray-600">Related Drugs Mapped</p>
+              <p className="text-xl font-bold text-orange-600">{totalRelated}</p>
             </div>
           </div>
         </div>
         <div className="bg-white p-4 rounded-xl border shadow-sm">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-green-100 rounded-lg">
-              <Check className="w-5 h-5 text-green-600" />
+            <div className="p-2 bg-blue-100 rounded-lg">
+              <Info className="w-5 h-5 text-blue-600" />
             </div>
             <div>
-              <p className="text-sm text-gray-600">Active</p>
-              <p className="text-xl font-bold text-green-600">
-                {items.filter(c => c.isActive).length}
-              </p>
+              <p className="text-sm text-gray-600">Cross-Reactive Links</p>
+              <p className="text-xl font-bold text-blue-600">{totalCross}</p>
             </div>
           </div>
         </div>
@@ -183,47 +212,22 @@ export default function AllergyClassesPage() {
 
       {/* Filters */}
       <div className="bg-white p-4 rounded-xl border shadow-sm">
-        <div className="flex flex-wrap items-center gap-4">
-          <div className="relative flex-1 min-w-[200px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search by name or allergen..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-
-          <div className="flex items-center gap-2">
-            {severities.map((severity) => (
-              <button
-                key={severity}
-                onClick={() => setSelectedSeverity(severity)}
-                className={`px-3 py-1 rounded-full text-sm ${
-                  selectedSeverity === severity
-                    ? severity === 'LIFE_THREATENING' ? 'bg-red-600 text-white' :
-                      severity === 'SEVERE' ? 'bg-orange-600 text-white' :
-                      severity === 'MODERATE' ? 'bg-yellow-600 text-white' :
-                      severity === 'MILD' ? 'bg-blue-600 text-white' :
-                      'bg-gray-800 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                {severity.replace('_', ' ')}
-              </button>
-            ))}
-          </div>
+        <div className="relative flex-1 min-w-[200px]">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search by class name or related drug…"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+          />
         </div>
       </div>
 
-      {/* Allergy Classes Grid */}
+      {/* Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {filteredClasses.map((cls) => (
-          <div 
-            key={cls.id} 
-            className={`bg-white rounded-xl border-l-4 shadow-sm overflow-hidden ${getSeverityBorder(cls.severity)}`}
-          >
+        {filtered.map((cls) => (
+          <div key={cls.id} className="bg-white rounded-xl border-l-4 border-l-purple-500 shadow-sm overflow-hidden">
             <div className="p-4">
               <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center gap-3">
@@ -231,40 +235,43 @@ export default function AllergyClassesPage() {
                     <AlertCircle className="w-5 h-5 text-red-600" />
                   </div>
                   <div>
-                    <h3 className="font-semibold text-gray-900">{cls.name}</h3>
-                    <p className="text-sm text-gray-500">{cls.description}</p>
+                    <h3 className="font-semibold text-gray-900">{cls.className}</h3>
+                    {cls.description && <p className="text-sm text-gray-500">{cls.description}</p>}
                   </div>
                 </div>
-                <span className={`px-2 py-1 rounded-full text-xs font-medium ${getSeverityColor(cls.severity)}`}>
-                  {cls.severity.replace('_', ' ')}
-                </span>
               </div>
 
               <div className="space-y-3">
                 <div>
-                  <p className="text-xs font-medium text-gray-500 mb-1">Common Allergens</p>
+                  <p className="text-xs font-medium text-gray-500 mb-1">Related Drugs</p>
                   <div className="flex flex-wrap gap-1">
-                    {(cls.commonAllergens || []).slice(0, 4).map((allergen, idx) => (
+                    {(cls.relatedDrugs || []).slice(0, 4).map((drug, idx) => (
                       <span key={idx} className="px-2 py-0.5 bg-gray-100 text-gray-700 rounded text-xs">
-                        {allergen}
+                        {drug}
                       </span>
                     ))}
-                    {(cls.commonAllergens || []).length > 4 && (
+                    {(cls.relatedDrugs || []).length > 4 && (
                       <span className="px-2 py-0.5 bg-gray-100 text-gray-500 rounded text-xs">
-                        +{(cls.commonAllergens || []).length - 4} more
+                        +{(cls.relatedDrugs || []).length - 4} more
                       </span>
+                    )}
+                    {(cls.relatedDrugs || []).length === 0 && (
+                      <span className="text-xs text-gray-400">None</span>
                     )}
                   </div>
                 </div>
 
                 <div>
-                  <p className="text-xs font-medium text-gray-500 mb-1">Cross-Reactive Drugs</p>
+                  <p className="text-xs font-medium text-gray-500 mb-1">Cross-Reactive Classes</p>
                   <div className="flex flex-wrap gap-1">
-                    {(cls.crossReactiveDrugs || []).slice(0, 3).map((drug, idx) => (
+                    {(cls.crossReactiveClasses || []).slice(0, 3).map((c, idx) => (
                       <span key={idx} className="px-2 py-0.5 bg-orange-50 text-orange-700 rounded text-xs">
-                        {drug}
+                        {c}
                       </span>
                     ))}
+                    {(cls.crossReactiveClasses || []).length === 0 && (
+                      <span className="text-xs text-gray-400">None</span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -272,22 +279,23 @@ export default function AllergyClassesPage() {
               <div className="flex items-center justify-between mt-4 pt-3 border-t">
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => setViewingClass(cls)}
+                    onClick={() => setViewing(cls)}
                     className="p-1 hover:bg-gray-100 rounded text-gray-500"
                     title="View details"
                   >
                     <Info className="w-4 h-4" />
                   </button>
                   <button
-                    onClick={() => setEditingClass(cls)}
+                    onClick={() => openEdit(cls)}
                     className="p-1 hover:bg-gray-100 rounded text-gray-500"
                     title="Edit"
                   >
                     <Edit2 className="w-4 h-4" />
                   </button>
                   <button
-                    onClick={() => deleteMutation.mutate(cls.id)}
-                    className="p-1 hover:bg-gray-100 rounded text-red-500"
+                    onClick={() => handleDelete(cls)}
+                    disabled={deleteMutation.isPending}
+                    className="p-1 hover:bg-gray-100 rounded text-red-500 disabled:opacity-50"
                     title="Delete"
                   >
                     <Trash2 className="w-4 h-4" />
@@ -302,94 +310,72 @@ export default function AllergyClassesPage() {
         ))}
       </div>
 
-      {filteredClasses.length === 0 && (
+      {filtered.length === 0 && (
         <div className="bg-white rounded-xl border shadow-sm p-12 text-center">
           <AlertCircle className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-          <p className="text-gray-500">No allergy classes found</p>
+          <p className="text-gray-500">
+            {items.length === 0 ? 'No allergy classes recorded yet. Add one to begin.' : 'No allergy classes match your search'}
+          </p>
         </div>
       )}
 
       {/* View Detail Modal */}
-      {viewingClass && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      {viewing && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold text-gray-900">{viewingClass.name}</h2>
-              <button
-                onClick={() => setViewingClass(null)}
-                className="p-1 hover:bg-gray-100 rounded"
-              >
+              <h2 className="text-xl font-bold text-gray-900">{viewing.className}</h2>
+              <button onClick={() => setViewing(null)} className="p-1 hover:bg-gray-100 rounded">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <div className="space-y-4">
-              <div>
-                <p className="text-sm font-medium text-gray-700">Description</p>
-                <p className="text-gray-600">{viewingClass.description}</p>
-              </div>
-
-              <div>
-                <p className="text-sm font-medium text-gray-700 mb-2">Common Allergens</p>
-                <div className="flex flex-wrap gap-2">
-                  {viewingClass.commonAllergens.map((allergen, idx) => (
-                    <span key={idx} className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-sm">
-                      {allergen}
-                    </span>
-                  ))}
+              {viewing.description && (
+                <div>
+                  <p className="text-sm font-medium text-gray-700">Description</p>
+                  <p className="text-gray-600">{viewing.description}</p>
                 </div>
-              </div>
+              )}
 
               <div>
-                <p className="text-sm font-medium text-gray-700 mb-2">Cross-Reactive Drugs</p>
+                <p className="text-sm font-medium text-gray-700 mb-2">Related Drugs</p>
                 <div className="flex flex-wrap gap-2">
-                  {viewingClass.crossReactiveDrugs.map((drug, idx) => (
-                    <span key={idx} className="px-2 py-1 bg-orange-100 text-orange-700 rounded text-sm">
+                  {(viewing.relatedDrugs || []).map((drug, idx) => (
+                    <span key={idx} className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-sm">
                       {drug}
                     </span>
                   ))}
+                  {(viewing.relatedDrugs || []).length === 0 && (
+                    <span className="text-sm text-gray-400">None</span>
+                  )}
                 </div>
               </div>
 
               <div>
-                <p className="text-sm font-medium text-gray-700 mb-2">Symptoms</p>
+                <p className="text-sm font-medium text-gray-700 mb-2">Cross-Reactive Classes</p>
                 <div className="flex flex-wrap gap-2">
-                  {viewingClass.symptoms.map((symptom, idx) => (
-                    <span key={idx} className="px-2 py-1 bg-red-50 text-red-700 rounded text-sm">
-                      {symptom}
+                  {(viewing.crossReactiveClasses || []).map((c, idx) => (
+                    <span key={idx} className="px-2 py-1 bg-orange-100 text-orange-700 rounded text-sm">
+                      {c}
                     </span>
                   ))}
-                </div>
-              </div>
-
-              <div className="flex items-center gap-4">
-                <div>
-                  <p className="text-sm font-medium text-gray-700">Severity</p>
-                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${getSeverityColor(viewingClass.severity)}`}>
-                    {viewingClass.severity.replace('_', ' ')}
-                  </span>
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-gray-700">Status</p>
-                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${viewingClass.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>
-                    {viewingClass.isActive ? 'Active' : 'Inactive'}
-                  </span>
+                  {(viewing.crossReactiveClasses || []).length === 0 && (
+                    <span className="text-sm text-gray-400">None</span>
+                  )}
                 </div>
               </div>
             </div>
 
             <div className="flex items-center justify-end gap-3 mt-6 pt-4 border-t">
               <button
-                onClick={() => setViewingClass(null)}
+                onClick={() => setViewing(null)}
                 className="px-4 py-2 border rounded-lg hover:bg-gray-50"
               >
                 Close
               </button>
               <button
-                onClick={() => {
-                  setEditingClass(viewingClass);
-                  setViewingClass(null);
-                }}
+                onClick={() => openEdit(viewing)}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
               >
                 Edit
@@ -400,17 +386,17 @@ export default function AllergyClassesPage() {
       )}
 
       {/* Add/Edit Modal */}
-      {(showAddModal || editingClass) && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      {showModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-bold text-gray-900">
-                {editingClass ? 'Edit Allergy Class' : 'Add Allergy Class'}
+                {form.id ? 'Edit Allergy Class' : 'Add Allergy Class'}
               </h2>
               <button
                 onClick={() => {
-                  setShowAddModal(false);
-                  setEditingClass(null);
+                  setShowModal(false);
+                  setForm(EMPTY_FORM);
                 }}
                 className="p-1 hover:bg-gray-100 rounded"
               >
@@ -420,11 +406,12 @@ export default function AllergyClassesPage() {
 
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Class Name *</label>
                 <input
                   type="text"
-                  defaultValue={editingClass?.name}
-                  placeholder="e.g., Penicillins"
+                  value={form.className}
+                  onChange={(e) => setForm((f) => ({ ...f, className: e.target.value }))}
+                  placeholder="e.g. Penicillins"
                   className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -433,82 +420,61 @@ export default function AllergyClassesPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
                 <textarea
                   rows={2}
-                  defaultValue={editingClass?.description}
+                  value={form.description}
+                  onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
                   placeholder="Brief description of this allergy class"
                   className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Severity</label>
-                <select 
-                  defaultValue={editingClass?.severity}
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Related Drugs
+                </label>
+                <textarea
+                  rows={2}
+                  value={form.relatedDrugs}
+                  onChange={(e) => setForm((f) => ({ ...f, relatedDrugs: e.target.value }))}
+                  placeholder="Comma-separated (e.g. Penicillin, Amoxicillin, Ampicillin)"
                   className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="MILD">Mild</option>
-                  <option value="MODERATE">Moderate</option>
-                  <option value="SEVERE">Severe</option>
-                  <option value="LIFE_THREATENING">Life Threatening</option>
-                </select>
+                />
+                <p className="text-xs text-gray-400 mt-1">Separate each drug with a comma.</p>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Common Allergens</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Cross-Reactive Classes
+                </label>
                 <textarea
                   rows={2}
-                  defaultValue={editingClass?.commonAllergens.join(', ')}
-                  placeholder="Comma-separated list (e.g., Penicillin, Amoxicillin)"
+                  value={form.crossReactiveClasses}
+                  onChange={(e) => setForm((f) => ({ ...f, crossReactiveClasses: e.target.value }))}
+                  placeholder="Comma-separated class names (e.g. Cephalosporins)"
                   className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                 />
+                <p className="text-xs text-gray-400 mt-1">
+                  Classes a patient allergic to this one may also react to.
+                </p>
               </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Cross-Reactive Drugs</label>
-                <textarea
-                  rows={2}
-                  defaultValue={editingClass?.crossReactiveDrugs.join(', ')}
-                  placeholder="Comma-separated list"
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Symptoms</label>
-                <textarea
-                  rows={2}
-                  defaultValue={editingClass?.symptoms.join(', ')}
-                  placeholder="Comma-separated list"
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  defaultChecked={editingClass?.isActive ?? true}
-                  className="rounded"
-                />
-                <span className="text-sm text-gray-700">Active</span>
-              </label>
             </div>
 
             <div className="flex items-center justify-end gap-3 mt-6 pt-4 border-t">
               <button
                 onClick={() => {
-                  setShowAddModal(false);
-                  setEditingClass(null);
+                  setShowModal(false);
+                  setForm(EMPTY_FORM);
                 }}
                 className="px-4 py-2 border rounded-lg hover:bg-gray-50"
               >
                 Cancel
               </button>
               <button
-                onClick={() => saveMutation.mutate({})}
-                disabled={saveMutation.isPending}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                onClick={submit}
+                disabled={saveMutation.isPending || !form.className.trim()}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
               >
                 {saveMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-                {editingClass ? 'Save Changes' : 'Add Allergy Class'}
+                {form.id ? 'Save Changes' : 'Add Allergy Class'}
               </button>
             </div>
           </div>
