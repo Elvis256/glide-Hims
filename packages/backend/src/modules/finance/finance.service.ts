@@ -1660,7 +1660,9 @@ export class FinanceService {
 
     const page = options.page || 1;
     const limit = options.limit || 50;
-    qb.orderBy('je.journal_date', 'DESC').addOrderBy('jl.line_number', 'ASC');
+    // skip/take + joins requires mapped property names in orderBy, not raw
+    // columns — TypeORM crashes on raw names in the pagination subquery.
+    qb.orderBy('je.journalDate', 'DESC').addOrderBy('jl.lineNumber', 'ASC');
     qb.skip((page - 1) * limit).take(limit);
 
     const [data, total] = await qb.getManyAndCount();

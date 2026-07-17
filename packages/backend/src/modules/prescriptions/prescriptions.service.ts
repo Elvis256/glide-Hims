@@ -1685,8 +1685,11 @@ export class PrescriptionsService {
     }
 
     const total = await qb.getCount();
+    // skip/take pagination requires the orderBy key to be the mapped entity
+    // property (createdAt), not the raw column — TypeORM crashes on raw names
+    // when it builds the pagination subquery ("reading 'databaseName'").
     const data = await qb
-      .orderBy('log.created_at', 'DESC')
+      .orderBy('log.createdAt', 'DESC')
       .skip((page - 1) * limit)
       .take(limit)
       .getMany();
