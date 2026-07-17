@@ -70,8 +70,38 @@ export class LabSuppliesService {
   // ==================== REAGENTS ====================
 
   async createReagent(data: Partial<LabReagent>, tenantId?: string): Promise<LabReagent> {
-    const reagent = this.reagentRepo.create({ ...data, tenantId: requireTenantId(tenantId) });
+    const tid = requireTenantId(tenantId);
+    // code, unit and unitSize are NOT NULL on lab_reagents but were not on the
+    // create DTO, so every create INSERT failed. Generate/default them when the
+    // caller doesn't supply them.
+    const code = data.code?.trim() || (await this.generateReagentCode(data.name, tid));
+    const reagent = this.reagentRepo.create({
+      ...data,
+      code,
+      unit: data.unit?.trim() || 'unit',
+      unitSize: data.unitSize != null ? Number(data.unitSize) : 1,
+      tenantId: tid,
+    });
     return this.reagentRepo.save(reagent);
+  }
+
+  /** Derive a unique reagent code from the name, e.g. "Glucose Reagent" →
+   *  RG-GLU-0001, retrying the sequence until it is unique for the tenant. */
+  private async generateReagentCode(name: string | undefined, tenantId: string): Promise<string> {
+    const prefix =
+      'RG-' +
+      (name || 'REAGENT')
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, '')
+        .slice(0, 3)
+        .padEnd(3, 'X');
+    for (let n = 1; n <= 9999; n++) {
+      const candidate = `${prefix}-${String(n).padStart(4, '0')}`;
+      const exists = await this.reagentRepo.findOne({ where: { code: candidate, tenantId } });
+      if (!exists) return candidate;
+    }
+    // Extremely unlikely fallback — keep it unique with a timestamp suffix.
+    return `${prefix}-${Date.now()}`;
   }
 
   async updateReagent(
@@ -222,15 +252,26 @@ export class LabSuppliesService {
       });
       if (!reagent) throw new NotFoundException('Reagent not found');
 
+      // The receive DTO carries `quantity` and `supplier`; the ReagentLot
+      // columns are initialQuantity/currentQuantity (both NOT NULL) and
+      // supplierName. Map them, else the INSERT fails on a null quantity.
+      const qty = Number((data as any).quantity ?? data.initialQuantity ?? 0);
+      if (!(qty > 0)) {
+        throw new BadRequestException('Quantity received must be greater than 0');
+      }
       const lot = manager.getRepository(ReagentLot).create({
         ...data,
-        currentQuantity: data.initialQuantity,
+        supplierName: (data as any).supplier ?? data.supplierName,
+        initialQuantity: qty,
+        currentQuantity: qty,
+        // received_date is NOT NULL — default to today when the caller omits it
+        receivedDate: data.receivedDate ?? (new Date().toISOString().split('T')[0] as any),
         tenantId: requireTenantId(tenantId),
       });
       const saved = await manager.save(lot);
 
       // Update reagent stock under lock
-      reagent.stockQuantity = Number(reagent.stockQuantity) + Number(data.initialQuantity);
+      reagent.stockQuantity = Number(reagent.stockQuantity) + qty;
       this.applyReagentStatus(reagent);
       await manager.save(reagent);
 
@@ -246,7 +287,7 @@ export class LabSuppliesService {
             lotId: saved.id,
             reagentId: reagent.id,
             reagentName: reagent.name,
-            initialQuantity: data.initialQuantity,
+            initialQuantity: qty,
             lotNumber: data.lotNumber,
             facilityId: data.facilityId,
           },
