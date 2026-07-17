@@ -1951,7 +1951,9 @@ export class PharmacyService {
       .leftJoinAndSelect('s.store', 'store')
       .where('s.tenant_id = :tenantId', { tenantId })
       .andWhere('s.status = :status', { status: SaleStatus.COMPLETED })
-      .orderBy('s.created_at', 'DESC')
+      // skip/take + joins requires the mapped property name in orderBy, not the
+      // raw column — TypeORM crashes on raw names in the pagination subquery.
+      .orderBy('s.createdAt', 'DESC')
       .skip(offset)
       .take(limit);
 
