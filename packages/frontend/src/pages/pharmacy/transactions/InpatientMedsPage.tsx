@@ -25,8 +25,10 @@ import {
   Timer,
   Loader2,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { usePermissions } from '../../../components/PermissionGate';
 import AccessDenied from '../../../components/AccessDenied';
+import { getApiErrorMessage } from '../../../services/api';
 import { pharmacyService } from '../../../services/pharmacy';
 import type { CreatePharmacySaleDto, CreateSaleItemDto, PharmacySale } from '../../../services/pharmacy';
 import { storesService } from '../../../services/stores';
@@ -84,18 +86,18 @@ interface WardStock {
   lastRestocked: string;
 }
 
+// Row shape of GET /prescriptions/controlled/register (controlled_substance_logs
+// with prescriptionItem/dispensedBy/witness relations joined).
 interface ControlledSubstanceLog {
   id: string;
   medication: string;
-  action: 'issued' | 'administered' | 'wasted' | 'returned';
+  drugSchedule: string;
   quantity: number;
   patientName?: string;
-  ward: string;
   performedBy: string;
   witnessedBy?: string;
   timestamp: string;
-  balanceBefore: number;
-  balanceAfter: number;
+  runningBalance: number;
 }
 
 
@@ -123,7 +125,9 @@ export default function InpatientMedsPage() {
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [showIssueModal, setShowIssueModal] = useState(false);
   const [issueWard, setIssueWard] = useState('');
-  const [issueItems, setIssueItems] = useState<{ medication: string; quantity: number }[]>([]);
+  // itemId → quantity to issue
+  const [issueItems, setIssueItems] = useState<Record<string, number>>({});
+  const [issueSearch, setIssueSearch] = useState('');
 
   // Fetch wards from IPD API
   const { data: wardsData } = useQuery({
@@ -154,6 +158,44 @@ export default function InpatientMedsPage() {
     queryFn: () => storesService.inventory.list({ location: selectedWard !== 'All Wards' ? selectedWard : undefined }),
   });
 
+  // Pharmacy store to issue from (a sale needs a real storeId)
+  const { data: storesList = [] } = useQuery({
+    queryKey: ['stores-for-issue'],
+    queryFn: () => storesService.stores.list(),
+    staleTime: 300000,
+  });
+  const issueStore = useMemo(
+    () => storesList.find((s) => s.type === 'pharmacy') || storesList.find((s) => s.type === 'main') || storesList[0],
+    [storesList],
+  );
+
+  // Controlled substances register — real dispensing log with running balances
+  const { data: controlledLogRaw = [], isLoading: isLoadingControlled, isError: controlledError } = useQuery({
+    queryKey: ['controlled-register'],
+    queryFn: async () => {
+      const api = (await import('../../../services/api')).default;
+      const res = await api.get('/prescriptions/controlled/register', { params: { limit: 200 } });
+      return asList(res.data) as any[];
+    },
+    enabled: activeTab === 'controlled',
+  });
+
+  const controlledLog: ControlledSubstanceLog[] = useMemo(
+    () =>
+      controlledLogRaw.map((log: any) => ({
+        id: log.id,
+        medication: log.prescriptionItem?.drugName || 'Unknown drug',
+        drugSchedule: (log.drugSchedule || '').replace(/_/g, ' ').toUpperCase(),
+        quantity: Number(log.quantityDispensed),
+        patientName: log.buyerName || log.dispensation?.patientName || undefined,
+        performedBy: log.dispensedBy?.fullName || 'Unknown',
+        witnessedBy: log.witness?.fullName || log.witnessName || undefined,
+        timestamp: log.createdAt,
+        runningBalance: Number(log.runningBalance),
+      })),
+    [controlledLogRaw],
+  );
+
   // Create inpatient sale (issue to ward) mutation
   const createIssueMutation = useMutation({
     mutationFn: (data: CreatePharmacySaleDto) => pharmacyService.sales.create(data),
@@ -161,9 +203,11 @@ export default function InpatientMedsPage() {
       queryClient.invalidateQueries({ queryKey: ['inpatient-sales'] });
       queryClient.invalidateQueries({ queryKey: ['ward-stock'] });
       setShowIssueModal(false);
-      setIssueItems([]);
+      setIssueItems({});
       setIssueWard('');
+      toast.success('Medications issued to ward');
     },
+    onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to issue medications to ward')),
   });
 
   // Transform inventory to ward stock
@@ -183,7 +227,6 @@ export default function InpatientMedsPage() {
   const patients: Patient[] = [];
   const medicationOrders: MedicationOrder[] = [];
   const scheduledDoses: ScheduledDose[] = [];
-  const controlledLog: ControlledSubstanceLog[] = [];
 
   const filteredPatients = useMemo(() => {
     let filtered = patients;
@@ -225,8 +268,7 @@ export default function InpatientMedsPage() {
     const pendingDoses = scheduledDoses.filter((d) => d.status === 'pending').length;
     const lowStockItems = wardStockData.filter((w) => w.currentStock <= w.minStock).length;
     const activeOrders = medicationOrders.filter((o) => o.status === 'active').length;
-    const controlledIssues = controlledLog.filter((c) => c.action === 'issued').length;
-    return { pendingDoses, lowStockItems, activeOrders, controlledIssues };
+    return { pendingDoses, lowStockItems, activeOrders };
   }, [wardStockData]);
 
   if (!hasPermission('pharmacy.read')) {
@@ -234,25 +276,39 @@ export default function InpatientMedsPage() {
   }
 
   const handleIssueToWard = () => {
-    if (!issueWard || issueItems.length === 0) return;
+    const inventory = asList(inventoryData) as InventoryItem[];
+    const chosen = Object.entries(issueItems).filter(([, qty]) => qty > 0);
+    if (!issueWard) {
+      toast.error('Select a ward to issue to');
+      return;
+    }
+    if (chosen.length === 0) {
+      toast.error('Set a quantity for at least one medication');
+      return;
+    }
+    if (!issueStore) {
+      toast.error('No pharmacy store is configured — set one up under Stores first');
+      return;
+    }
 
-    const saleItems: CreateSaleItemDto[] = issueItems.map((item, idx) => ({
-      itemId: `item-${idx}`,
-      itemCode: `item-${idx}`,
-      itemName: item.medication,
-      quantity: item.quantity,
-      unitPrice: 0,
-    }));
+    const saleItems: CreateSaleItemDto[] = chosen.map(([itemId, quantity]) => {
+      const item = inventory.find((i) => i.id === itemId);
+      return {
+        itemId,
+        itemCode: item?.code || item?.sku || itemId.slice(0, 8),
+        itemName: item?.name || 'Unknown item',
+        quantity,
+        unitPrice: 0,
+      };
+    });
 
-    const saleData: CreatePharmacySaleDto = {
-      storeId: 'default-store',
+    createIssueMutation.mutate({
+      storeId: issueStore.id,
       saleType: 'inpatient',
       customerName: issueWard,
       notes: `Ward stock issue to ${issueWard}`,
       items: saleItems,
-    };
-
-    createIssueMutation.mutate(saleData);
+    });
   };
 
   const isProcessing = createIssueMutation.isPending;
@@ -668,10 +724,19 @@ export default function InpatientMedsPage() {
               <p className="text-sm text-gray-600">All transactions require witness verification</p>
             </div>
             <div className="flex-1 overflow-y-auto">
-              {controlledLog.length === 0 ? (
+              {isLoadingControlled ? (
+                <div className="flex items-center justify-center h-full text-gray-400">
+                  <Loader2 className="w-8 h-8 animate-spin" />
+                </div>
+              ) : controlledError ? (
+                <div className="flex flex-col items-center justify-center h-full text-red-500">
+                  <AlertCircle className="w-12 h-12 mb-2" />
+                  <p>Could not load the controlled substances register</p>
+                </div>
+              ) : controlledLog.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-gray-400">
                   <Shield className="w-12 h-12 mb-2" />
-                  <p>No controlled substance logs</p>
+                  <p>No controlled substance dispenses recorded yet</p>
                 </div>
               ) : (
                 <table className="w-full">
@@ -679,45 +744,31 @@ export default function InpatientMedsPage() {
                     <tr>
                       <th className="text-left p-4">Timestamp</th>
                       <th className="text-left p-4">Medication</th>
-                      <th className="text-center p-4">Action</th>
-                      <th className="text-right p-4">Qty</th>
-                      <th className="text-left p-4">Patient</th>
-                      <th className="text-left p-4">Ward</th>
-                      <th className="text-left p-4">Performed By</th>
+                      <th className="text-center p-4">Schedule</th>
+                      <th className="text-right p-4">Qty Dispensed</th>
+                      <th className="text-left p-4">Patient / Buyer</th>
+                      <th className="text-left p-4">Dispensed By</th>
                       <th className="text-left p-4">Witnessed By</th>
-                      <th className="text-right p-4">Balance</th>
+                      <th className="text-right p-4">Running Balance</th>
                     </tr>
                   </thead>
                   <tbody>
                     {controlledLog.map((log) => (
                       <tr key={log.id} className="border-b hover:bg-gray-50">
-                        <td className="p-4 text-gray-600 text-sm">{log.timestamp}</td>
+                        <td className="p-4 text-gray-600 text-sm">{new Date(log.timestamp).toLocaleString()}</td>
                         <td className="p-4 font-medium">{log.medication}</td>
                         <td className="p-4 text-center">
-                          <span
-                            className={`px-2 py-1 text-xs rounded-full ${
-                              log.action === 'issued'
-                                ? 'bg-blue-100 text-blue-800'
-                                : log.action === 'administered'
-                                ? 'bg-green-100 text-green-800'
-                                : log.action === 'wasted'
-                                ? 'bg-red-100 text-red-800'
-                                : 'bg-gray-100 text-gray-800'
-                            }`}
-                          >
-                            {log.action}
+                          <span className="px-2 py-1 text-xs rounded-full bg-purple-100 text-purple-800">
+                            {log.drugSchedule || '—'}
                           </span>
                         </td>
                         <td className="p-4 text-right font-semibold">{log.quantity}</td>
                         <td className="p-4">{log.patientName || '-'}</td>
-                        <td className="p-4">{log.ward}</td>
                         <td className="p-4 text-sm">{log.performedBy}</td>
-                        <td className="p-4 text-sm">{log.witnessedBy || '-'}</td>
-                        <td className="p-4 text-right">
-                          <span className="text-gray-500">{log.balanceBefore}</span>
-                          <ArrowRight className="w-3 h-3 inline mx-1" />
-                          <span className="font-semibold">{log.balanceAfter}</span>
+                        <td className="p-4 text-sm">
+                          {log.witnessedBy || <span className="text-amber-600 text-xs">No witness</span>}
                         </td>
+                        <td className="p-4 text-right font-semibold">{log.runningBalance}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -758,6 +809,13 @@ export default function InpatientMedsPage() {
 
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">Medications to Issue</label>
+                <input
+                  type="text"
+                  value={issueSearch}
+                  onChange={(e) => setIssueSearch(e.target.value)}
+                  placeholder="Filter medications…"
+                  className="w-full px-3 py-2 mb-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+                />
                 <div className="space-y-2 max-h-60 overflow-y-auto border rounded-lg p-2">
                   {wardStockData.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-4 text-gray-400">
@@ -765,22 +823,48 @@ export default function InpatientMedsPage() {
                       <p className="text-sm">No medications available</p>
                     </div>
                   ) : (
-                    wardStockData.slice(0, 6).map((item: WardStock) => (
-                      <div key={item.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
-                        <span className="text-sm">{item.medication}</span>
-                        <div className="flex items-center gap-2">
-                          <button className="p-1 bg-gray-200 rounded hover:bg-gray-300">
-                            <Minus className="w-3 h-3" />
-                          </button>
-                          <span className="w-10 text-center text-sm">0</span>
-                          <button className="p-1 bg-gray-200 rounded hover:bg-gray-300">
-                            <Plus className="w-3 h-3" />
-                          </button>
-                        </div>
-                      </div>
-                    ))
+                    wardStockData
+                      .filter((item) => !issueSearch || item.medication.toLowerCase().includes(issueSearch.toLowerCase()))
+                      .slice(0, 30)
+                      .map((item: WardStock) => {
+                        const qty = issueItems[item.id] || 0;
+                        const setQty = (next: number) =>
+                          setIssueItems((prev) => ({
+                            ...prev,
+                            [item.id]: Math.max(0, Math.min(next, item.currentStock)),
+                          }));
+                        return (
+                          <div key={item.id} className={`flex items-center justify-between p-2 rounded ${qty > 0 ? 'bg-blue-50 border border-blue-200' : 'bg-gray-50'}`}>
+                            <div>
+                              <span className="text-sm">{item.medication}</span>
+                              <span className="text-xs text-gray-400 ml-2">stock: {item.currentStock}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button onClick={() => setQty(qty - 1)} disabled={qty <= 0} className="p-1 bg-gray-200 rounded hover:bg-gray-300 disabled:opacity-40">
+                                <Minus className="w-3 h-3" />
+                              </button>
+                              <input
+                                type="number"
+                                min={0}
+                                max={item.currentStock}
+                                value={qty || ''}
+                                onChange={(e) => setQty(parseInt(e.target.value) || 0)}
+                                className="w-14 text-center text-sm border rounded py-0.5"
+                              />
+                              <button onClick={() => setQty(qty + 1)} disabled={qty >= item.currentStock} className="p-1 bg-gray-200 rounded hover:bg-gray-300 disabled:opacity-40">
+                                <Plus className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })
                   )}
                 </div>
+                {Object.values(issueItems).some((q) => q > 0) && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    {Object.values(issueItems).filter((q) => q > 0).length} item(s) selected
+                  </p>
+                )}
               </div>
 
               <div className="flex gap-2">
@@ -790,8 +874,12 @@ export default function InpatientMedsPage() {
                 >
                   Cancel
                 </button>
-                <button className="flex-1 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 flex items-center justify-center gap-2">
-                  <Send className="w-4 h-4" />
+                <button
+                  onClick={handleIssueToWard}
+                  disabled={isProcessing || !issueWard || !Object.values(issueItems).some((q) => q > 0)}
+                  className="flex-1 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                   Issue to Ward
                 </button>
               </div>
