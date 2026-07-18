@@ -91,6 +91,19 @@ Baseline is 0 as of Block 3.5 — any new error is a regression, not noise.
 ## Findings log
 (append per block: P0 fixed inline w/ hash · P1 deferred · feature ideas)
 
+### Blocks 4+5 — deferred-fix cleanup batch (2026-07-18) ✅ ALL flagged items closed
+All P1s deferred from Blocks 4 & 5 fixed + deployed (backend restarted, migration 81 applied, dist rebuilt). tsc 0/0 both projects.
+- 8b44633a lab validate 400 → getApiErrorMessage (two-person rule now readable)
+- 749302ef reagent create/receive 500s (NOT NULLs code/unit/unitSize/received_date; qty/supplier mapping) — E2E 201
+- 6ce3fc63 drug-management: interactions list w/ names + DELETE routes (interactions/allergy-classes/classifications) + PUT allergy-class; 3 pages rewritten off fantasy shapes w/ real bound forms, pickers, confirm-delete — E2E verified
+- e7d30b89 TypeORM crash class: raw column in orderBy + skip/take + joins ("reading 'databaseName'") — controlled/register (live 500), pharmacy sales, finance acct txns
+- d3be959f QC dashboard: testCode='all' now server-side no-filter; record() value/resultValue mismatch; QC material create NOT NULLs; stats derived from data (fantasy summary fields); Number() coercion; material-picker run modal (dead form replaced)
+- 50727f75 ReturnsPage fake approve/reject removed; c0b3bbba InpatientMeds controlled register wired + issue-to-ward functional (was storeId 'default-store')
+- 49c3f055 witness staff picker; template Apply→clipboard; stock category filter from data; dispense ?encounter=; referral sender advance (stuck-at-collected); radiology performedBy + sign toasts
+- 205a9a38 lab_tests.cost real column (mig 81) + UpdateLabTestDto completed
+- 3fac123d equipment/reagent admin: DTO/entity mismatches, enum case drift UPPER↔lower (new bug class!), listEquipment history joins — E2E 201
+NEW BUG CLASSES: (1) enum-case drift UI-UPPERCASE vs DB-lowercase → filters/stats silently wrong; (2) raw-column orderBy + skip/take + joins crashes TypeORM; (3) DTO missing entity NOT NULLs → every create 500s; (4) update-DTO ⊂ create-DTO → edits silently drop fields or 400.
+
 ### Block 3.5 — tsc gate repair + repo-wide type sweep (2026-07-16) ✅ 493 → 0
 Triggered by asking for Block 3 recommendations. The gate itself was broken:
 `npx tsc --noEmit` checks ZERO files (root tsconfig is `files: []` + refs), and
