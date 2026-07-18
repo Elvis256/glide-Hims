@@ -169,7 +169,9 @@ export default function RadiologyAnalyticsPage() {
     const statsByRadiologist: Record<string, { studies: number; tatTotal: number; tatCount: number }> = {};
 
     orders.forEach(order => {
-      const name = order.assignedTo || 'Unassigned';
+      // imaging_orders has performedBy (joined User), not "assignedTo" — the
+      // old field doesn't exist, which pinned every study to "Unassigned".
+      const name = (order as any).performedBy?.fullName || order.assignedTo || 'Unassigned';
       if (!statsByRadiologist[name]) statsByRadiologist[name] = { studies: 0, tatTotal: 0, tatCount: 0 };
       statsByRadiologist[name].studies += 1;
       const completedTime = order.completedAt || order.performedAt;

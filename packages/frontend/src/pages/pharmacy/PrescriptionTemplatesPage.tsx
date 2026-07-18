@@ -17,6 +17,7 @@ import {
   Users,
 } from 'lucide-react';
 import { prescriptionsService, type RxTemplate, type RxTemplateItem, type CreateRxTemplateDto } from '../../services/prescriptions';
+import { getApiErrorMessage } from '../../services/api';
 import { confirmDialog } from '../../components/ConfirmDialog';
 import { toast } from 'sonner';
 
@@ -102,11 +103,26 @@ export default function PrescriptionTemplatesPage() {
 
   const applyMutation = useMutation({
     mutationFn: (id: string) => prescriptionsService.applyTemplate(id),
-    onSuccess: (data) => {
-      toast.success(`Template applied — ${data.items.length} item(s) copied`);
+    onSuccess: async (data) => {
+      // "Apply" returns the template's items (and bumps its use count). Put a
+      // ready-to-paste regimen on the clipboard so it can be dropped into a
+      // prescription or note — previously the items went nowhere.
+      const text = data.items
+        .map(
+          (i) =>
+            `${i.drugName}${i.dose ? ` ${i.dose}` : ''} — ${i.frequency} for ${i.duration}` +
+            `${i.quantity ? ` (qty ${i.quantity})` : ''}${i.instructions ? ` — ${i.instructions}` : ''}`,
+        )
+        .join('\n');
+      try {
+        await navigator.clipboard.writeText(text);
+        toast.success(`${data.items.length} item(s) copied to clipboard — paste into a prescription`);
+      } catch {
+        toast.success(`Template applied — ${data.items.length} item(s) retrieved`);
+      }
       queryClient.invalidateQueries({ queryKey: ['rx-templates'] });
     },
-    onError: () => toast.error('Failed to apply template'),
+    onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to apply template')),
   });
 
   function resetForm() {

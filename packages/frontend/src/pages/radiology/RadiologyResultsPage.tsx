@@ -25,7 +25,9 @@ import {
   RotateCw,
   Sun,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { radiologyService, type RadiologyOrder } from '../../services';
+import { getApiErrorMessage } from '../../services/api';
 import { useFacilityId } from '../../lib/facility';
 
 type ReportStatus = 'Pending' | 'In Progress' | 'Completed' | 'Signed';
@@ -189,11 +191,17 @@ export default function RadiologyResultsPage() {
         isCritical: data.isCritical,
         findingCategory: data.isCritical ? 'critical' : undefined,
       }),
-    onSuccess: () => {
+    onSuccess: (_r, vars) => {
       queryClient.invalidateQueries({ queryKey: ['radiology-orders'] });
       setSelectedStudy(null);
       setReportContent({ findings: '', impression: '', recommendations: '' });
+      toast.success(
+        vars.isCritical
+          ? 'Report signed — critical finding alert raised'
+          : 'Report signed and finalized',
+      );
     },
+    onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to sign report')),
   });
 
   const filteredStudies = useMemo(() => {

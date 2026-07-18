@@ -520,6 +520,7 @@ function CreateReferralTab() {
 
 function TrackReferralsTab() {
   const facilityId = useFacilityId();
+  const queryClient = useQueryClient();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [stageFilter, setStageFilter] = useState<string>('all');
 
@@ -534,6 +535,50 @@ function TrackReferralsTab() {
   });
 
   const referrals = asList<SampleReferral>(data);
+
+  // Sender-side stage advance. Without this, a referral could never leave
+  // 'collected' — the hub's Receive button only appears once it is in_transit.
+  const advanceMutation = useMutation({
+    mutationFn: ({ id, stage }: { id: string; stage: ReferralStage }) =>
+      sampleReferralService.updateStage(id, { stage }),
+    onSuccess: (_r, vars) => {
+      toast.success(`Referral marked ${STAGE_LABELS[vars.stage].toLowerCase()}`);
+      queryClient.invalidateQueries({ queryKey: ['sample-referrals'] });
+      queryClient.invalidateQueries({ queryKey: ['sample-referral-dashboard'] });
+    },
+    onError: (err: any) => {
+      toast.error('Failed to update stage', {
+        description: err?.response?.data?.message || err.message,
+      });
+    },
+  });
+
+  const senderAction = (ref: SampleReferral) => {
+    switch (ref.stage) {
+      case 'collected':
+        return (
+          <button
+            onClick={(e) => { e.stopPropagation(); advanceMutation.mutate({ id: ref.id, stage: 'packaged' }); }}
+            disabled={advanceMutation.isPending}
+            className="px-3 py-1 bg-blue-600 text-white text-xs rounded-lg hover:bg-blue-700 flex items-center gap-1 flex-shrink-0"
+          >
+            <Package className="w-3 h-3" /> Mark Packaged
+          </button>
+        );
+      case 'packaged':
+        return (
+          <button
+            onClick={(e) => { e.stopPropagation(); advanceMutation.mutate({ id: ref.id, stage: 'in_transit' }); }}
+            disabled={advanceMutation.isPending}
+            className="px-3 py-1 bg-indigo-600 text-white text-xs rounded-lg hover:bg-indigo-700 flex items-center gap-1 flex-shrink-0"
+          >
+            <Send className="w-3 h-3" /> Dispatch
+          </button>
+        );
+      default:
+        return null;
+    }
+  };
 
   if (isLoading) {
     return (
@@ -570,9 +615,12 @@ function TrackReferralsTab() {
         <div className="space-y-2">
           {referrals.map((ref) => (
             <div key={ref.id} className="bg-white border rounded-lg shadow-sm overflow-hidden">
-              <button
-                className="w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-gray-50"
+              <div
+                role="button"
+                tabIndex={0}
+                className="w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-gray-50 cursor-pointer"
                 onClick={() => setExpandedId(expandedId === ref.id ? null : ref.id)}
+                onKeyDown={(e) => e.key === 'Enter' && setExpandedId(expandedId === ref.id ? null : ref.id)}
               >
                 <div className={`w-2 h-2 rounded-full ${PRIORITY_DOT[ref.priority]}`} />
                 <span className="text-sm font-medium w-36 flex-shrink-0">{ref.referralNumber}</span>
@@ -580,12 +628,13 @@ function TrackReferralsTab() {
                 <span className="text-xs text-gray-500 w-28 truncate">{ref.testRequested || '—'}</span>
                 <span className="text-xs text-gray-500 w-28 truncate">{ref.toFacility?.name || '—'}</span>
                 <StageTimeline currentStage={ref.stage} />
+                {senderAction(ref)}
                 <span className={`text-xs px-2 py-0.5 rounded border ${PRIORITY_COLORS[ref.priority]}`}>{ref.priority}</span>
                 <span className="text-xs text-gray-400 w-20 text-right">
                   {ref.collectedAt ? new Date(ref.collectedAt).toLocaleDateString() : '—'}
                 </span>
                 {expandedId === ref.id ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
-              </button>
+              </div>
 
               {expandedId === ref.id && (
                 <div className="px-4 pb-4 border-t bg-gray-50">

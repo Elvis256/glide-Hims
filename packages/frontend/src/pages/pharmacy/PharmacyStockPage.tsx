@@ -45,19 +45,9 @@ interface StockItem {
   isLowStock: boolean;
 }
 
-const categories: Category[] = [
-  'All',
-  'Antibiotics',
-  'Analgesics',
-  'Cardiovascular',
-  'Diabetes',
-  'Respiratory',
-  'Gastrointestinal',
-  'Dermatology',
-  'Vitamins',
-  'Emergency',
-  'Uncategorized',
-];
+// Category options are derived from the loaded inventory (see below) — the
+// previous hard-coded list didn't match any real item.category values, so
+// picking one silently emptied the table.
 
 export default function PharmacyStockPage() {
   const { hasPermission } = usePermissions();
@@ -86,9 +76,10 @@ export default function PharmacyStockPage() {
 
   // Fetch inventory data
   const { data: inventoryData, isLoading, refetch } = useQuery({
-    queryKey: ['pharmacy-stock', { category: selectedCategory !== 'All' ? selectedCategory : undefined, lowStock: showLowStock, search: searchTerm, storeId: selectedStoreId || undefined }],
+    queryKey: ['pharmacy-stock', { lowStock: showLowStock, search: searchTerm, storeId: selectedStoreId || undefined }],
+    // Category filtering happens client-side against the real categories in the
+    // data — sending it to the server double-filtered with mismatched values.
     queryFn: () => storesService.inventory.list({
-      category: selectedCategory !== 'All' ? selectedCategory : undefined,
       lowStock: showLowStock || undefined,
       search: searchTerm || undefined,
       storeId: selectedStoreId || undefined,
@@ -134,6 +125,12 @@ export default function PharmacyStockPage() {
       isLowStock: item.isLowStock || false,
     }));
   }, [inventoryData]);
+
+  // Real category list from the data itself
+  const categories: Category[] = useMemo(
+    () => ['All', ...Array.from(new Set(stockData.map((i) => i.category))).sort()],
+    [stockData],
+  );
 
   // Use stats from API response
   const stockStats = useMemo(() => {
