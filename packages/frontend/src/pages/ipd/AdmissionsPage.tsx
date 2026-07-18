@@ -1,5 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import {
   UserPlus,
   Search,
@@ -18,14 +20,16 @@ import {
   X,
   AlertCircle,
 } from 'lucide-react';
-import { ipdService, patientsService } from '../../services';
-import type { Admission, Ward, Bed as BedType, CreateAdmissionDto } from '../../services/ipd';
+import { ipdService, patientsService, usersService } from '../../services';
+import type { CreateAdmissionDto } from '../../services/ipd';
+import { getApiErrorMessage } from '../../services/api';
 import { asList } from '../../utils/unwrapResponse';
 
 type AdmissionType = 'emergency' | 'elective' | 'transfer';
 
 export default function AdmissionsPage() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState<'requests' | 'newAdmission'>('requests');
   const [admissionType, setAdmissionType] = useState<AdmissionType>('elective');
@@ -34,7 +38,15 @@ export default function AdmissionsPage() {
   const [selectedPatientId, setSelectedPatientId] = useState('');
   const [patientSearch, setPatientSearch] = useState('');
   const [diagnosis, setDiagnosis] = useState('');
+  const [attendingDoctorId, setAttendingDoctorId] = useState('');
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+
+  // Doctors for the attending-doctor picker
+  const { data: doctors = [] } = useQuery({
+    queryKey: ['users-doctors'],
+    queryFn: async () => (await usersService.list({ role: 'Doctor' })).data,
+    enabled: activeTab === 'newAdmission',
+  });
 
   // Fetch current admissions
   const { data: admissionsData, isLoading: loadingAdmissions } = useQuery({
@@ -75,6 +87,7 @@ export default function AdmissionsPage() {
       setShowSuccessModal(true);
       resetForm();
     },
+    onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to create admission')),
   });
 
   const admissions = asList(admissionsData);
@@ -85,7 +98,7 @@ export default function AdmissionsPage() {
     return admissions.filter(
       (adm) =>
         adm.patient?.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        adm.admittingDiagnosis?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        adm.admissionDiagnosis?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         adm.admissionNumber?.toLowerCase().includes(searchTerm.toLowerCase())
     );
   }, [searchTerm, admissions]);
@@ -96,6 +109,7 @@ export default function AdmissionsPage() {
     setSelectedWard('');
     setSelectedBed('');
     setDiagnosis('');
+    setAttendingDoctorId('');
     setAdmissionType('elective');
   };
 
@@ -108,6 +122,7 @@ export default function AdmissionsPage() {
       type: admissionType,
       admissionDiagnosis: diagnosis,
       admissionReason: diagnosis,
+      attendingDoctorId: attendingDoctorId || undefined,
     });
   };
 
@@ -246,10 +261,10 @@ export default function AdmissionsPage() {
                           </span>
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-600 max-w-xs truncate">
-                          {admission.admissionDiagnosis || admission.admittingDiagnosis}
+                          {admission.admissionDiagnosis}
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-600">
-                          {new Date(admission.admittedAt).toLocaleDateString()}
+                          {new Date(admission.admissionDate).toLocaleDateString()}
                         </td>
                         <td className="px-4 py-3">
                           <span className={`px-2 py-1 rounded-full text-xs font-medium capitalize ${getStatusBadge(admission.status)}`}>
@@ -257,7 +272,10 @@ export default function AdmissionsPage() {
                           </span>
                         </td>
                         <td className="px-4 py-3">
-                          <button className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg">
+                          <button
+                            onClick={() => admission.patient?.id && navigate(`/patients/${admission.patient.id}`)}
+                            className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg"
+                          >
                             View
                           </button>
                         </td>
@@ -357,6 +375,21 @@ export default function AdmissionsPage() {
                   rows={3}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
+              </div>
+
+              {/* Attending Doctor */}
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Attending Doctor</label>
+                <select
+                  value={attendingDoctorId}
+                  onChange={(e) => setAttendingDoctorId(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="">Assign later</option>
+                  {doctors.map((d: any) => (
+                    <option key={d.id} value={d.id}>{d.fullName}</option>
+                  ))}
+                </select>
               </div>
 
               {/* Ward Selection */}

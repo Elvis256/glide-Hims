@@ -1,6 +1,9 @@
 import { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import {
+  X,
   Bed,
   Building2,
   User,
@@ -14,8 +17,18 @@ import {
   Stethoscope,
   Loader2,
 } from 'lucide-react';
-import api from '../../services/api';
+import api, { getApiErrorMessage } from '../../services/api';
+import { ipdService } from '../../services/ipd';
 import { asList } from '../../utils/unwrapResponse';
+
+const TRANSFER_REASONS = [
+  { value: 'clinical', label: 'Clinical need' },
+  { value: 'patient_request', label: 'Patient request' },
+  { value: 'bed_management', label: 'Bed management' },
+  { value: 'isolation', label: 'Isolation' },
+  { value: 'step_down', label: 'Step down' },
+  { value: 'step_up', label: 'Step up' },
+] as const;
 
 type BedStatus = 'available' | 'occupied' | 'reserved' | 'maintenance' | 'cleaning';
 type WardType = 'All' | 'general' | 'icu' | 'private' | 'maternity' | 'pediatric';
@@ -65,10 +78,71 @@ interface Admission {
 }
 
 export default function WardsBedsPage() {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedWardType, setSelectedWardType] = useState<WardType>('All');
   const [selectedBed, setSelectedBed] = useState<BedInfo | null>(null);
   const [selectedWardId, setSelectedWardId] = useState<string | null>(null);
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [transferForm, setTransferForm] = useState({ toWardId: '', toBedId: '', reason: 'clinical', notes: '' });
+
+  const refreshBeds = () => {
+    queryClient.invalidateQueries({ queryKey: ['ipd-wards'] });
+    queryClient.invalidateQueries({ queryKey: ['ipd-beds'] });
+    queryClient.invalidateQueries({ queryKey: ['ipd-admissions-current'] });
+  };
+
+  // Available beds in the transfer target ward
+  const { data: transferBeds = [] } = useQuery({
+    queryKey: ['transfer-beds', transferForm.toWardId],
+    queryFn: () => ipdService.beds.getAvailable(transferForm.toWardId),
+    enabled: showTransferModal && !!transferForm.toWardId,
+  });
+
+  const transferMutation = useMutation({
+    mutationFn: (admissionId: string) =>
+      ipdService.admissions.transfer(admissionId, {
+        toWardId: transferForm.toWardId,
+        toBedId: transferForm.toBedId,
+        reason: transferForm.reason,
+      }),
+    onSuccess: () => {
+      refreshBeds();
+      setShowTransferModal(false);
+      setSelectedBed(null);
+      setTransferForm({ toWardId: '', toBedId: '', reason: 'clinical', notes: '' });
+      toast.success('Patient transferred');
+    },
+    onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to transfer patient')),
+  });
+
+  const reserveMutation = useMutation({
+    mutationFn: async (bedId: string) => {
+      const reason = window.prompt('Reservation reason (e.g. elective admission)?');
+      if (!reason) throw Object.assign(new Error('cancelled'), { silent: true });
+      return ipdService.reserveBed(bedId, 4, reason);
+    },
+    onSuccess: () => {
+      refreshBeds();
+      setSelectedBed(null);
+      toast.success('Bed reserved (4-hour hold)');
+    },
+    onError: (err: any) => {
+      if (!err?.silent) toast.error(getApiErrorMessage(err, 'Could not reserve bed'));
+    },
+  });
+
+  const bedStatusMutation = useMutation({
+    mutationFn: ({ bedId, status }: { bedId: string; status: string }) =>
+      api.patch(`/ipd/beds/${bedId}`, { status }),
+    onSuccess: () => {
+      refreshBeds();
+      setSelectedBed(null);
+      toast.success('Bed marked available');
+    },
+    onError: (err) => toast.error(getApiErrorMessage(err, 'Could not update bed')),
+  });
 
   // Fetch wards
   const { data: wards = [], isLoading: wardsLoading } = useQuery({
@@ -125,8 +199,6 @@ export default function WardsBedsPage() {
       total: totalBeds,
       available: totalBeds - occupiedBeds,
       occupied: occupiedBeds,
-      reserved: 0,
-      maintenance: 0,
     };
   }, [wards]);
 
@@ -188,7 +260,7 @@ export default function WardsBedsPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-5 gap-4 mb-6">
+      <div className="grid grid-cols-3 gap-4 mb-6">
         <div className="bg-white rounded-xl p-4 border border-gray-200">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-blue-100 rounded-lg">
@@ -219,28 +291,6 @@ export default function WardsBedsPage() {
             <div>
               <p className="text-2xl font-bold text-red-600">{stats.occupied}</p>
               <p className="text-sm text-gray-500">Occupied</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-xl p-4 border border-gray-200">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-yellow-100 rounded-lg">
-              <Clock className="w-5 h-5 text-yellow-600" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-yellow-600">{stats.reserved}</p>
-              <p className="text-sm text-gray-500">Reserved</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-xl p-4 border border-gray-200">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-gray-100 rounded-lg">
-              <Wrench className="w-5 h-5 text-gray-600" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-gray-600">{stats.maintenance}</p>
-              <p className="text-sm text-gray-500">Maintenance</p>
             </div>
           </div>
         </div>
@@ -398,10 +448,22 @@ export default function WardsBedsPage() {
                   </div>
 
                   <div className="pt-4 space-y-2">
-                    <button className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                    <button
+                      onClick={() => {
+                        const pid = admissionsByBed[selectedBed.id]?.patient?.id;
+                        if (pid) navigate(`/patients/${pid}`);
+                      }}
+                      className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                    >
                       View Patient Record
                     </button>
-                    <button className="w-full px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+                    <button
+                      onClick={() => {
+                        setTransferForm({ toWardId: '', toBedId: '', reason: 'clinical', notes: '' });
+                        setShowTransferModal(true);
+                      }}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                    >
                       Transfer Patient
                     </button>
                   </div>
@@ -414,10 +476,17 @@ export default function WardsBedsPage() {
                     <CheckCircle className="w-12 h-12 text-green-600 mx-auto mb-2" />
                     <p className="font-medium text-green-700">Bed is Available</p>
                   </div>
-                  <button className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                  <button
+                    onClick={() => navigate('/ipd/admissions')}
+                    className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  >
                     Admit Patient
                   </button>
-                  <button className="w-full px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+                  <button
+                    onClick={() => reserveMutation.mutate(selectedBed.id)}
+                    disabled={reserveMutation.isPending}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+                  >
                     Reserve Bed
                   </button>
                 </div>
@@ -430,7 +499,11 @@ export default function WardsBedsPage() {
                     <p className="font-medium text-gray-900 capitalize">{selectedBed.status}</p>
                     {selectedBed.notes && <p className="text-sm text-gray-600 mt-1">{selectedBed.notes}</p>}
                   </div>
-                  <button className="w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
+                  <button
+                    onClick={() => bedStatusMutation.mutate({ bedId: selectedBed.id, status: 'available' })}
+                    disabled={bedStatusMutation.isPending}
+                    className="w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
+                  >
                     Mark as Available
                   </button>
                 </div>
@@ -445,6 +518,85 @@ export default function WardsBedsPage() {
           )}
         </div>
       </div>
+
+      {/* Transfer Modal */}
+      {showTransferModal && selectedBed && admissionsByBed[selectedBed.id] && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-md p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-lg font-semibold">Transfer Patient</h2>
+                <p className="text-sm text-gray-500">
+                  {admissionsByBed[selectedBed.id].patient?.fullName} — from bed {selectedBed.bedNumber}
+                </p>
+              </div>
+              <button onClick={() => setShowTransferModal(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Destination Ward *</label>
+                <select
+                  value={transferForm.toWardId}
+                  onChange={(e) => setTransferForm(prev => ({ ...prev, toWardId: e.target.value, toBedId: '' }))}
+                  className="w-full border rounded-lg px-3 py-2"
+                >
+                  <option value="">Select ward...</option>
+                  {wards.map(w => (
+                    <option key={w.id} value={w.id}>{w.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Destination Bed *</label>
+                <select
+                  value={transferForm.toBedId}
+                  onChange={(e) => setTransferForm(prev => ({ ...prev, toBedId: e.target.value }))}
+                  disabled={!transferForm.toWardId}
+                  className="w-full border rounded-lg px-3 py-2 disabled:bg-gray-50"
+                >
+                  <option value="">{transferForm.toWardId ? 'Select bed...' : 'Select a ward first'}</option>
+                  {transferBeds.filter(b => b.id !== selectedBed.id).map(b => (
+                    <option key={b.id} value={b.id}>Bed {b.bedNumber}</option>
+                  ))}
+                </select>
+                {transferForm.toWardId && transferBeds.length === 0 && (
+                  <p className="text-xs text-orange-600 mt-1">No available beds in that ward.</p>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Reason *</label>
+                <select
+                  value={transferForm.reason}
+                  onChange={(e) => setTransferForm(prev => ({ ...prev, reason: e.target.value }))}
+                  className="w-full border rounded-lg px-3 py-2"
+                >
+                  {TRANSFER_REASONS.map(r => (
+                    <option key={r.value} value={r.value}>{r.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setShowTransferModal(false)}
+                className="flex-1 py-2 border rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => transferMutation.mutate(admissionsByBed[selectedBed.id].id)}
+                disabled={!transferForm.toWardId || !transferForm.toBedId || transferMutation.isPending}
+                className="flex-1 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {transferMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                Transfer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -27,27 +27,30 @@ import {
   Pencil,
 } from 'lucide-react';
 import { formatCurrency } from '../../lib/currency';
-import api from '../../services/api';
+import api, { getApiErrorMessage } from '../../services/api';
+import { confirmDialog } from '../../components/ConfirmDialog';
+import { printElement } from '../../lib/print';
 
 interface Admission {
   id: string;
   admissionNumber: string;
   status: string;
   admissionDate: string;
-  primaryDiagnosis?: string;
+  admissionDiagnosis?: string;
+  encounterId?: string;
   patient: {
     id: string;
     fullName: string;
     dateOfBirth?: string;
     gender?: string;
   };
+  ward?: {
+    id: string;
+    name: string;
+  };
   bed?: {
     id: string;
     bedNumber: string;
-    ward?: {
-      id: string;
-      name: string;
-    };
   };
   attendingDoctor?: {
     fullName: string;
@@ -107,20 +110,54 @@ export default function InpatientBillingPage() {
       queryClient.invalidateQueries({ queryKey: ['patient-invoices'] });
       setShowPaymentModal(false);
       setPaymentForm({ amount: 0, method: 'cash', transactionReference: '' });
+      toast.success('Payment recorded');
     },
+    onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to record payment')),
   });
 
-  // Add charge mutation
+  // Add charge mutation. When the admission has no open invoice yet, CREATE one
+  // with this charge as its first line — previously the button silently did
+  // nothing on a fresh admission (it required an invoice that never existed).
   const addChargeMutation = useMutation({
-    mutationFn: async (data: { invoiceId: string; description: string; quantity: number; unitPrice: number; category?: string }) => {
-      const res = await api.post(`/billing/invoices/${data.invoiceId}/items`, data);
+    mutationFn: async (data: {
+      invoiceId?: string;
+      patientId: string;
+      encounterId?: string;
+      description: string;
+      quantity: number;
+      unitPrice: number;
+      category?: string;
+    }) => {
+      if (data.invoiceId) {
+        const res = await api.post(`/billing/invoices/${data.invoiceId}/items`, {
+          description: data.description,
+          quantity: data.quantity,
+          unitPrice: data.unitPrice,
+          chargeType: data.category || undefined,
+          serviceCode: 'IPD-CHARGE',
+        });
+        return res.data;
+      }
+      const res = await api.post('/billing/invoices', {
+        patientId: data.patientId,
+        encounterId: data.encounterId,
+        items: [{
+          serviceCode: 'IPD-CHARGE',
+          description: data.description,
+          quantity: data.quantity,
+          unitPrice: data.unitPrice,
+        }],
+        notes: 'Inpatient charges',
+      });
       return res.data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['patient-invoices'] });
       setShowAddCharge(false);
       setChargeForm({ category: '', description: '', quantity: 1, unitPrice: 0 });
+      toast.success('Charge added');
     },
+    onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to add charge')),
   });
 
   // Update item price mutation
@@ -159,13 +196,15 @@ export default function InpatientBillingPage() {
     },
   });
 
-  // Fetch invoices for selected patient
+  // Fetch invoices for selected patient. The endpoint returns {data, total} —
+  // treating it as a bare array crashed every useMemo below.
   const { data: invoices = [], isLoading: invoicesLoading } = useQuery({
     queryKey: ['patient-invoices', selectedAdmission?.patient.id],
     queryFn: async () => {
       if (!selectedAdmission) return [];
       const res = await api.get('/billing/invoices', { params: { patientId: selectedAdmission.patient.id } });
-      return res.data as Invoice[];
+      const raw = res.data;
+      return (Array.isArray(raw) ? raw : raw?.data || []) as Invoice[];
     },
     enabled: !!selectedAdmission,
   });
@@ -297,7 +336,7 @@ export default function InpatientBillingPage() {
                     <div className="flex items-start justify-between mb-2">
                       <div>
                         <p className="font-semibold text-gray-900">{admission.patient.fullName}</p>
-                        <p className="text-sm text-gray-500">{admission.bed?.bedNumber || 'No bed'} • {admission.bed?.ward?.name || 'No ward'}</p>
+                        <p className="text-sm text-gray-500">{admission.bed?.bedNumber || 'No bed'} • {admission.ward?.name || 'No ward'}</p>
                       </div>
                     </div>
                     <div className="flex items-center justify-between text-sm">
@@ -332,7 +371,7 @@ export default function InpatientBillingPage() {
                 <div className="grid grid-cols-2 gap-2 text-sm">
                   <div>
                     <p className="text-gray-500">Ward/Bed</p>
-                    <p className="font-medium">{selectedAdmission.bed?.ward?.name || 'N/A'} - {selectedAdmission.bed?.bedNumber || 'N/A'}</p>
+                    <p className="font-medium">{selectedAdmission.ward?.name || 'N/A'} - {selectedAdmission.bed?.bedNumber || 'N/A'}</p>
                   </div>
                   <div>
                     <p className="text-gray-500">Admitted</p>
@@ -362,7 +401,7 @@ export default function InpatientBillingPage() {
                   </div>
                   <div className="flex justify-between pt-2 border-t border-gray-200">
                     <span className="text-gray-500">Diagnosis:</span>
-                    <span className="font-medium">{selectedAdmission.primaryDiagnosis || 'TBD'}</span>
+                    <span className="font-medium">{selectedAdmission.admissionDiagnosis || 'TBD'}</span>
                   </div>
                 </div>
               </div>
@@ -394,13 +433,13 @@ export default function InpatientBillingPage() {
                     <Plus className="w-4 h-4 inline mr-2" />
                     Add Charge
                   </button>
-                  <button className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
-                    <FileText className="w-4 h-4 inline mr-2" />
-                    Interim Bill
-                  </button>
-                  <button className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+                  <button
+                    onClick={() => printElement('ipd-charges-print', `Interim Bill — ${selectedAdmission.patient.fullName}`)}
+                    disabled={!currentInvoice || currentInvoice.items.length === 0}
+                    className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+                  >
                     <Printer className="w-4 h-4 inline mr-2" />
-                    Print
+                    Print Interim Bill
                   </button>
                 </div>
               </div>
@@ -415,13 +454,14 @@ export default function InpatientBillingPage() {
                       className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500"
                     >
                       <option value="">Select Category</option>
-                      <option value="Room">Room Charges</option>
-                      <option value="Nursing">Nursing Care</option>
-                      <option value="Procedures">Procedures</option>
-                      <option value="Pharmacy">Pharmacy</option>
-                      <option value="Laboratory">Laboratory</option>
-                      <option value="Radiology">Radiology</option>
-                      <option value="Consumables">Consumables</option>
+                      <option value="bed">Room / Bed Charges</option>
+                      <option value="nursing">Nursing Care</option>
+                      <option value="procedure">Procedures</option>
+                      <option value="pharmacy">Pharmacy</option>
+                      <option value="lab">Laboratory</option>
+                      <option value="radiology">Radiology</option>
+                      <option value="consultation">Consultation</option>
+                      <option value="other">Consumables / Other</option>
                     </select>
                     <input
                       type="text"
@@ -445,17 +485,18 @@ export default function InpatientBillingPage() {
                       className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500"
                     />
                     <div className="flex gap-2">
-                      <button 
+                      <button
                         onClick={() => {
-                          if (invoices[0]?.id && chargeForm.description && chargeForm.unitPrice > 0) {
-                            addChargeMutation.mutate({
-                              invoiceId: invoices[0].id,
-                              description: chargeForm.description,
-                              quantity: chargeForm.quantity,
-                              unitPrice: chargeForm.unitPrice,
-                              category: chargeForm.category,
-                            });
-                          }
+                          if (!selectedAdmission || !chargeForm.description || chargeForm.unitPrice <= 0) return;
+                          addChargeMutation.mutate({
+                            invoiceId: currentInvoice?.status !== 'paid' ? currentInvoice?.id : undefined,
+                            patientId: selectedAdmission.patient.id,
+                            encounterId: selectedAdmission.encounterId,
+                            description: chargeForm.description,
+                            quantity: chargeForm.quantity,
+                            unitPrice: chargeForm.unitPrice,
+                            category: chargeForm.category,
+                          });
                         }}
                         disabled={addChargeMutation.isPending || !chargeForm.description || chargeForm.unitPrice <= 0}
                         className="flex-1 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-50"
@@ -474,7 +515,7 @@ export default function InpatientBillingPage() {
               )}
 
               {/* Charges List */}
-              <div className="flex-1 overflow-auto">
+              <div className="flex-1 overflow-auto" id="ipd-charges-print">
                 {invoicesLoading ? (
                   <div className="h-full flex items-center justify-center">
                     <Loader2 className="w-8 h-8 animate-spin text-emerald-600" />
@@ -555,8 +596,8 @@ export default function InpatientBillingPage() {
                                 </button>
                               )}
                               <button
-                                onClick={() => {
-                                  if (confirm(`Remove "${item.description}" from this invoice?`)) {
+                                onClick={async () => {
+                                  if (await confirmDialog(`Remove "${item.description}" from this invoice?`)) {
                                     currentInvoice && removeItemMutation.mutate({ invoiceId: currentInvoice.id, itemId: item.id });
                                   }
                                 }}
@@ -586,11 +627,7 @@ export default function InpatientBillingPage() {
               <div className="p-4 border-t border-gray-200 bg-gray-50">
                 <div className="flex items-center justify-between">
                   <div className="flex gap-4">
-                    <button className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium">
-                      <Receipt className="w-4 h-4 inline mr-2" />
-                      Generate Final Bill
-                    </button>
-                    <button 
+                    <button
                       onClick={() => {
                         if (hasZeroPriceItems) {
                           toast.error('Cannot collect payment: some items have no price. Set prices or remove them first.');

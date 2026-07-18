@@ -560,7 +560,7 @@ export default function NursingAssessmentPage() {
                   <div className="flex justify-between text-sm"><span className="text-gray-500">Age</span><span className="text-gray-900">{selectedPatient.age} years</span></div>
                   <div className="flex justify-between text-sm"><span className="text-gray-500">Gender</span><span className="text-gray-900 capitalize">{selectedPatient.gender}</span></div>
                   {selectedPatient.ward && (<div className="flex justify-between text-sm"><span className="text-gray-500">Ward/Bed</span><span className="text-gray-900">{selectedPatient.ward} / {selectedPatient.bed}</span></div>)}
-                  {admission && (<div className="flex justify-between text-sm"><span className="text-gray-500">Admission</span><span className="text-gray-900 text-xs">{new Date(admission.admittedAt).toLocaleDateString()}</span></div>)}
+                  {admission && (<div className="flex justify-between text-sm"><span className="text-gray-500">Admission</span><span className="text-gray-900 text-xs">{new Date(admission.admissionDate).toLocaleDateString()}</span></div>)}
                 </div>
               </div>
             ) : (

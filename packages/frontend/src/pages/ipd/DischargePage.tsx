@@ -23,8 +23,9 @@ import {
   Award,
   Loader2,
 } from 'lucide-react';
-import { formatCurrency } from '../../lib/currency';
-import api from '../../services/api';
+import { toast } from 'sonner';
+import api, { getApiErrorMessage } from '../../services/api';
+import { printElement } from '../../lib/print';
 import { asList } from '../../utils/unwrapResponse';
 
 type DischargeStatus = 'admitted' | 'discharged';
@@ -104,7 +105,9 @@ export default function DischargePage() {
       setShowDischargeModal(false);
       setSelectedAdmission(null);
       setDischargeForm({ dischargeSummary: '', dischargeDiagnosis: '', dischargeInstructions: '', followUpPlan: '' });
+      toast.success('Patient discharged — bed released for cleaning');
     },
+    onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to discharge patient')),
   });
 
   const filteredPatients = useMemo(() => {
@@ -355,7 +358,7 @@ export default function DischargePage() {
             {/* Content */}
             <div className="flex-1 overflow-auto p-6">
               {activeTab === 'summary' && (
-                <div className="space-y-6">
+                <div className="space-y-6" id="discharge-summary-print">
                   <div>
                     <h3 className="font-semibold text-gray-900 mb-2">Admission Reason</h3>
                     <p className="text-gray-700">{selectedAdmission.admissionReason || 'Not specified'}</p>
@@ -426,13 +429,15 @@ export default function DischargePage() {
             <div className="p-4 border-t border-gray-200 bg-gray-50">
               <div className="flex items-center justify-between">
                 <div className="flex gap-2">
-                  <button className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+                  <button
+                    onClick={() => {
+                      setActiveTab('summary');
+                      setTimeout(() => printElement('discharge-summary-print', `Discharge Summary — ${selectedAdmission.patient?.fullName || ''}`), 100);
+                    }}
+                    className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
                     <Printer className="w-4 h-4 inline mr-2" />
                     Print Summary
-                  </button>
-                  <button className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
-                    <Download className="w-4 h-4 inline mr-2" />
-                    Download
                   </button>
                 </div>
                 {selectedAdmission.status === 'admitted' && (

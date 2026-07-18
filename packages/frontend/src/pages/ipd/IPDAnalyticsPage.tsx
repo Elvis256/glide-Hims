@@ -43,8 +43,6 @@ interface IpdStats {
 }
 
 export default function IPDAnalyticsPage() {
-  const [dateRange, setDateRange] = useState('month');
-
   // Fetch real stats from API
   const { data: stats, isLoading, refetch } = useQuery({
     queryKey: ['ipd-analytics-stats'],
@@ -53,30 +51,6 @@ export default function IPDAnalyticsPage() {
       return res.data as IpdStats;
     },
   });
-
-  const formatCurrencyValue = (amount: number) => {
-    if (amount >= 1000000) {
-      return formatCurrency(amount, { compact: true });
-    }
-    return formatCurrency(amount);
-  };
-
-  const getTrendIcon = (value: number) => {
-    if (value > 0) return <ArrowUp className="w-4 h-4 text-green-500" />;
-    if (value < 0) return <ArrowDown className="w-4 h-4 text-red-500" />;
-    return <Minus className="w-4 h-4 text-gray-500" />;
-  };
-
-  const getTrendColor = (value: number, inverse = false) => {
-    if (inverse) {
-      if (value > 0) return 'text-red-600';
-      if (value < 0) return 'text-green-600';
-    } else {
-      if (value > 0) return 'text-green-600';
-      if (value < 0) return 'text-red-600';
-    }
-    return 'text-gray-600';
-  };
 
   if (isLoading) {
     return (
@@ -102,28 +76,12 @@ export default function IPDAnalyticsPage() {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <Filter className="w-5 h-5 text-gray-500" />
-            <select
-              value={dateRange}
-              onChange={(e) => setDateRange(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-violet-500 focus:border-violet-500"
-            >
-              <option value="week">Last 7 Days</option>
-              <option value="month">Last 30 Days</option>
-              <option value="quarter">Last 3 Months</option>
-              <option value="year">Last Year</option>
-            </select>
-          </div>
-          <button 
+          <button
             onClick={() => refetch()}
             className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+            title="Refresh"
           >
             <RefreshCw className="w-5 h-5 text-gray-600" />
-          </button>
-          <button className="px-4 py-2 bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition-colors font-medium">
-            <Download className="w-4 h-4 inline mr-2" />
-            Export Report
           </button>
         </div>
       </div>
@@ -135,10 +93,6 @@ export default function IPDAnalyticsPage() {
             <div className="p-2 bg-blue-100 rounded-lg">
               <Bed className="w-5 h-5 text-blue-600" />
             </div>
-            <div className="flex items-center gap-1 text-sm">
-              {getTrendIcon(5.2)}
-              <span className={getTrendColor(5.2)}>+5.2%</span>
-            </div>
           </div>
           <p className="text-3xl font-bold text-gray-900">{stats?.overallOccupancyRate || 0}%</p>
           <p className="text-sm text-gray-500">Bed Occupancy Rate</p>
@@ -148,10 +102,6 @@ export default function IPDAnalyticsPage() {
           <div className="flex items-center justify-between mb-3">
             <div className="p-2 bg-green-100 rounded-lg">
               <Clock className="w-5 h-5 text-green-600" />
-            </div>
-            <div className="flex items-center gap-1 text-sm">
-              {getTrendIcon(-0.5)}
-              <span className={getTrendColor(-0.5, true)}>-0.5 days</span>
             </div>
           </div>
           <p className="text-3xl font-bold text-gray-900">{stats?.activeAdmissions || 0}</p>

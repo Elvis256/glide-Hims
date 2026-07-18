@@ -22,52 +22,58 @@ import {
   Loader2,
   X,
 } from 'lucide-react';
-import api from '../../services/api';
+import { toast } from 'sonner';
+import api, { getApiErrorMessage } from '../../services/api';
 
 interface Admission {
   id: string;
   admissionNumber: string;
   status: string;
   admissionDate: string;
-  primaryDiagnosis?: string;
+  admissionDiagnosis?: string;
   patient: {
     id: string;
     fullName: string;
     dateOfBirth?: string;
     gender?: string;
   };
+  // GET /ipd/admissions joins `ward` at the top level (not bed.ward)
+  ward?: {
+    id: string;
+    name: string;
+  };
   bed?: {
     id: string;
     bedNumber: string;
-    ward?: {
-      id: string;
-      name: string;
-    };
   };
-  nursingNotes?: NursingNote[];
-  medications?: MedicationAdmin[];
 }
 
+// Mirrors NursingNote entity: `type` (lowercase enum), `noteTime`, `nurse`
 interface NursingNote {
   id: string;
   createdAt: string;
+  noteTime?: string;
   shift: string;
-  noteType: string;
+  type: string;
   content: string;
-  recordedBy?: { fullName: string };
+  nurse?: { fullName: string };
 }
 
+// Mirrors MedicationAdministration entity
 interface MedicationAdmin {
   id: string;
-  medicationName: string;
-  dosage: string;
+  drugName: string;
+  dose: string;
   route: string;
   scheduledTime: string;
-  actualTime?: string;
-  status: string;
+  administeredAt?: string;
+  status: string; // scheduled | administered | held | refused | missed
   administeredBy?: { fullName: string };
   notes?: string;
 }
+
+const NOTE_TYPES = ['assessment', 'intervention', 'observation', 'progress', 'handoff', 'incident'] as const;
+const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 
 export default function IPDNursingNotesPage() {
   const queryClient = useQueryClient();
@@ -78,7 +84,7 @@ export default function IPDNursingNotesPage() {
   const [showAddNoteModal, setShowAddNoteModal] = useState(false);
   const [newNote, setNewNote] = useState({
     shift: 'Day',
-    noteType: 'Assessment',
+    noteType: 'assessment',
     content: '',
   });
 
@@ -119,7 +125,7 @@ export default function IPDNursingNotesPage() {
       if (!selectedAdmission?.id) throw new Error('No admission selected');
       await api.post('/ipd/nursing-notes', {
         admissionId: selectedAdmission.id,
-        type: data.noteType?.toLowerCase() as any,
+        type: data.noteType as any,
         content: data.content,
         shift: data.shift,
       });
@@ -127,8 +133,21 @@ export default function IPDNursingNotesPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['nursing-notes', selectedAdmission?.id] });
       setShowAddNoteModal(false);
-      setNewNote({ shift: 'Day', noteType: 'Assessment', content: '' });
+      setNewNote({ shift: 'Day', noteType: 'assessment', content: '' });
+      toast.success('Nursing note saved');
     },
+    onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to save note')),
+  });
+
+  // Administer a scheduled medication
+  const administerMutation = useMutation({
+    mutationFn: (medicationId: string) =>
+      api.put(`/ipd/medications/${medicationId}/administer`, { status: 'administered' }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['medications', selectedAdmission?.id] });
+      toast.success('Medication recorded as administered');
+    },
+    onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to record administration')),
   });
 
   const filteredAdmissions = useMemo(() => {
@@ -147,21 +166,23 @@ export default function IPDNursingNotesPage() {
 
   const getCategoryBadge = (category: string) => {
     const colors: Record<string, string> = {
-      Assessment: 'bg-blue-100 text-blue-700',
-      Intervention: 'bg-green-100 text-green-700',
-      Observation: 'bg-purple-100 text-purple-700',
-      Education: 'bg-yellow-100 text-yellow-700',
-      Communication: 'bg-orange-100 text-orange-700',
+      assessment: 'bg-blue-100 text-blue-700',
+      intervention: 'bg-green-100 text-green-700',
+      observation: 'bg-purple-100 text-purple-700',
+      progress: 'bg-yellow-100 text-yellow-700',
+      handoff: 'bg-orange-100 text-orange-700',
+      incident: 'bg-red-100 text-red-700',
     };
     return colors[category] || 'bg-gray-100 text-gray-700';
   };
 
   const getMedStatusBadge = (status: string) => {
     const colors: Record<string, string> = {
-      pending: 'bg-yellow-100 text-yellow-700',
-      given: 'bg-green-100 text-green-700',
+      scheduled: 'bg-yellow-100 text-yellow-700',
+      administered: 'bg-green-100 text-green-700',
       held: 'bg-orange-100 text-orange-700',
       refused: 'bg-red-100 text-red-700',
+      missed: 'bg-gray-200 text-gray-700',
     };
     return colors[status?.toLowerCase()] || 'bg-gray-100 text-gray-700';
   };
@@ -217,11 +238,9 @@ export default function IPDNursingNotesPage() {
                     onChange={(e) => setNewNote({ ...newNote, noteType: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500"
                   >
-                    <option value="Assessment">Assessment</option>
-                    <option value="Intervention">Intervention</option>
-                    <option value="Observation">Observation</option>
-                    <option value="Education">Education</option>
-                    <option value="Communication">Communication</option>
+                    {NOTE_TYPES.map((t) => (
+                      <option key={t} value={t}>{cap(t)}</option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -314,9 +333,9 @@ export default function IPDNursingNotesPage() {
                   </div>
                   <div className="flex items-center gap-2 text-sm text-gray-500">
                     <Bed className="w-4 h-4" />
-                    <span>{admission.bed?.bedNumber || 'No bed'} • {admission.bed?.ward?.name || 'No ward'}</span>
+                    <span>{admission.bed?.bedNumber || 'No bed'} • {admission.ward?.name || 'No ward'}</span>
                   </div>
-                  <p className="text-sm text-gray-600 mt-2">{admission.primaryDiagnosis || 'No diagnosis'}</p>
+                  <p className="text-sm text-gray-600 mt-2">{admission.admissionDiagnosis || 'No diagnosis'}</p>
                   <p className="text-xs text-gray-400 mt-1">#{admission.admissionNumber}</p>
                 </div>
               ))}
@@ -405,21 +424,20 @@ export default function IPDNursingNotesPage() {
                               <Clock className="w-4 h-4" />
                               {new Date(note.createdAt).toLocaleString()}
                             </div>
-                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getCategoryBadge(note.noteType)}`}>
-                              {note.noteType}
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getCategoryBadge(note.type)}`}>
+                              {cap(note.type)}
                             </span>
-                            <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-700">
-                              {note.shift} Shift
-                            </span>
+                            {note.shift && (
+                              <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-700">
+                                {note.shift} Shift
+                              </span>
+                            )}
                           </div>
-                          <button className="p-1 text-gray-400 hover:text-pink-600 transition-colors">
-                            <Edit className="w-4 h-4" />
-                          </button>
                         </div>
                         <p className="text-gray-700 mb-2">{note.content}</p>
                         <div className="flex items-center gap-2 text-sm text-gray-500">
                           <User className="w-4 h-4" />
-                          <span>{note.recordedBy ? `${note.recordedBy.fullName}` : 'Unknown'}</span>
+                          <span>{note.nurse ? `${note.nurse.fullName}` : 'Unknown'}</span>
                         </div>
                       </div>
                     ))}
@@ -435,11 +453,11 @@ export default function IPDNursingNotesPage() {
                     <div className="flex items-center gap-2 text-sm">
                       <span className="flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 rounded">
                         <CheckCircle className="w-4 h-4" />
-                        Given
+                        Administered
                       </span>
                       <span className="flex items-center gap-1 px-2 py-1 bg-yellow-100 text-yellow-700 rounded">
                         <Clock className="w-4 h-4" />
-                        Pending
+                        Scheduled
                       </span>
                     </div>
                   </div>
@@ -459,26 +477,30 @@ export default function IPDNursingNotesPage() {
                       <div key={med.id} className="p-4 bg-gray-50 rounded-lg border border-gray-200">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-4">
-                            <div className={`p-2 rounded-lg ${med.status === 'given' ? 'bg-green-100' : 'bg-yellow-100'}`}>
-                              <Pill className={`w-5 h-5 ${med.status === 'given' ? 'text-green-600' : 'text-yellow-600'}`} />
+                            <div className={`p-2 rounded-lg ${med.status === 'administered' ? 'bg-green-100' : 'bg-yellow-100'}`}>
+                              <Pill className={`w-5 h-5 ${med.status === 'administered' ? 'text-green-600' : 'text-yellow-600'}`} />
                             </div>
                             <div>
-                              <p className="font-semibold text-gray-900">{med.medicationName}</p>
-                              <p className="text-sm text-gray-500">{med.dosage} • {med.route}</p>
+                              <p className="font-semibold text-gray-900">{med.drugName}</p>
+                              <p className="text-sm text-gray-500">{med.dose} • {med.route}</p>
                             </div>
                           </div>
                           <div className="flex items-center gap-4">
                             <div className="text-right">
                               <p className="text-sm text-gray-500">Scheduled: {new Date(med.scheduledTime).toLocaleTimeString()}</p>
-                              {med.actualTime && (
-                                <p className="text-sm text-green-600">Given: {new Date(med.actualTime).toLocaleTimeString()}</p>
+                              {med.administeredAt && (
+                                <p className="text-sm text-green-600">Given: {new Date(med.administeredAt).toLocaleTimeString()}</p>
                               )}
                             </div>
                             <span className={`px-3 py-1 rounded-full text-sm font-medium capitalize ${getMedStatusBadge(med.status)}`}>
                               {med.status}
                             </span>
-                            {med.status === 'pending' && (
-                              <button className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm">
+                            {med.status === 'scheduled' && (
+                              <button
+                                onClick={() => administerMutation.mutate(med.id)}
+                                disabled={administerMutation.isPending}
+                                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm disabled:opacity-50"
+                              >
                                 Administer
                               </button>
                             )}

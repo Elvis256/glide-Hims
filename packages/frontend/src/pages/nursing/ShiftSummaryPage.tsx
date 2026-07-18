@@ -100,7 +100,7 @@ export default function ShiftSummaryPage() {
       name: admission.patient?.fullName || 'Unknown',
       mrn: admission.patient?.mrn || '',
       type: 'admission' as const,
-      time: new Date(admission.admittedAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+      time: new Date(admission.admissionDate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
       to: admission.ward?.name,
     }));
   }, [admissionsData]);
