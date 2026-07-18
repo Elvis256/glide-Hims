@@ -23,10 +23,13 @@ import {
   X,
 } from 'lucide-react';
 
+// Uppercased mirror of the backend ReagentCategory enum (stored lowercase in
+// the DB; the service normalizes case on write, we normalize on read). The old
+// list had HISTOLOGY/GENERAL, which don't exist backend-side.
 type ReagentCategory =
   | 'CHEMISTRY' | 'HEMATOLOGY' | 'MICROBIOLOGY' | 'SEROLOGY'
   | 'IMMUNOLOGY' | 'MOLECULAR' | 'URINALYSIS' | 'COAGULATION'
-  | 'BLOOD_BANK' | 'HISTOLOGY' | 'CYTOLOGY' | 'GENERAL' | 'OTHER';
+  | 'BLOOD_BANK' | 'HISTOPATHOLOGY' | 'CYTOLOGY' | 'OTHER';
 
 interface Reagent {
   id: string;
@@ -98,7 +101,7 @@ const API_PATH = '/lab-supplies/reagents';
 const categoryOptions: ReagentCategory[] = [
   'CHEMISTRY', 'HEMATOLOGY', 'MICROBIOLOGY', 'SEROLOGY',
   'IMMUNOLOGY', 'MOLECULAR', 'URINALYSIS', 'COAGULATION',
-  'BLOOD_BANK', 'HISTOLOGY', 'CYTOLOGY', 'GENERAL', 'OTHER',
+  'BLOOD_BANK', 'HISTOPATHOLOGY', 'CYTOLOGY', 'OTHER',
 ];
 
 const categories = ['All', ...categoryOptions];
@@ -129,7 +132,12 @@ export default function ReagentsInventoryPage() {
     queryKey: ['reagents', facilityId],
     queryFn: async () => {
       const res = await api.get(API_PATH, { params: { facilityId } });
-      return res.data;
+      // DB stores category lowercase; this page's filter chips compare
+      // UPPERCASE — normalize on read.
+      return ((res.data as Reagent[]) || []).map((r: any) => ({
+        ...r,
+        category: (r.category || 'OTHER').toUpperCase(),
+      }));
     },
   });
 

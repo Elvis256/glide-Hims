@@ -96,44 +96,14 @@ export class CreateReagentDto {
   hazardClassification?: string;
 }
 
-export class UpdateReagentDto {
+export class UpdateReagentDto extends CreateReagentDto {
   @IsOptional()
-  @IsString()
-  name?: string;
+  @IsUUID()
+  declare facilityId: string;
 
   @IsOptional()
   @IsString()
-  catalogNumber?: string;
-
-  @IsOptional()
-  @IsString()
-  manufacturer?: string;
-
-  @IsOptional()
-  @IsString()
-  supplier?: string;
-
-  @IsOptional()
-  @IsString()
-  category?: string;
-
-  @IsOptional()
-  @IsString()
-  unit?: string;
-
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  @Type(() => Number)
-  reorderLevel?: number;
-
-  @IsOptional()
-  @IsString()
-  storageConditions?: string;
-
-  @IsOptional()
-  @IsString()
-  hazardClassification?: string;
+  declare name: string;
 }
 
 // ============ REAGENT LOTS ============
@@ -189,6 +159,8 @@ export class RecordConsumptionDto {
 }
 
 // ============ EQUIPMENT ============
+// Mirrors the lab_equipment entity. Enum values are lowercase in the DB
+// ('analyzer', 'operational'); the UI normalizes case on read/write.
 export class CreateEquipmentDto {
   @IsUUID()
   facilityId: string;
@@ -196,45 +168,14 @@ export class CreateEquipmentDto {
   @IsString()
   name: string;
 
+  // asset_code is NOT NULL — the service generates one when omitted.
   @IsOptional()
   @IsString()
-  model?: string;
-
-  @IsOptional()
-  @IsString()
-  serialNumber?: string;
+  assetCode?: string;
 
   @IsOptional()
   @IsString()
-  manufacturer?: string;
-
-  @IsOptional()
-  @IsString()
-  category?: string;
-
-  @IsOptional()
-  @IsString()
-  location?: string;
-
-  @IsOptional()
-  @IsDateString()
-  purchaseDate?: string;
-
-  @IsOptional()
-  @IsDateString()
-  warrantyExpiry?: string;
-
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  @Type(() => Number)
-  calibrationIntervalDays?: number;
-}
-
-export class UpdateEquipmentDto {
-  @IsOptional()
-  @IsString()
-  name?: string;
+  description?: string;
 
   @IsOptional()
   @IsString()
@@ -261,10 +202,80 @@ export class UpdateEquipmentDto {
   status?: string;
 
   @IsOptional()
+  @IsDateString()
+  installationDate?: string;
+
+  @IsOptional()
+  @IsDateString()
+  purchaseDate?: string;
+
+  @IsOptional()
+  @IsDateString()
+  warrantyExpiry?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  requiresCalibration?: boolean;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  calibrationFrequencyDays?: number;
+
+  @IsOptional()
+  @IsDateString()
+  lastCalibrationDate?: string;
+
+  @IsOptional()
+  @IsDateString()
+  nextCalibrationDate?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  requiresMaintenance?: boolean;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  maintenanceFrequencyDays?: number;
+
+  @IsOptional()
+  @IsDateString()
+  lastMaintenanceDate?: string;
+
+  @IsOptional()
+  @IsDateString()
+  nextMaintenanceDate?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+
+  @IsOptional()
+  @IsUUID()
+  departmentId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  responsiblePersonId?: string;
+
+  @IsOptional()
   @IsNumber()
   @Min(0)
   @Type(() => Number)
   calibrationIntervalDays?: number;
+}
+
+export class UpdateEquipmentDto extends CreateEquipmentDto {
+  @IsOptional()
+  @IsUUID()
+  declare facilityId: string;
+
+  @IsOptional()
+  @IsString()
+  declare name: string;
 }
 
 export class RecordCalibrationDto {
