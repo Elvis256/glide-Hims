@@ -18,8 +18,10 @@ import {
   Loader2,
   ArrowLeft,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { emergencyService, TriageLevel } from '../../services';
 import { doctorDutyService } from '../../services/doctor-duty';
+import { getApiErrorMessage } from '../../services/api';
 import { useFacilityId } from '../../lib/facility';
 
 // Map Manchester Triage priorities to backend triage levels
@@ -40,9 +42,19 @@ interface VitalsData {
   bloodPressureDiastolic: string;
   respiratoryRate: string;
   oxygenSaturation: string;
+  bloodGlucose: string;
   painLevel: string;
   consciousnessLevel: string;
 }
+
+// Tailwind can only generate classes it can see verbatim — template-built
+// names like `bg-${color}-100` silently produce no styling.
+const avpuClasses: Record<string, string> = {
+  alert: 'bg-green-100 border-green-500 text-green-700 ring-2 ring-green-200',
+  'voice-responsive': 'bg-yellow-100 border-yellow-500 text-yellow-700 ring-2 ring-yellow-200',
+  'pain-responsive': 'bg-orange-100 border-orange-500 text-orange-700 ring-2 ring-orange-200',
+  unresponsive: 'bg-red-100 border-red-500 text-red-700 ring-2 ring-red-200',
+};
 
 const priorityConfig: Record<TriagePriority, { label: string; color: string; bgColor: string; maxWait: string }> = {
   'immediate': { label: 'Immediate', color: 'text-red-700', bgColor: 'bg-red-500', maxWait: '0 min' },
@@ -78,7 +90,6 @@ export default function EmergencyTriagePage() {
   const caseId = searchParams.get('caseId');
   
   const [step, setStep] = useState<1 | 2 | 3>(1);
-  const [patientInfo, setPatientInfo] = useState({ name: '', age: '', gender: 'M', mrn: '' });
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(caseId);
 
   // Fetch pending cases for triage queue
@@ -117,11 +128,19 @@ export default function EmergencyTriagePage() {
     bloodPressureDiastolic: '',
     respiratoryRate: '',
     oxygenSaturation: '',
+    bloodGlucose: '',
     painLevel: '5',
     consciousnessLevel: 'alert',
   });
   const [selectedDoctor, setSelectedDoctor] = useState('');
   const [selectedBay, setSelectedBay] = useState('');
+  // Nurse can override the computed priority from the right-hand scale.
+  const [priorityOverride, setPriorityOverride] = useState<TriagePriority | null>(null);
+
+  const casePatient = selectedCaseData?.encounter?.patient;
+  const patientAge = casePatient?.dateOfBirth
+    ? Math.floor((Date.now() - new Date(casePatient.dateOfBirth).getTime()) / 31557600000)
+    : null;
 
   const suggestedPriority = useMemo((): TriagePriority => {
     const complaint = chiefComplaints.find(c => c.id === selectedComplaint);
@@ -153,6 +172,8 @@ export default function EmergencyTriagePage() {
     return priority;
   }, [selectedComplaint, vitals]);
 
+  const effectivePriority = priorityOverride ?? suggestedPriority;
+
   // Triage mutation
   const triageMutation = useMutation({
     mutationFn: async () => {
@@ -166,17 +187,28 @@ export default function EmergencyTriagePage() {
         'unresponsive': 3,
       };
 
+      const noteParts = [
+        `Chief Complaint: ${chiefComplaints.find(c => c.id === selectedComplaint)?.label || selectedComplaint}`,
+      ];
+      if (complaintNotes.trim()) noteParts.push(complaintNotes.trim());
+      if (priorityOverride && priorityOverride !== suggestedPriority)
+        noteParts.push(`Priority set manually to ${priorityConfig[priorityOverride].label} (suggested: ${priorityConfig[suggestedPriority].label})`);
+      const assignedDoctorName = onDutyDoctors.find(d => d.id === selectedDoctor)?.fullName;
+      if (assignedDoctorName || selectedBay)
+        noteParts.push(`Assigned: ${[assignedDoctorName, selectedBay].filter(Boolean).join(' at ')}`);
+
       const response = await emergencyService.triageCase(selectedCaseId, {
-        triageLevel: priorityToLevel[suggestedPriority],
+        triageLevel: priorityToLevel[effectivePriority],
         bloodPressureSystolic: vitals.bloodPressureSystolic ? parseInt(vitals.bloodPressureSystolic) : undefined,
         bloodPressureDiastolic: vitals.bloodPressureDiastolic ? parseInt(vitals.bloodPressureDiastolic) : undefined,
         heartRate: vitals.heartRate ? parseInt(vitals.heartRate) : undefined,
         respiratoryRate: vitals.respiratoryRate ? parseInt(vitals.respiratoryRate) : undefined,
         temperature: vitals.temperature ? parseFloat(vitals.temperature) : undefined,
         oxygenSaturation: vitals.oxygenSaturation ? parseInt(vitals.oxygenSaturation) : undefined,
+        bloodGlucose: vitals.bloodGlucose ? parseFloat(vitals.bloodGlucose) : undefined,
         painScore: vitals.painLevel ? parseInt(vitals.painLevel) : undefined,
         gcsScore: gcsMap[vitals.consciousnessLevel] || 15,
-        triageNotes: `Chief Complaint: ${chiefComplaints.find(c => c.id === selectedComplaint)?.label || selectedComplaint}\n${complaintNotes}\nAssigned: ${onDutyDoctors.find(d => d.id === selectedDoctor)?.fullName || selectedDoctor} at ${selectedBay}`,
+        triageNotes: noteParts.join('\n'),
       });
       return response.data;
     },
@@ -184,8 +216,10 @@ export default function EmergencyTriagePage() {
       queryClient.invalidateQueries({ queryKey: ['emergency-cases'] });
       queryClient.invalidateQueries({ queryKey: ['emergency-triage-queue'] });
       queryClient.invalidateQueries({ queryKey: ['emergency-dashboard'] });
+      toast.success(`Triage complete — priority ${priorityConfig[effectivePriority].label}`);
       navigate('/emergency');
     },
+    onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to save triage')),
   });
 
   const handleSubmit = () => {
@@ -310,52 +344,31 @@ export default function EmergencyTriagePage() {
               <div>
                 <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
                   <User className="w-5 h-5 text-gray-500" />
-                  Patient Information
+                  Patient
                 </h3>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="bg-gray-50 rounded-lg p-4 flex items-center justify-between">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Patient Name *</label>
-                    <input
-                      type="text"
-                      value={patientInfo.name}
-                      onChange={(e) => setPatientInfo({ ...patientInfo, name: e.target.value })}
-                      className="w-full border rounded-lg px-3 py-2"
-                      placeholder="Enter patient name"
-                    />
+                    <p className="font-medium text-gray-900">{casePatient?.fullName || 'Unknown patient'}</p>
+                    <p className="text-sm text-gray-500">
+                      {[
+                        casePatient?.mrn && `MRN ${casePatient.mrn}`,
+                        patientAge != null && `${patientAge}y`,
+                        casePatient?.gender,
+                      ].filter(Boolean).join(' • ') || 'No demographics on file'}
+                    </p>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">MRN (if known)</label>
-                    <input
-                      type="text"
-                      value={patientInfo.mrn}
-                      onChange={(e) => setPatientInfo({ ...patientInfo, mrn: e.target.value })}
-                      className="w-full border rounded-lg px-3 py-2"
-                      placeholder="Medical Record Number"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Age *</label>
-                    <input
-                      type="number"
-                      value={patientInfo.age}
-                      onChange={(e) => setPatientInfo({ ...patientInfo, age: e.target.value })}
-                      className="w-full border rounded-lg px-3 py-2"
-                      placeholder="Years"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Gender *</label>
-                    <select
-                      value={patientInfo.gender}
-                      onChange={(e) => setPatientInfo({ ...patientInfo, gender: e.target.value })}
-                      className="w-full border rounded-lg px-3 py-2"
-                    >
-                      <option value="M">Male</option>
-                      <option value="F">Female</option>
-                      <option value="O">Other</option>
-                    </select>
+                  <div className="text-right text-sm text-gray-500">
+                    <p>{selectedCaseData?.caseNumber}</p>
+                    {selectedCaseData?.arrivalTime && (
+                      <p>Arrived {new Date(selectedCaseData.arrivalTime).toLocaleTimeString()}</p>
+                    )}
                   </div>
                 </div>
+                {selectedCaseData?.chiefComplaint && (
+                  <p className="mt-2 text-sm text-gray-700 bg-yellow-50 border-l-4 border-yellow-400 p-2 rounded">
+                    At registration: {selectedCaseData.chiefComplaint}
+                  </p>
+                )}
               </div>
 
               <div>
@@ -484,6 +497,20 @@ export default function EmergencyTriagePage() {
                     />
                   </div>
                   <div>
+                    <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1">
+                      <Droplets className="w-4 h-4 text-purple-500" />
+                      Blood Glucose (mg/dL)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={vitals.bloodGlucose}
+                      onChange={(e) => setVitals({ ...vitals, bloodGlucose: e.target.value })}
+                      className="w-full border rounded-lg px-3 py-2"
+                      placeholder="Optional — check if altered consciousness"
+                    />
+                  </div>
+                  <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Pain Level (0-10)</label>
                     <div className="flex items-center gap-2">
                       <input
@@ -519,7 +546,7 @@ export default function EmergencyTriagePage() {
                       onClick={() => setVitals({ ...vitals, consciousnessLevel: level.value })}
                       className={`p-3 rounded-lg border text-sm font-medium transition-all ${
                         vitals.consciousnessLevel === level.value
-                          ? `bg-${level.color}-100 border-${level.color}-500 text-${level.color}-700 ring-2 ring-${level.color}-200`
+                          ? avpuClasses[level.value]
                           : 'hover:bg-gray-50'
                       }`}
                     >
@@ -539,26 +566,26 @@ export default function EmergencyTriagePage() {
               </h3>
               <div className="grid grid-cols-2 gap-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Assign Doctor *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Assign Doctor (optional)</label>
                   <select
                     value={selectedDoctor}
                     onChange={(e) => setSelectedDoctor(e.target.value)}
                     className="w-full border rounded-lg px-3 py-2"
                   >
-                    <option value="">Select doctor...</option>
+                    <option value="">Assign later</option>
                     {onDutyDoctors.map(d => (
                       <option key={d.id} value={d.id}>{d.fullName}</option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Assign Bay *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Assign Bay (optional)</label>
                   <select
                     value={selectedBay}
                     onChange={(e) => setSelectedBay(e.target.value)}
                     className="w-full border rounded-lg px-3 py-2"
                   >
-                    <option value="">Select bay...</option>
+                    <option value="">No bay</option>
                     {bays.map(b => <option key={b} value={b}>{b}</option>)}
                   </select>
                 </div>
@@ -569,7 +596,10 @@ export default function EmergencyTriagePage() {
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div>
                     <span className="text-gray-500">Patient:</span>
-                    <span className="ml-2 font-medium">{patientInfo.name}, {patientInfo.age}y {patientInfo.gender}</span>
+                    <span className="ml-2 font-medium">
+                      {casePatient?.fullName || 'Unknown'}
+                      {patientAge != null ? `, ${patientAge}y` : ''} {casePatient?.gender || ''}
+                    </span>
                   </div>
                   <div>
                     <span className="text-gray-500">Chief Complaint:</span>
@@ -596,21 +626,33 @@ export default function EmergencyTriagePage() {
         {/* Right Panel - Priority Preview */}
         <div className="w-80 flex flex-col gap-4">
           <div className="bg-white rounded-xl border shadow-sm p-4">
-            <h3 className="font-semibold mb-3">Suggested Priority</h3>
-            <div className={`p-4 rounded-lg ${priorityConfig[suggestedPriority].bgColor} text-white text-center`}>
-              <p className="text-2xl font-bold">{priorityConfig[suggestedPriority].label}</p>
-              <p className="text-sm opacity-90 mt-1">Max wait: {priorityConfig[suggestedPriority].maxWait}</p>
+            <h3 className="font-semibold mb-3">
+              {priorityOverride ? 'Priority (set by nurse)' : 'Suggested Priority'}
+            </h3>
+            <div className={`p-4 rounded-lg ${priorityConfig[effectivePriority].bgColor} text-white text-center`}>
+              <p className="text-2xl font-bold">{priorityConfig[effectivePriority].label}</p>
+              <p className="text-sm opacity-90 mt-1">Max wait: {priorityConfig[effectivePriority].maxWait}</p>
             </div>
+            {priorityOverride && priorityOverride !== suggestedPriority && (
+              <button
+                onClick={() => setPriorityOverride(null)}
+                className="mt-2 w-full text-xs text-blue-600 hover:underline"
+              >
+                Reset to suggested ({priorityConfig[suggestedPriority].label})
+              </button>
+            )}
           </div>
 
           <div className="bg-white rounded-xl border shadow-sm p-4">
-            <h3 className="font-semibold mb-3">Priority Scale</h3>
+            <h3 className="font-semibold mb-1">Priority Scale</h3>
+            <p className="text-xs text-gray-500 mb-3">Tap a level to override the suggestion</p>
             <div className="space-y-2">
               {Object.entries(priorityConfig).map(([key, config]) => (
-                <div
+                <button
                   key={key}
-                  className={`flex items-center justify-between p-2 rounded ${
-                    suggestedPriority === key ? 'ring-2 ring-gray-400' : ''
+                  onClick={() => setPriorityOverride(key as TriagePriority)}
+                  className={`w-full flex items-center justify-between p-2 rounded hover:bg-gray-50 ${
+                    effectivePriority === key ? 'ring-2 ring-gray-400' : ''
                   }`}
                 >
                   <div className="flex items-center gap-2">
@@ -618,7 +660,7 @@ export default function EmergencyTriagePage() {
                     <span className="text-sm font-medium">{config.label}</span>
                   </div>
                   <span className="text-xs text-gray-500">{config.maxWait}</span>
-                </div>
+                </button>
               ))}
             </div>
           </div>
@@ -644,7 +686,7 @@ export default function EmergencyTriagePage() {
             ) : (
               <button
                 onClick={handleSubmit}
-                disabled={!selectedDoctor || !selectedBay || triageMutation.isPending}
+                disabled={!selectedComplaint || triageMutation.isPending}
                 className="w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {triageMutation.isPending ? (
@@ -654,9 +696,6 @@ export default function EmergencyTriagePage() {
                 )}
                 Complete Triage
               </button>
-            )}
-            {triageMutation.isError && (
-              <p className="text-red-600 text-sm text-center">Failed to save triage. Please try again.</p>
             )}
           </div>
         </div>

@@ -15,7 +15,9 @@ import {
   Bed,
   Loader2,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { emergencyService, TriageLevel, TriageStatus } from '../../services';
+import { getApiErrorMessage } from '../../services/api';
 import { useFacilityId } from '../../lib/facility';
 
 const triageLevelConfig: Record<number, { label: string; color: string; textColor: string; bgLight: string; border: string }> = {
@@ -61,15 +63,16 @@ export default function EmergencyQueuePage() {
   const { data: casesData, isLoading, refetch } = useQuery({
     queryKey: ['emergency-queue-cases', facilityId],
     queryFn: async () => {
-      const response = await emergencyService.getCases({ 
+      // Server-side active filter: an unfiltered fetch caps at the oldest 100
+      // rows ever, so on an established site active cases would vanish.
+      const response = await emergencyService.getCases({
         facilityId,
+        active: 'true',
         limit: 100,
       });
-      // Filter to show triaged and in_treatment cases
-      const activeCases = (response.data || []).filter(
+      return (response.data || []).filter(
         c => c.status === TriageStatus.TRIAGED || c.status === TriageStatus.IN_TREATMENT
       );
-      return activeCases;
     },
     refetchInterval: 15000, // Refresh every 15 seconds
   });
@@ -83,7 +86,9 @@ export default function EmergencyQueuePage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['emergency-queue-cases'] });
       queryClient.invalidateQueries({ queryKey: ['emergency-dashboard'] });
+      toast.success('Treatment started');
     },
+    onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to start treatment')),
   });
 
   const cases = casesData || [];
@@ -195,7 +200,6 @@ export default function EmergencyQueuePage() {
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Chief Complaint</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Wait Time</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Assigned Doctor</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Bay</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
               </tr>
@@ -203,13 +207,13 @@ export default function EmergencyQueuePage() {
             <tbody className="divide-y divide-gray-100">
               {isLoading ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-12 text-center">
+                  <td colSpan={7} className="px-4 py-12 text-center">
                     <Loader2 className="w-8 h-8 animate-spin text-gray-400 mx-auto" />
                   </td>
                 </tr>
               ) : sortedCases.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-12 text-center">
+                  <td colSpan={7} className="px-4 py-12 text-center">
                     <div className="flex flex-col items-center text-gray-400">
                       <Users className="w-12 h-12 mb-3" />
                       <p className="font-medium">No patients in queue</p>
@@ -267,9 +271,6 @@ export default function EmergencyQueuePage() {
                       ) : (
                         <span className="text-sm text-gray-400">Unassigned</span>
                       )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="text-sm text-gray-400">—</span>
                     </td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${
