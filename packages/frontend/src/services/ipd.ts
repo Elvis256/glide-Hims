@@ -58,8 +58,11 @@ export interface Admission {
   };
   status: 'admitted' | 'discharged' | 'transferred' | 'deceased';
   priority: 'high' | 'medium' | 'low';
-  admittedAt: string;
-  dischargedAt?: string;
+  // Entity fields are admissionDate/dischargeDate — admittedAt/dischargedAt
+  // never existed on the backend and rendered as "Invalid Date".
+  admissionDate: string;
+  dischargeDate?: string;
+  encounterId?: string;
   createdAt: string;
   updatedAt: string;
 }

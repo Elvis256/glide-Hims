@@ -84,7 +84,7 @@ export default function NursingDailyReportPage() {
     if (!asList(admissionsData).length) return [];
     return asList(admissionsData).slice(0, 10).map((admission) => ({
       id: admission.id,
-      time: new Date(admission.admittedAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+      time: new Date(admission.admissionDate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
       type: 'admission' as const,
       description: admission.admittingDiagnosis || 'Patient admitted',
       patient: admission.patient?.fullName,

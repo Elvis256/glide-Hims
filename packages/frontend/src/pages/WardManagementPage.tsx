@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import api from '../services/api';
+import { getFacilityId } from '../lib/facility';
 import {
   Building2,
   Bed,
@@ -75,6 +77,7 @@ interface IpdStats {
 }
 
 export default function WardManagementPage() {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'overview' | 'wards' | 'admissions' | 'beds'>('overview');
   const [selectedWard, setSelectedWard] = useState<Ward | null>(null);
   const [showAdmitModal, setShowAdmitModal] = useState(false);
@@ -405,15 +408,25 @@ export default function WardManagementPage() {
                     </td>
                     <td className="whitespace-nowrap px-6 py-4">
                       <div className="flex items-center gap-2">
-                        <button className="rounded bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100">
+                        <button
+                          onClick={() => navigate('/ipd/nursing')}
+                          className="rounded bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100"
+                        >
                           <ClipboardList className="inline h-3 w-3 mr-1" />
                           Notes
                         </button>
-                        <button className="rounded bg-yellow-50 px-3 py-1 text-xs font-medium text-yellow-700 hover:bg-yellow-100">
+                        <button
+                          onClick={() => navigate('/ipd/wards')}
+                          className="rounded bg-yellow-50 px-3 py-1 text-xs font-medium text-yellow-700 hover:bg-yellow-100"
+                          title="Transfer via Wards & Beds"
+                        >
                           <ArrowRightLeft className="inline h-3 w-3 mr-1" />
                           Transfer
                         </button>
-                        <button className="rounded bg-green-50 px-3 py-1 text-xs font-medium text-green-700 hover:bg-green-100">
+                        <button
+                          onClick={() => navigate('/ipd/discharge')}
+                          className="rounded bg-green-50 px-3 py-1 text-xs font-medium text-green-700 hover:bg-green-100"
+                        >
                           Discharge
                         </button>
                       </div>
@@ -573,17 +586,11 @@ function WardModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () 
     e.preventDefault();
     setLoading(true);
     try {
-      // Get facility ID
-      const facilitiesRes = await api.get('/facilities');
-      const facilities = Array.isArray(facilitiesRes.data) ? facilitiesRes.data : facilitiesRes.data?.data || [];
-      if (facilities.length === 0) {
-        toast.error('No facility found. Please create a facility first.');
-        return;
-      }
-      
+      // Use the logged-in user's facility, not the first facility in the list
+      // (which is wrong in multi-facility tenants).
       await api.post('/ipd/wards', {
         ...formData,
-        facilityId: facilities[0].id,
+        facilityId: getFacilityId(),
       });
       toast.success('Ward created successfully');
       onSuccess();

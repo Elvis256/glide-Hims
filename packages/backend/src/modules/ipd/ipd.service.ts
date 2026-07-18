@@ -580,15 +580,13 @@ export class IpdService {
   ): Promise<Admission> {
     const tid = requireTenantId(tenantId);
     return this.dataSource.transaction(async (manager) => {
-      // Read admission inside transaction with pessimistic lock to prevent race conditions
+      // Read admission inside transaction with pessimistic lock to prevent race
+      // conditions. The lock query must NOT join relations — Postgres rejects
+      // FOR UPDATE on the nullable side of an outer join (this 500'd every
+      // transfer until caught live).
       const admissionQb = manager
         .createQueryBuilder(Admission, 'admission')
         .setLock('pessimistic_write')
-        .leftJoinAndSelect('admission.patient', 'patient')
-        .leftJoinAndSelect('admission.ward', 'ward')
-        .leftJoinAndSelect('admission.bed', 'bed')
-        .leftJoinAndSelect('admission.encounter', 'encounter')
-        .leftJoinAndSelect('admission.attendingDoctor', 'doctor')
         .where('admission.id = :id', { id });
       admissionQb.andWhere('admission.tenant_id = :tenantId', { tenantId: tid });
       const admission = await admissionQb.getOne();
@@ -616,7 +614,9 @@ export class IpdService {
         throw new BadRequestException('Selected bed does not belong to the selected ward');
       }
 
-      // Record transfer
+      // Record transfer. tenantId is mandatory — bed_transfers is RLS'd, and
+      // omitting it made the insert violate the tenant policy (500 on every
+      // transfer since RLS rollout).
       const transfer = manager.create(BedTransfer, {
         admissionId: id,
         fromWardId,
@@ -626,6 +626,7 @@ export class IpdService {
         reason: dto.reason,
         notes: dto.notes,
         transferredById: userId,
+        tenantId: tid,
       });
       await manager.save(transfer);
 

@@ -18,14 +18,16 @@ import {
   Loader2,
 } from 'lucide-react';
 import api from '../../services/api';
+import { useInstitutionInfo } from '../../lib/useInstitutionInfo';
+import { printElement } from '../../lib/print';
 
 interface Admission {
   id: string;
   admissionNumber: string;
   status: string;
   admissionDate: string;
-  primaryDiagnosis?: string;
-  admissionType?: string;
+  admissionDiagnosis?: string;
+  type?: string;
   patient: {
     id: string;
     fullName: string;
@@ -35,13 +37,13 @@ interface Admission {
     address?: string;
     nationalId?: string;
   };
+  ward?: {
+    id: string;
+    name: string;
+  };
   bed?: {
     id: string;
     bedNumber: string;
-    ward?: {
-      id: string;
-      name: string;
-    };
   };
   attendingDoctor?: {
     fullName: string;
@@ -49,9 +51,16 @@ interface Admission {
 }
 
 export default function BHTIssuePage() {
+  const institution = useInstitutionInfo();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedAdmission, setSelectedAdmission] = useState<Admission | null>(null);
   const [showPreview, setShowPreview] = useState(false);
+
+  const handlePrint = () => {
+    setShowPreview(true);
+    // Let the preview render before capturing it
+    setTimeout(() => printElement('bht-print', 'Bed Head Ticket'), 150);
+  };
 
   // Fetch active admissions
   const { data: admissions = [], isLoading } = useQuery({
@@ -201,11 +210,10 @@ export default function BHTIssuePage() {
                   </button>
                 </div>
                 <div className="flex gap-2">
-                  <button className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
-                    <Download className="w-4 h-4 inline mr-2" />
-                    Download
-                  </button>
-                  <button className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+                  <button
+                    onClick={handlePrint}
+                    className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
                     <Printer className="w-4 h-4 inline mr-2" />
                     Print
                   </button>
@@ -278,11 +286,11 @@ export default function BHTIssuePage() {
                         <div className="grid grid-cols-2 gap-4">
                           <div>
                             <p className="text-sm text-gray-500">Admission Type</p>
-                            <p className="font-medium capitalize">{selectedAdmission.admissionType || 'Elective'}</p>
+                            <p className="font-medium capitalize">{selectedAdmission.type || 'Elective'}</p>
                           </div>
                           <div>
                             <p className="text-sm text-gray-500">Ward / Bed</p>
-                            <p className="font-medium">{selectedAdmission.bed?.ward?.name || 'N/A'} - {selectedAdmission.bed?.bedNumber || 'N/A'}</p>
+                            <p className="font-medium">{selectedAdmission.ward?.name || 'N/A'} - {selectedAdmission.bed?.bedNumber || 'N/A'}</p>
                           </div>
                         </div>
                         <div>
@@ -296,7 +304,7 @@ export default function BHTIssuePage() {
                         </div>
                         <div>
                           <p className="text-sm text-gray-500">Diagnosis</p>
-                          <p className="font-medium">{selectedAdmission.primaryDiagnosis || 'To be determined'}</p>
+                          <p className="font-medium">{selectedAdmission.admissionDiagnosis || 'To be determined'}</p>
                         </div>
                       </div>
                     </div>
@@ -319,12 +327,12 @@ export default function BHTIssuePage() {
                   </div>
                 ) : (
                   /* BHT Preview - Print Format */
-                  <div className="max-w-3xl mx-auto bg-white border-2 border-gray-300 p-8">
-                    {/* Header */}
+                  <div id="bht-print" className="max-w-3xl mx-auto bg-white border-2 border-gray-300 p-8">
+                    {/* Header — real facility letterhead */}
                     <div className="text-center border-b-2 border-gray-800 pb-4 mb-6">
-                      <h1 className="text-2xl font-bold text-gray-900">GLIDE HOSPITAL</h1>
-                      <p className="text-sm text-gray-600">P.O. Box 12345, Nairobi, Kenya</p>
-                      <p className="text-sm text-gray-600">Tel: +254 20 123 4567</p>
+                      <h1 className="text-2xl font-bold text-gray-900">{institution.name}</h1>
+                      {institution.address && <p className="text-sm text-gray-600">{institution.address}</p>}
+                      {institution.phone && <p className="text-sm text-gray-600">Tel: {institution.phone}</p>}
                       <h2 className="text-xl font-bold text-gray-900 mt-4 underline">BED HEAD TICKET</h2>
                     </div>
 
@@ -356,9 +364,9 @@ export default function BHTIssuePage() {
                     <div className="border border-gray-400 p-4 mb-4">
                       <h3 className="font-bold border-b border-gray-400 pb-2 mb-3">ADMISSION DETAILS</h3>
                       <div className="grid grid-cols-2 gap-4 text-sm">
-                        <div><span className="font-bold">Ward:</span> {selectedAdmission.bed?.ward?.name || 'N/A'}</div>
+                        <div><span className="font-bold">Ward:</span> {selectedAdmission.ward?.name || 'N/A'}</div>
                         <div><span className="font-bold">Bed:</span> {selectedAdmission.bed?.bedNumber || 'N/A'}</div>
-                        <div><span className="font-bold">Admission Type:</span> {selectedAdmission.admissionType || 'Elective'}</div>
+                        <div><span className="font-bold">Admission Type:</span> {selectedAdmission.type || 'Elective'}</div>
                         <div><span className="font-bold">Time:</span> {new Date(selectedAdmission.admissionDate).toLocaleTimeString()}</div>
                         <div className="col-span-2">
                           <span className="font-bold">Attending Doctor:</span>{' '}
@@ -366,7 +374,7 @@ export default function BHTIssuePage() {
                             ? `Dr. ${selectedAdmission.attendingDoctor.fullName}`
                             : 'Not assigned'}
                         </div>
-                        <div className="col-span-2"><span className="font-bold">Diagnosis:</span> {selectedAdmission.primaryDiagnosis || 'To be determined'}</div>
+                        <div className="col-span-2"><span className="font-bold">Diagnosis:</span> {selectedAdmission.admissionDiagnosis || 'To be determined'}</div>
                       </div>
                     </div>
 
