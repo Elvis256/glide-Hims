@@ -24,6 +24,7 @@ import {
 import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
 import { storesService } from '../../services/stores';
+import { getApiErrorMessage } from '../../services/api';
 import type { StockMovement, StockAdjustmentDto, Drug } from '../../services/stores';
 import { formatCurrency } from '../../lib/currency';
 
@@ -55,7 +56,6 @@ export default function ReturnsPage() {
 
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedStatus, setSelectedStatus] = useState<ReturnStatus | 'All'>('All');
   const [selectedReason, setSelectedReason] = useState<ReturnReason | 'All'>('All');
   const [showNewModal, setShowNewModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState<ReturnItem | null>(null);
@@ -108,7 +108,7 @@ export default function ReturnsPage() {
       setItemSearch('');
       toast.success('Return processed successfully');
     },
-    onError: () => toast.error('Failed to process return'),
+    onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to process return')),
   });
 
   const handleSubmitReturn = useCallback(() => {
@@ -164,19 +164,21 @@ export default function ReturnsPage() {
         item.patientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         item.returnNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
         item.medication.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesStatus = selectedStatus === 'All' || item.status === selectedStatus;
       const matchesReason = selectedReason === 'All' || item.reason === selectedReason;
-      return matchesSearch && matchesStatus && matchesReason;
+      return matchesSearch && matchesReason;
     });
-  }, [searchTerm, selectedStatus, selectedReason, returns]);
+  }, [searchTerm, selectedReason, returns]);
 
-  const returnStats = useMemo(() => ({
-    total: returns.length,
-    pending: returns.filter((r) => r.status === 'Pending').length,
-    totalRefunds: returns.filter((r) => r.status === 'Processed').reduce((acc, r) => acc + r.refundAmount, 0),
-    returnedToStock: returns.filter((r) => r.action === 'Return to Stock' && r.status === 'Processed').length,
-    disposed: returns.filter((r) => r.action === 'Dispose' && r.status === 'Processed').length,
-  }), [returns]);
+  const returnStats = useMemo(() => {
+    const today = new Date().toDateString();
+    return {
+      total: returns.length,
+      today: returns.filter((r) => new Date(r.returnDate).toDateString() === today).length,
+      totalRefunds: returns.reduce((acc, r) => acc + r.refundAmount, 0),
+      returnedToStock: returns.filter((r) => r.action === 'Return to Stock').length,
+      disposed: returns.filter((r) => r.action === 'Dispose').length,
+    };
+  }, [returns]);
 
   if (!hasPermission('pharmacy.read')) {
     return <AccessDenied />;
@@ -265,8 +267,8 @@ export default function ReturnsPage() {
               <Clock className="w-5 h-5 text-amber-600" />
             </div>
             <div>
-              <p className="text-sm text-gray-600">Pending</p>
-              <p className="text-2xl font-bold text-amber-600">{returnStats.pending}</p>
+              <p className="text-sm text-gray-600">Today</p>
+              <p className="text-2xl font-bold text-amber-600">{returnStats.today}</p>
             </div>
           </div>
         </div>
@@ -320,17 +322,6 @@ export default function ReturnsPage() {
           </div>
           <div className="flex items-center gap-2">
             <Filter className="w-4 h-4 text-gray-500" />
-            <select
-              value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value as ReturnStatus | 'All')}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="All">All Statuses</option>
-              <option value="Pending">Pending</option>
-              <option value="Approved">Approved</option>
-              <option value="Rejected">Rejected</option>
-              <option value="Processed">Processed</option>
-            </select>
             <select
               value={selectedReason}
               onChange={(e) => setSelectedReason(e.target.value as ReturnReason | 'All')}
@@ -443,39 +434,17 @@ export default function ReturnsPage() {
                   </td>
                   <td className="px-4 py-3 text-gray-700">{item.returnDate}</td>
                   <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      {item.status === 'Pending' && (
-                        <>
-                          <button
-                            onClick={() => toast.success(`Return ${item.returnNumber} approved`)}
-                            className="px-3 py-1 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition-colors"
-                          >
-                            Approve
-                          </button>
-                          <button
-                            onClick={() => toast.error(`Return ${item.returnNumber} rejected`)}
-                            className="px-3 py-1 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 transition-colors"
-                          >
-                            Reject
-                          </button>
-                        </>
-                      )}
-                      {item.status === 'Approved' && (
-                        <button
-                          onClick={() => toast.success(`Return ${item.returnNumber} processed`)}
-                          className="px-3 py-1 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
-                        >
-                          Process
-                        </button>
-                      )}
-                      <button
-                        onClick={() => setShowDetailModal(item)}
-                        className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                        title="View Details"
-                      >
-                        <FileText className="w-4 h-4 text-gray-500" />
-                      </button>
-                    </div>
+                    {/* Returns are recorded as immediate stock movements — there
+                        is no approval workflow, so no approve/reject buttons.
+                        (The previous ones only showed a toast without doing
+                        anything — a fake success.) */}
+                    <button
+                      onClick={() => setShowDetailModal(item)}
+                      className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                      title="View Details"
+                    >
+                      <FileText className="w-4 h-4 text-gray-500" />
+                    </button>
                   </td>
                 </tr>
               ))}
