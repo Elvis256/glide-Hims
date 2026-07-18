@@ -599,7 +599,16 @@ export class LabSuppliesService {
   // ==================== QC MATERIALS ====================
 
   async createQCMaterial(data: Partial<QCMaterial>, tenantId?: string): Promise<QCMaterial> {
-    const material = this.qcMaterialRepo.create({ ...data, tenantId: requireTenantId(tenantId) });
+    // code and test_name are NOT NULL — default them so the create form only
+    // has to supply name/testCode/targets.
+    const material = this.qcMaterialRepo.create({
+      ...data,
+      code:
+        data.code?.trim() ||
+        `QC-${(data.testCode || 'MAT').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8)}-${(data.level || 'l').toString().slice(-1).toUpperCase()}`,
+      testName: data.testName?.trim() || data.name,
+      tenantId: requireTenantId(tenantId),
+    });
     return this.qcMaterialRepo.save(material);
   }
 
@@ -698,13 +707,16 @@ export class LabSuppliesService {
     endDate: Date,
     tenantId?: string,
   ): Promise<QCResult[]> {
+    const where: any = {
+      facilityId,
+      runDate: Between(startDate, endDate),
+      tenantId: requireTenantId(tenantId),
+    };
+    // The dashboard sends 'all' for "no test filter" — treating it as a literal
+    // test code made the whole QC list permanently empty.
+    if (testCode && testCode !== 'all') where.testCode = testCode;
     return this.qcResultRepo.find({
-      where: {
-        facilityId,
-        testCode,
-        runDate: Between(startDate, endDate),
-        tenantId: requireTenantId(tenantId),
-      },
+      where,
       relations: ['performedByUser', 'qcMaterial'],
       order: { runDate: 'ASC' },
     });

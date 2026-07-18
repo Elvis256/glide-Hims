@@ -327,23 +327,49 @@ export class CreateQCMaterialDto {
   @IsString()
   name: string;
 
+  @IsString()
+  testCode: string;
+
+  // Entity NOT NULL columns; code/testName are defaulted by the service when
+  // omitted. targetMean/targetSd are required — a QC material without targets
+  // cannot evaluate anything.
   @IsOptional()
   @IsString()
-  testCode?: string;
+  code?: string;
+
+  @IsOptional()
+  @IsString()
+  testName?: string;
+
+  @IsOptional()
+  @IsString()
+  level?: string;
+
+  @IsNumber()
+  @Type(() => Number)
+  targetMean: number;
+
+  @IsNumber()
+  @Min(0.000001)
+  @Type(() => Number)
+  targetSd: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  targetCv?: number;
+
+  @IsOptional()
+  @IsString()
+  unit?: string;
+
+  @IsOptional()
+  @IsUUID()
+  equipmentId?: string;
 
   @IsOptional()
   @IsString()
   lotNumber?: string;
-
-  @IsOptional()
-  @IsNumber()
-  @Type(() => Number)
-  targetValue?: number;
-
-  @IsOptional()
-  @IsNumber()
-  @Type(() => Number)
-  standardDeviation?: number;
 
   @IsOptional()
   @IsDateString()
@@ -352,6 +378,10 @@ export class CreateQCMaterialDto {
   @IsOptional()
   @IsString()
   manufacturer?: string;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
 }
 
 // ============ QC RESULTS ============
@@ -368,6 +398,26 @@ export class RecordQCResultDto {
   @IsNumber()
   @Type(() => Number)
   value: number;
+
+  @IsOptional()
+  @IsUUID()
+  equipmentId?: string;
+
+  @IsOptional()
+  @IsString()
+  unit?: string;
+
+  @IsOptional()
+  @IsString()
+  reagentLot?: string;
+
+  @IsOptional()
+  @IsString()
+  calibratorLot?: string;
+
+  @IsOptional()
+  @IsString()
+  comments?: string;
 
   @IsOptional()
   @IsString()
