@@ -150,11 +150,25 @@ export class StartTreatmentDto {
   treatmentNotes?: string;
 }
 
+export enum EmergencyDisposition {
+  DISCHARGED = 'discharged',
+  LEFT_AMA = 'left_ama',
+  DECEASED = 'deceased',
+}
+
 export class DischargeEmergencyDto {
-  @ApiProperty({ description: 'Primary diagnosis' })
-  @IsNotEmpty()
+  @ApiPropertyOptional({
+    enum: EmergencyDisposition,
+    description: 'Outcome of the ED stay (defaults to discharged). Left-AMA and deceased are valid from any active status.',
+  })
+  @IsOptional()
+  @IsEnum(EmergencyDisposition)
+  disposition?: EmergencyDisposition;
+
+  @ApiPropertyOptional({ description: 'Primary diagnosis (required unless patient left against medical advice)' })
+  @IsOptional()
   @IsString()
-  primaryDiagnosis: string;
+  primaryDiagnosis?: string;
 
   @ApiPropertyOptional({ description: 'Disposition notes' })
   @IsOptional()
@@ -228,4 +242,11 @@ export class EmergencyQueryDto {
   @IsInt()
   @Min(0)
   offset?: number;
+
+  @ApiPropertyOptional({
+    description: "Filter to active cases only (pending/triaged/in_treatment). Pass 'true'.",
+  })
+  @IsOptional()
+  @IsString()
+  active?: string;
 }

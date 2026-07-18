@@ -20,6 +20,7 @@ import {
   DischargeEmergencyDto,
   AdmitFromEmergencyDto,
   EmergencyQueryDto,
+  EmergencyDisposition,
 } from './dto/emergency.dto';
 import { VitalsService } from '../vitals/vitals.service';
 import { VitalSource } from '../../database/entities/vital.entity';
@@ -41,10 +42,14 @@ export class EmergencyService {
 
   /**
    * Generate the next case number for today. MUST be invoked from inside an
-   * active transaction (`manager` is required) so the pessimistic lock taken
-   * on today's rows is held until the new EmergencyCase is actually inserted
-   * — otherwise two concurrent registrations can read the same count and
-   * produce duplicate case numbers.
+   * active transaction (`manager` is required): the advisory lock taken below
+   * is transaction-scoped, so it is held until the new EmergencyCase is
+   * actually inserted — otherwise two concurrent registrations can read the
+   * same count and produce duplicate case numbers.
+   *
+   * NOTE: a row lock (`setLock('pessimistic_write')`) cannot be used here —
+   * Postgres rejects FOR UPDATE combined with COUNT(*), which made every
+   * registration 500.
    */
   private async generateCaseNumber(
     manager: import('typeorm').EntityManager,
@@ -56,14 +61,15 @@ export class EmergencyService {
     const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
     const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
 
-    const qb = manager
+    await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+      `emergency_case_number:${tid}:${prefix}`,
+    ]);
+
+    const count = await manager
       .createQueryBuilder(EmergencyCase, 'ec')
-      .setLock('pessimistic_write')
-      .where('ec.arrivalTime BETWEEN :startOfDay AND :endOfDay', { startOfDay, endOfDay });
-
-    qb.andWhere('ec.tenant_id = :tenantId', { tenantId: tid });
-
-    const count = await qb.getCount();
+      .where('ec.arrivalTime BETWEEN :startOfDay AND :endOfDay', { startOfDay, endOfDay })
+      .andWhere('ec.tenant_id = :tenantId', { tenantId: tid })
+      .getCount();
     return `${prefix}-${String(count + 1).padStart(4, '0')}`;
   }
 
@@ -322,23 +328,36 @@ export class EmergencyService {
     const emergencyCase = await this.caseRepo.findOne({ where });
     if (!emergencyCase) throw new NotFoundException('Emergency case not found');
 
-    // Only allow discharge of cases that have received treatment
-    const dischargeableStatuses = [
-      TriageStatus.IN_TREATMENT,
-      TriageStatus.ADMITTED,
-      TriageStatus.TRANSFERRED,
-    ];
-    if (!dischargeableStatuses.includes(emergencyCase.status as TriageStatus)) {
+    const disposition = dto.disposition || EmergencyDisposition.DISCHARGED;
+    const targetStatus =
+      disposition === EmergencyDisposition.LEFT_AMA
+        ? TriageStatus.LEFT_AMA
+        : disposition === EmergencyDisposition.DECEASED
+          ? TriageStatus.DECEASED
+          : TriageStatus.DISCHARGED;
+
+    // A normal discharge requires treatment to have started; leaving against
+    // medical advice or dying in the department can happen at any active stage
+    // (including while still waiting for triage).
+    const allowedStatuses =
+      disposition === EmergencyDisposition.DISCHARGED
+        ? [TriageStatus.IN_TREATMENT, TriageStatus.ADMITTED, TriageStatus.TRANSFERRED]
+        : [TriageStatus.PENDING, TriageStatus.TRIAGED, TriageStatus.IN_TREATMENT];
+    if (!allowedStatuses.includes(emergencyCase.status as TriageStatus)) {
       throw new BadRequestException(
-        `Cannot discharge case in '${emergencyCase.status}' status. Only cases that are in treatment, admitted, or transferred can be discharged.`,
+        `Cannot record '${disposition}' for a case in '${emergencyCase.status}' status.`,
       );
+    }
+
+    if (!dto.primaryDiagnosis && disposition !== EmergencyDisposition.LEFT_AMA) {
+      throw new BadRequestException('Primary diagnosis is required');
     }
 
     const oldStatus = emergencyCase.status;
 
-    emergencyCase.status = TriageStatus.DISCHARGED;
+    emergencyCase.status = targetStatus;
     emergencyCase.dischargeTime = new Date();
-    emergencyCase.primaryDiagnosis = dto.primaryDiagnosis;
+    if (dto.primaryDiagnosis) emergencyCase.primaryDiagnosis = dto.primaryDiagnosis;
     if (dto.dispositionNotes) emergencyCase.dispositionNotes = dto.dispositionNotes;
     if (dto.treatmentNotes)
       emergencyCase.treatmentNotes =
@@ -358,7 +377,7 @@ export class EmergencyService {
     const savedCase = await this.caseRepo.save(emergencyCase);
 
     this.logger.log(
-      `[AUDIT] Emergency case discharged: ${emergencyCase.caseNumber}, diagnosis: ${dto.primaryDiagnosis}`,
+      `[AUDIT] Emergency case closed (${disposition}): ${emergencyCase.caseNumber}, diagnosis: ${dto.primaryDiagnosis ?? 'n/a'}`,
     );
 
     this.auditLogService
@@ -392,6 +411,16 @@ export class EmergencyService {
     const emergencyCase = await this.caseRepo.findOne({ where, relations: ['encounter'] });
     if (!emergencyCase) throw new NotFoundException('Emergency case not found');
 
+    if (
+      ![TriageStatus.TRIAGED, TriageStatus.IN_TREATMENT].includes(
+        emergencyCase.status as TriageStatus,
+      )
+    ) {
+      throw new BadRequestException(
+        `Cannot admit a case in '${emergencyCase.status}' status. The case must be triaged or in treatment.`,
+      );
+    }
+
     emergencyCase.status = TriageStatus.ADMITTED;
     emergencyCase.primaryDiagnosis = dto.primaryDiagnosis;
     emergencyCase.dispositionNotes = dto.admissionNotes || `Admitted to ward ${dto.wardId}`;
@@ -422,17 +451,29 @@ export class EmergencyService {
   ): Promise<{ data: EmergencyCase[]; meta: any }> {
     const { status, triageLevel, facilityId, fromDate, toDate, limit = 50, offset = 0 } = query;
 
+    const activeStatuses = [TriageStatus.PENDING, TriageStatus.TRIAGED, TriageStatus.IN_TREATMENT];
+    // Closed-case views (discharged/admitted/…) are history lookups — show the
+    // most recent first. Active worklists keep acuity-then-arrival ordering so
+    // sickest/longest-waiting patients can never be pushed off the page.
+    const isClosedView = status && !activeStatuses.includes(status as TriageStatus);
+
     const qb = this.caseRepo
       .createQueryBuilder('ec')
       .leftJoinAndSelect('ec.encounter', 'enc')
       .leftJoinAndSelect('enc.patient', 'patient')
       .leftJoinAndSelect('ec.triageNurse', 'nurse')
-      .leftJoinAndSelect('ec.attendingDoctor', 'doctor')
-      .orderBy('ec.triageLevel', 'ASC')
-      .addOrderBy('ec.arrivalTime', 'ASC');
+      .leftJoinAndSelect('ec.attendingDoctor', 'doctor');
+
+    if (isClosedView) {
+      qb.orderBy('ec.arrivalTime', 'DESC');
+    } else {
+      qb.orderBy('ec.triageLevel', 'ASC').addOrderBy('ec.arrivalTime', 'ASC');
+    }
 
     qb.andWhere('ec.tenant_id = :tenantId', { tenantId: requireTenantId(tenantId) });
     if (status) qb.andWhere('ec.status = :status', { status });
+    else if (query.active === 'true')
+      qb.andWhere('ec.status IN (:...activeStatuses)', { activeStatuses });
     if (triageLevel) qb.andWhere('ec.triageLevel = :triageLevel', { triageLevel });
     if (facilityId) qb.andWhere('ec.facilityId = :facilityId', { facilityId });
     if (fromDate) qb.andWhere('ec.arrivalTime >= :fromDate', { fromDate });

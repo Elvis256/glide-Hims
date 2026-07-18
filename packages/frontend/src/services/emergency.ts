@@ -16,6 +16,7 @@ export const TriageStatus = {
   IN_TREATMENT: 'in_treatment',
   DISCHARGED: 'discharged',
   ADMITTED: 'admitted',
+  TRANSFERRED: 'transferred',
   LEFT_AMA: 'left_ama',
   DECEASED: 'deceased',
 } as const;
@@ -63,8 +64,17 @@ export interface StartTreatmentDto {
   treatmentNotes?: string;
 }
 
+export const EmergencyDisposition = {
+  DISCHARGED: 'discharged',
+  LEFT_AMA: 'left_ama',
+  DECEASED: 'deceased',
+} as const;
+export type EmergencyDisposition = (typeof EmergencyDisposition)[keyof typeof EmergencyDisposition];
+
 export interface DischargeEmergencyDto {
-  primaryDiagnosis: string;
+  /** Required unless disposition is left_ama */
+  primaryDiagnosis?: string;
+  disposition?: EmergencyDisposition;
   dispositionNotes?: string;
   treatmentNotes?: string;
 }
@@ -84,6 +94,8 @@ export interface EmergencyQueryDto {
   toDate?: string;
   limit?: number;
   offset?: number;
+  /** 'true' → only pending/triaged/in_treatment cases */
+  active?: string;
 }
 
 // Response types

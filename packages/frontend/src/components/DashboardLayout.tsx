@@ -62,7 +62,6 @@ import {
   Banknote,
   HandCoins,
   ClipboardPlus,
-  Ambulance,
   Printer,
   RotateCcw,
   UserCog,
@@ -484,8 +483,8 @@ const navigationSections: NavSection[] = [
     roles: ['Doctor', 'Nurse', 'Receptionist'],
     permissions: ['emergency.read', 'emergency.create'],
     items: [
-      { name: 'Emergency Queue', href: '/emergency', icon: Siren, permissions: ['emergency.read'] },
-      { name: 'Ambulance Tracking', href: '/emergency/ambulance', icon: Ambulance, permissions: ['emergency.read'] },
+      { name: 'Emergency Cases', href: '/emergency', icon: Siren, permissions: ['emergency.read'] },
+      { name: 'Live Queue Board', href: '/emergency/queue', icon: Activity, permissions: ['emergency.read'] },
       { name: 'Triage Assessment', href: '/emergency/triage', icon: Thermometer, permissions: ['emergency.create'] },
       { name: 'Emergency Billing', href: '/emergency/billing', icon: CreditCard, permissions: ['emergency.read', 'billing.create'] },
     ],

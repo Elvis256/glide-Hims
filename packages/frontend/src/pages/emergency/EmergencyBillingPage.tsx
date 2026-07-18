@@ -1,26 +1,23 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { emergencyService } from '../../services/emergency';
 import { billingService } from '../../services/billing';
 import { servicesService } from '../../services/services';
+import { getApiErrorMessage } from '../../services/api';
 import { useFacilityId } from '../../lib/facility';
+import { formatCurrency } from '../../lib/currency';
 import {
   Receipt,
   Search,
   User,
   Package,
   CreditCard,
-  Shield,
-  CheckCircle,
-  XCircle,
   Plus,
   Minus,
   FileText,
-  ArrowRight,
   DollarSign,
   Clock,
-  AlertCircle,
-  Printer,
   Loader2,
 } from 'lucide-react';
 import { asList } from '../../utils/unwrapResponse';
@@ -40,43 +37,37 @@ interface EmergencyPackage {
   price: number;
 }
 
-interface InsuranceInfo {
-  provider: string;
-  policyNumber: string;
-  status: 'verified' | 'pending' | 'rejected';
-  coverage: number;
-}
-
-type PatientType = { id: string; name: string; age: number; mrn: string; arrivalTime: string; complaint: string };
+type PatientType = { id: string; name: string; age: number; mrn: string; arrivalTime: string; complaint: string; encounterId?: string };
 
 export default function EmergencyBillingPage() {
   const facilityId = useFacilityId();
   const queryClient = useQueryClient();
 
   const { data: casesData } = useQuery({
-    queryKey: ['emergency-cases', facilityId],
+    queryKey: ['emergency-cases-active-billing', facilityId],
     queryFn: async () => {
-      const response = await emergencyService.getCases({ facilityId });
+      const response = await emergencyService.getCases({ facilityId, active: 'true', limit: 100 });
       return response.data;
     },
     enabled: !!facilityId,
   });
 
+  // Only cases with a linked patient record can be billed — an invoice needs a
+  // real patientId, not a case id.
   const patients: PatientType[] = useMemo(() => {
-    if (!asList(casesData).length) return [];
-    return asList(casesData).map((c) => ({
-      id: c.encounter?.patient?.id || c.id,
-      name: c.encounter?.patient
-        ? c.encounter.patient.fullName
-        : `Case ${c.caseNumber}`,
-      age: c.encounter?.patient?.dateOfBirth
-        ? Math.floor((Date.now() - new Date(c.encounter.patient.dateOfBirth).getTime()) / 31557600000)
-        : 0,
-      mrn: c.encounter?.patient?.mrn || c.caseNumber,
-      arrivalTime: new Date(c.arrivalTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      complaint: c.chiefComplaint,
-      encounterId: c.encounterId,
-    }));
+    return asList(casesData)
+      .filter((c) => c.encounter?.patient?.id)
+      .map((c) => ({
+        id: c.encounter!.patient!.id,
+        name: c.encounter!.patient!.fullName,
+        age: c.encounter?.patient?.dateOfBirth
+          ? Math.floor((Date.now() - new Date(c.encounter.patient.dateOfBirth).getTime()) / 31557600000)
+          : 0,
+        mrn: c.encounter?.patient?.mrn || c.caseNumber,
+        arrivalTime: new Date(c.arrivalTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        complaint: c.chiefComplaint,
+        encounterId: c.encounterId,
+      }));
   }, [casesData]);
 
   const { data: servicesList = [] } = useQuery({
@@ -112,16 +103,14 @@ export default function EmergencyBillingPage() {
   const [billingItems, setBillingItems] = useState<BillingItem[]>([]);
   const [depositAmount, setDepositAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('cash');
-  const [insurance, setInsurance] = useState<InsuranceInfo | null>(null);
-  const [showInsuranceModal, setShowInsuranceModal] = useState(false);
 
   const filteredServices = useMemo(() => {
     if (!searchTerm) return edServices;
-    return edServices.filter(s => 
+    return edServices.filter(s =>
       s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       s.category.toLowerCase().includes(searchTerm.toLowerCase())
     );
-  }, [searchTerm]);
+  }, [searchTerm, edServices]);
 
   const addItem = (service: typeof edServices[0]) => {
     const existing = billingItems.find(i => i.id === service.id);
@@ -154,52 +143,58 @@ export default function EmergencyBillingPage() {
     }]);
   };
 
-  const subtotal = useMemo(() => 
+  const subtotal = useMemo(() =>
     billingItems.reduce((sum, item) => sum + item.price * item.quantity, 0)
   , [billingItems]);
 
-  const insuranceDiscount = useMemo(() => 
-    insurance?.status === 'verified' ? subtotal * (insurance.coverage / 100) : 0
-  , [subtotal, insurance]);
-
   const deposit = parseFloat(depositAmount) || 0;
-  const total = subtotal - insuranceDiscount;
+  const total = subtotal;
   const balance = total - deposit;
 
+  // Creates the invoice, and if a deposit was taken records it as a real
+  // payment against that invoice — so the cashier ledger and the patient's
+  // balance both reflect what was actually collected.
   const createInvoiceMutation = useMutation({
     mutationFn: async () => {
-      if (!selectedPatient || billingItems.length === 0) return;
-      return billingService.invoices.create({
+      if (!selectedPatient || billingItems.length === 0) return null;
+      const invoice = await billingService.invoices.create({
         patientId: selectedPatient.id,
-        encounterId: (selectedPatient as any).encounterId,
+        encounterId: selectedPatient.encounterId,
         items: billingItems.map((item) => ({
           serviceCode: item.id,
           description: item.name,
           quantity: item.quantity,
           unitPrice: item.price,
         })),
-        notes: insurance ? `Insurance: ${insurance.provider} (${insurance.coverage}%)` : undefined,
+        notes: 'Emergency department bill',
       });
+      let depositRecorded = 0;
+      if (deposit > 0 && invoice?.id) {
+        depositRecorded = Math.min(deposit, total);
+        await billingService.payments.record(invoice.id, {
+          amount: depositRecorded,
+          paymentMethod,
+          notes: 'ED deposit',
+        });
+      }
+      return { invoice, depositRecorded };
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['emergency-cases'] });
+    onSuccess: (result) => {
+      if (!result) return;
+      queryClient.invalidateQueries({ queryKey: ['emergency-cases-active-billing'] });
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
       setBillingItems([]);
       setSelectedPatient(null);
       setDepositAmount('');
-      setInsurance(null);
+      const inv = result.invoice;
+      toast.success(
+        result.depositRecorded > 0
+          ? `Invoice ${inv?.invoiceNumber || ''} created — deposit ${formatCurrency(result.depositRecorded)} recorded, balance ${formatCurrency(Math.max(total - result.depositRecorded, 0))}`
+          : `Invoice ${inv?.invoiceNumber || ''} created — payable at cashier`,
+      );
     },
+    onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to create the bill')),
   });
-
-  const verifyInsurance = () => {
-    // Simulate insurance verification
-    setInsurance({
-      provider: 'BlueCross Health',
-      policyNumber: 'BC-123456789',
-      status: 'verified',
-      coverage: 80,
-    });
-    setShowInsuranceModal(false);
-  };
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col p-6 bg-gray-50">
@@ -276,7 +271,7 @@ export default function EmergencyBillingPage() {
                   >
                     <p className="font-medium text-sm">{pkg.name}</p>
                     <p className="text-xs text-gray-500 mt-1">{pkg.items.length} items</p>
-                    <p className="text-sm font-semibold text-green-600 mt-1">${pkg.price}</p>
+                    <p className="text-sm font-semibold text-green-600 mt-1">{formatCurrency(pkg.price)}</p>
                   </button>
                 ))
               )}
@@ -326,7 +321,7 @@ export default function EmergencyBillingPage() {
                       <tr key={service.id} className="hover:bg-gray-50">
                         <td className="px-4 py-2 text-sm font-medium">{service.name}</td>
                         <td className="px-4 py-2 text-sm text-gray-500">{service.category}</td>
-                        <td className="px-4 py-2 text-sm text-right font-medium">${service.price}</td>
+                        <td className="px-4 py-2 text-sm text-right font-medium">{formatCurrency(service.price)}</td>
                         <td className="px-4 py-2 text-center">
                           <button
                             onClick={() => addItem(service)}
@@ -347,44 +342,6 @@ export default function EmergencyBillingPage() {
 
         {/* Right Panel - Bill Summary */}
         <div className="flex flex-col gap-4 min-h-0">
-          {/* Insurance */}
-          <div className="bg-white rounded-xl border shadow-sm p-4">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold flex items-center gap-2">
-                <Shield className="w-4 h-4 text-gray-500" />
-                Insurance
-              </h3>
-              <button
-                onClick={() => setShowInsuranceModal(true)}
-                className="text-sm text-blue-600 hover:underline"
-              >
-                Verify
-              </button>
-            </div>
-            {insurance ? (
-              <div className={`p-3 rounded-lg ${
-                insurance.status === 'verified' ? 'bg-green-50 border border-green-200' :
-                insurance.status === 'pending' ? 'bg-yellow-50 border border-yellow-200' :
-                'bg-red-50 border border-red-200'
-              }`}>
-                <div className="flex items-center gap-2 mb-1">
-                  {insurance.status === 'verified' ? (
-                    <CheckCircle className="w-4 h-4 text-green-600" />
-                  ) : insurance.status === 'pending' ? (
-                    <Clock className="w-4 h-4 text-yellow-600" />
-                  ) : (
-                    <XCircle className="w-4 h-4 text-red-600" />
-                  )}
-                  <span className="font-medium text-sm">{insurance.provider}</span>
-                </div>
-                <p className="text-xs text-gray-500">Policy: {insurance.policyNumber}</p>
-                <p className="text-xs text-green-600 mt-1">Coverage: {insurance.coverage}%</p>
-              </div>
-            ) : (
-              <p className="text-sm text-gray-500">No insurance verified</p>
-            )}
-          </div>
-
           {/* Bill Items */}
           <div className="flex-1 bg-white rounded-xl border shadow-sm overflow-hidden flex flex-col">
             <div className="px-4 py-3 border-b">
@@ -405,10 +362,10 @@ export default function EmergencyBillingPage() {
                     <div key={item.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
                       <div className="flex-1">
                         <p className="text-sm font-medium">{item.name}</p>
-                        <p className="text-xs text-gray-500">${item.price} × {item.quantity}</p>
+                        <p className="text-xs text-gray-500">{formatCurrency(item.price)} × {item.quantity}</p>
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className="font-medium text-sm">${item.price * item.quantity}</span>
+                        <span className="font-medium text-sm">{formatCurrency(item.price * item.quantity)}</span>
                         <button
                           onClick={() => removeItem(item.id)}
                           className="p-1 text-red-500 hover:bg-red-100 rounded"
@@ -426,17 +383,11 @@ export default function EmergencyBillingPage() {
             <div className="border-t p-4 space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-gray-500">Subtotal</span>
-                <span className="font-medium">${subtotal.toFixed(2)}</span>
+                <span className="font-medium">{formatCurrency(subtotal)}</span>
               </div>
-              {insuranceDiscount > 0 && (
-                <div className="flex justify-between text-sm text-green-600">
-                  <span>Insurance ({insurance?.coverage}%)</span>
-                  <span>-${insuranceDiscount.toFixed(2)}</span>
-                </div>
-              )}
               <div className="flex justify-between text-lg font-bold border-t pt-2">
                 <span>Total</span>
-                <span>${total.toFixed(2)}</span>
+                <span>{formatCurrency(total)}</span>
               </div>
             </div>
           </div>
@@ -464,104 +415,36 @@ export default function EmergencyBillingPage() {
                 className="w-full border rounded-lg px-3 py-2"
               >
                 <option value="cash">Cash</option>
+                <option value="mobile_money">Mobile Money</option>
                 <option value="card">Credit/Debit Card</option>
-                <option value="mobile">Mobile Payment</option>
               </select>
             </div>
             {deposit > 0 && (
               <div className="flex justify-between p-2 bg-blue-50 rounded">
                 <span className="text-sm text-blue-700">Balance Due</span>
-                <span className="font-bold text-blue-700">${balance.toFixed(2)}</span>
+                <span className="font-bold text-blue-700">{formatCurrency(Math.max(balance, 0))}</span>
               </div>
             )}
           </div>
 
           {/* Actions */}
-          <div className="flex gap-2">
-            <button
-              onClick={() => createInvoiceMutation.mutate()}
-              disabled={!selectedPatient || billingItems.length === 0 || createInvoiceMutation.isPending}
-              className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            >
-              {createInvoiceMutation.isPending ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <CreditCard className="w-4 h-4" />
-              )}
-              Process Bill
-            </button>
-            <button
-              disabled={!selectedPatient || billingItems.length === 0}
-              className="px-4 py-2 border rounded-lg hover:bg-gray-50 disabled:opacity-50"
-            >
-              <Printer className="w-4 h-4" />
-            </button>
-          </div>
-
-          {/* Convert to Admission */}
           <button
-            disabled={!selectedPatient}
-            className="w-full px-4 py-2 border-2 border-dashed border-purple-300 text-purple-600 rounded-lg hover:bg-purple-50 disabled:opacity-50 flex items-center justify-center gap-2"
+            onClick={() => createInvoiceMutation.mutate()}
+            disabled={!selectedPatient || billingItems.length === 0 || createInvoiceMutation.isPending}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
-            <ArrowRight className="w-4 h-4" />
-            Convert to Admission Billing
+            {createInvoiceMutation.isPending ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <CreditCard className="w-4 h-4" />
+            )}
+            {deposit > 0 ? 'Create Bill & Record Deposit' : 'Create Bill'}
           </button>
+          <p className="text-xs text-gray-500 text-center -mt-2">
+            Insurance and further payments are handled at the cashier.
+          </p>
         </div>
       </div>
-
-      {/* Insurance Verification Modal */}
-      {showInsuranceModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-md">
-            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-              <Shield className="w-5 h-5 text-blue-600" />
-              Quick Insurance Verification
-            </h3>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Insurance Provider</label>
-                <select className="w-full border rounded-lg px-3 py-2">
-                  <option>BlueCross Health</option>
-                  <option>Aetna</option>
-                  <option>United Healthcare</option>
-                  <option>Cigna</option>
-                  <option>Other</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Policy Number</label>
-                <input type="text" className="w-full border rounded-lg px-3 py-2" placeholder="Enter policy number" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Member ID</label>
-                <input type="text" className="w-full border rounded-lg px-3 py-2" placeholder="Enter member ID" />
-              </div>
-              <div className="p-3 bg-yellow-50 rounded-lg border border-yellow-200">
-                <div className="flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 text-yellow-600 mt-0.5" />
-                  <p className="text-sm text-yellow-700">
-                    Emergency services may be covered at different rates. Verify coverage limits.
-                  </p>
-                </div>
-              </div>
-            </div>
-            <div className="flex gap-3 mt-6">
-              <button
-                onClick={() => setShowInsuranceModal(false)}
-                className="flex-1 px-4 py-2 border rounded-lg hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={verifyInsurance}
-                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-              >
-                Verify Now
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -1,5 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   Siren,
   Search,
@@ -17,7 +19,10 @@ import {
   Loader2,
 } from 'lucide-react';
 import { emergencyService, patientsService, TriageLevel, ArrivalMode, TriageStatus } from '../services';
+import { EmergencyDisposition } from '../services/emergency';
 import type { EmergencyCase } from '../services';
+import { ipdService } from '../services/ipd';
+import { getApiErrorMessage } from '../services/api';
 import { useFacilityId } from '../lib/facility';
 import { asList } from '../utils/unwrapResponse';
 
@@ -43,6 +48,9 @@ const statusColors: Record<string, string> = {
   in_treatment: 'bg-blue-100 text-blue-800',
   discharged: 'bg-green-100 text-green-800',
   admitted: 'bg-purple-100 text-purple-800',
+  transferred: 'bg-indigo-100 text-indigo-800',
+  left_ama: 'bg-orange-100 text-orange-800',
+  deceased: 'bg-gray-800 text-white',
 };
 
 export default function EmergencyPage() {
@@ -82,6 +90,7 @@ export default function EmergencyPage() {
 
   // Discharge form state
   const [dischargeForm, setDischargeForm] = useState({
+    disposition: EmergencyDisposition.DISCHARGED as EmergencyDisposition,
     primaryDiagnosis: '',
     dispositionNotes: '',
   });
@@ -89,8 +98,22 @@ export default function EmergencyPage() {
   // Admit form state
   const [admitForm, setAdmitForm] = useState({
     wardId: '',
+    bedId: '',
     primaryDiagnosis: '',
     admissionNotes: '',
+  });
+
+  // Real wards/beds for the admit modal — the admission created is a real IPD
+  // admission, so the ward and bed must be actual records, not labels.
+  const { data: wards = [] } = useQuery({
+    queryKey: ['ipd-wards'],
+    queryFn: () => ipdService.wards.list(),
+    enabled: showAdmitModal,
+  });
+  const { data: availableBeds = [] } = useQuery({
+    queryKey: ['ipd-available-beds', admitForm.wardId],
+    queryFn: () => ipdService.beds.getAvailable(admitForm.wardId),
+    enabled: showAdmitModal && !!admitForm.wardId,
   });
 
   // Patient search
@@ -104,16 +127,21 @@ export default function EmergencyPage() {
     enabled: registerForm.patientSearch.length >= 2,
   });
 
-  // Fetch emergency cases
+  // Fetch emergency cases. Default view = ACTIVE cases only (server-side
+  // filter): without it the backend caps at 50 oldest-first rows, so on a
+  // busy ED new arrivals silently vanish from the list.
   const { data: casesData, isLoading, refetch } = useQuery({
     queryKey: ['emergency-cases', statusFilter, facilityId],
     queryFn: async () => {
-      const response = await emergencyService.getCases({ 
+      const response = await emergencyService.getCases({
         facilityId,
         status: (statusFilter || undefined) as TriageStatus | undefined,
+        active: statusFilter ? undefined : 'true',
+        limit: 100,
       });
       return response.data;
     },
+    refetchInterval: 30000,
   });
 
   // Fetch dashboard
@@ -138,12 +166,14 @@ export default function EmergencyPage() {
       });
       return response.data;
     },
-    onSuccess: () => {
+    onSuccess: (created) => {
       queryClient.invalidateQueries({ queryKey: ['emergency-cases'] });
       queryClient.invalidateQueries({ queryKey: ['emergency-dashboard'] });
       setShowRegisterModal(false);
       setRegisterForm({ patientSearch: '', patientId: '', patientName: '', chiefComplaint: '', arrivalMode: ArrivalMode.WALK_IN, presentingSymptoms: '' });
+      toast.success(`Emergency case ${created?.caseNumber || ''} registered — awaiting triage`);
     },
+    onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to register emergency case')),
   });
 
   // Triage mutation
@@ -169,7 +199,9 @@ export default function EmergencyPage() {
       setShowTriageModal(false);
       setSelectedCase(null);
       setTriageForm({ triageLevel: TriageLevel.LESS_URGENT, bloodPressureSystolic: '', bloodPressureDiastolic: '', heartRate: '', respiratoryRate: '', temperature: '', oxygenSaturation: '', painScore: '', gcsScore: '', triageNotes: '' });
+      toast.success('Triage saved — patient moved to treatment queue');
     },
+    onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to save triage')),
   });
 
   // Start treatment mutation
@@ -182,14 +214,17 @@ export default function EmergencyPage() {
       queryClient.invalidateQueries({ queryKey: ['emergency-cases'] });
       queryClient.invalidateQueries({ queryKey: ['emergency-dashboard'] });
       setSelectedCase(null);
+      toast.success('Treatment started');
     },
+    onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to start treatment')),
   });
 
   // Discharge mutation
   const dischargeMutation = useMutation({
     mutationFn: async (caseId: string) => {
       const response = await emergencyService.dischargeCase(caseId, {
-        primaryDiagnosis: dischargeForm.primaryDiagnosis,
+        disposition: dischargeForm.disposition,
+        primaryDiagnosis: dischargeForm.primaryDiagnosis || undefined,
         dispositionNotes: dischargeForm.dispositionNotes || undefined,
       });
       return response.data;
@@ -199,15 +234,38 @@ export default function EmergencyPage() {
       queryClient.invalidateQueries({ queryKey: ['emergency-dashboard'] });
       setShowDischargeModal(false);
       setSelectedCase(null);
-      setDischargeForm({ primaryDiagnosis: '', dispositionNotes: '' });
+      const outcomeLabel =
+        dischargeForm.disposition === EmergencyDisposition.LEFT_AMA
+          ? 'recorded as left against medical advice'
+          : dischargeForm.disposition === EmergencyDisposition.DECEASED
+            ? 'recorded as deceased'
+            : 'discharged';
+      setDischargeForm({ disposition: EmergencyDisposition.DISCHARGED, primaryDiagnosis: '', dispositionNotes: '' });
+      toast.success(`Case ${outcomeLabel}`);
     },
+    onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to close the case')),
   });
 
-  // Admit mutation
+  // Admit mutation: creates a REAL IPD admission (ward+bed) first, then marks
+  // the emergency case admitted — otherwise the patient never appears on any
+  // ward worklist and the bed is never occupied.
   const admitMutation = useMutation({
-    mutationFn: async (caseId: string) => {
-      const response = await emergencyService.admitCase(caseId, {
+    mutationFn: async (emergencyCase: EmergencyCase) => {
+      const patientId = emergencyCase.encounter?.patient?.id;
+      if (!patientId) throw new Error('This case has no linked patient record');
+      await ipdService.admissions.create({
+        patientId,
+        encounterId: emergencyCase.encounterId,
         wardId: admitForm.wardId,
+        bedId: admitForm.bedId,
+        type: 'emergency',
+        admissionDiagnosis: admitForm.primaryDiagnosis,
+        admissionReason: admitForm.admissionNotes || emergencyCase.chiefComplaint,
+        attendingDoctorId: emergencyCase.attendingDoctorId,
+      });
+      const response = await emergencyService.admitCase(emergencyCase.id, {
+        wardId: admitForm.wardId,
+        bedId: admitForm.bedId || undefined,
         primaryDiagnosis: admitForm.primaryDiagnosis,
         admissionNotes: admitForm.admissionNotes || undefined,
       });
@@ -216,13 +274,30 @@ export default function EmergencyPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['emergency-cases'] });
       queryClient.invalidateQueries({ queryKey: ['emergency-dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['ipd-available-beds'] });
       setShowAdmitModal(false);
       setSelectedCase(null);
-      setAdmitForm({ wardId: '', primaryDiagnosis: '', admissionNotes: '' });
+      setAdmitForm({ wardId: '', bedId: '', primaryDiagnosis: '', admissionNotes: '' });
+      toast.success('Patient admitted — now on the ward admission list');
     },
+    onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to admit patient')),
   });
 
   const cases: EmergencyCase[] = asList(casesData);
+
+  // Deep link (?caseId=) from the live queue board: auto-select the case once
+  // the list is loaded.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const deepLinkCaseId = searchParams.get('caseId');
+  useEffect(() => {
+    if (!deepLinkCaseId || cases.length === 0) return;
+    const match = cases.find((c) => c.id === deepLinkCaseId);
+    if (match) {
+      setSelectedCase(match);
+      setSearchParams({}, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepLinkCaseId, cases.length]);
 
   const filteredCases = cases.filter((c) => {
     if (!searchTerm) return true;
@@ -354,12 +429,14 @@ export default function EmergencyPage() {
           onChange={(e) => setStatusFilter(e.target.value)}
           className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500"
         >
-          <option value="">All Status</option>
+          <option value="">Active (in ED now)</option>
           <option value="pending">Pending Triage</option>
           <option value="triaged">Triaged</option>
           <option value="in_treatment">In Treatment</option>
           <option value="discharged">Discharged</option>
           <option value="admitted">Admitted</option>
+          <option value="left_ama">Left AMA</option>
+          <option value="deceased">Deceased</option>
         </select>
       </div>
 
@@ -486,7 +563,7 @@ export default function EmergencyPage() {
                         <p className="text-xs text-gray-500">SpO2</p>
                       </div>
                     )}
-                    {selectedCase.painScore !== null && (
+                    {selectedCase.painScore != null && (
                       <div className="bg-gray-50 p-2 rounded text-center">
                         <p className="text-lg font-bold">{selectedCase.painScore}/10</p>
                         <p className="text-xs text-gray-500">Pain</p>
@@ -543,10 +620,25 @@ export default function EmergencyPage() {
                     Start Treatment
                   </button>
                 )}
+                {(selectedCase.status === 'pending' || selectedCase.status === 'triaged') && (
+                  <button
+                    onClick={() => {
+                      setDischargeForm(prev => ({ ...prev, disposition: EmergencyDisposition.LEFT_AMA }));
+                      setShowDischargeModal(true);
+                    }}
+                    className="px-4 py-2 border border-orange-300 text-orange-700 rounded-lg hover:bg-orange-50"
+                    title="Record that the patient left, absconded, or died before treatment"
+                  >
+                    Record Outcome
+                  </button>
+                )}
                 {selectedCase.status === 'in_treatment' && (
                   <>
-                    <button 
-                      onClick={() => setShowDischargeModal(true)}
+                    <button
+                      onClick={() => {
+                        setDischargeForm(prev => ({ ...prev, disposition: EmergencyDisposition.DISCHARGED }));
+                        setShowDischargeModal(true);
+                      }}
                       className="flex-1 bg-green-600 text-white py-2 px-4 rounded-lg hover:bg-green-700 flex items-center justify-center gap-2"
                     >
                       <CheckCircle className="w-4 h-4" />
@@ -656,7 +748,8 @@ export default function EmergencyPage() {
                   <option value="ambulance">Ambulance</option>
                   <option value="private_vehicle">Private Vehicle</option>
                   <option value="police">Police</option>
-                  <option value="referral">Referral</option>
+                  <option value="carried">Carried</option>
+                  <option value="referred">Referred In</option>
                 </select>
               </div>
 
@@ -688,9 +781,6 @@ export default function EmergencyPage() {
                 Register Case
               </button>
             </div>
-            {registerCaseMutation.isError && (
-              <p className="text-red-600 text-sm mt-2">Failed to register case. Please try again.</p>
-            )}
           </div>
         </div>
       )}
@@ -854,9 +944,6 @@ export default function EmergencyPage() {
                 Complete Triage
               </button>
             </div>
-            {triageMutation.isError && (
-              <p className="text-red-600 text-sm mt-2">Failed to save triage. Please try again.</p>
-            )}
           </div>
         </div>
       )}
@@ -877,7 +964,33 @@ export default function EmergencyPage() {
             
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Primary Diagnosis *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Outcome *</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { value: EmergencyDisposition.DISCHARGED, label: 'Discharged home', cls: 'border-green-500 bg-green-50 text-green-700' },
+                    { value: EmergencyDisposition.LEFT_AMA, label: 'Left AMA', cls: 'border-orange-500 bg-orange-50 text-orange-700' },
+                    { value: EmergencyDisposition.DECEASED, label: 'Deceased', cls: 'border-gray-700 bg-gray-100 text-gray-800' },
+                  ].map((o) => (
+                    <button
+                      key={o.value}
+                      onClick={() => setDischargeForm(prev => ({ ...prev, disposition: o.value }))}
+                      className={`p-2 rounded-lg border-2 text-sm font-medium ${
+                        dischargeForm.disposition === o.value ? o.cls : 'border-transparent bg-gray-50 hover:bg-gray-100 text-gray-600'
+                      }`}
+                    >
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  {dischargeForm.disposition === EmergencyDisposition.DECEASED
+                    ? 'Cause of Death / Diagnosis *'
+                    : dischargeForm.disposition === EmergencyDisposition.LEFT_AMA
+                      ? 'Working Diagnosis (if known)'
+                      : 'Primary Diagnosis *'}
+                </label>
                 <input
                   type="text"
                   value={dischargeForm.primaryDiagnosis}
@@ -891,7 +1004,11 @@ export default function EmergencyPage() {
                 <textarea
                   value={dischargeForm.dispositionNotes}
                   onChange={(e) => setDischargeForm(prev => ({ ...prev, dispositionNotes: e.target.value }))}
-                  placeholder="Discharge instructions, follow-up, etc..."
+                  placeholder={
+                    dischargeForm.disposition === EmergencyDisposition.LEFT_AMA
+                      ? 'Circumstances, counselling given, who they left with...'
+                      : 'Discharge instructions, follow-up, etc...'
+                  }
                   className="w-full border rounded-lg px-3 py-2 h-24"
                 />
               </div>
@@ -906,11 +1023,14 @@ export default function EmergencyPage() {
               </button>
               <button
                 onClick={() => dischargeMutation.mutate(selectedCase.id)}
-                disabled={!dischargeForm.primaryDiagnosis || dischargeMutation.isPending}
+                disabled={
+                  (!dischargeForm.primaryDiagnosis && dischargeForm.disposition !== EmergencyDisposition.LEFT_AMA) ||
+                  dischargeMutation.isPending
+                }
                 className="flex-1 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {dischargeMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-                Discharge
+                {dischargeForm.disposition === EmergencyDisposition.DISCHARGED ? 'Discharge' : 'Record Outcome'}
               </button>
             </div>
           </div>
@@ -936,16 +1056,36 @@ export default function EmergencyPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Ward *</label>
                 <select
                   value={admitForm.wardId}
-                  onChange={(e) => setAdmitForm(prev => ({ ...prev, wardId: e.target.value }))}
+                  onChange={(e) => setAdmitForm(prev => ({ ...prev, wardId: e.target.value, bedId: '' }))}
                   className="w-full border rounded-lg px-3 py-2"
                 >
                   <option value="">Select ward...</option>
-                  <option value="general-ward">General Ward</option>
-                  <option value="icu">ICU</option>
-                  <option value="surgical-ward">Surgical Ward</option>
-                  <option value="pediatric-ward">Pediatric Ward</option>
-                  <option value="maternity-ward">Maternity Ward</option>
+                  {wards.filter(w => w.isActive !== false).map(w => (
+                    <option key={w.id} value={w.id}>{w.name}</option>
+                  ))}
                 </select>
+                {wards.length === 0 && (
+                  <p className="text-xs text-orange-600 mt-1">
+                    No wards configured — set up wards and beds under Inpatient first.
+                  </p>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Bed *</label>
+                <select
+                  value={admitForm.bedId}
+                  onChange={(e) => setAdmitForm(prev => ({ ...prev, bedId: e.target.value }))}
+                  disabled={!admitForm.wardId}
+                  className="w-full border rounded-lg px-3 py-2 disabled:bg-gray-50"
+                >
+                  <option value="">{admitForm.wardId ? 'Select bed...' : 'Select a ward first'}</option>
+                  {availableBeds.map(b => (
+                    <option key={b.id} value={b.id}>Bed {b.bedNumber}</option>
+                  ))}
+                </select>
+                {admitForm.wardId && availableBeds.length === 0 && (
+                  <p className="text-xs text-orange-600 mt-1">No available beds in this ward.</p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Primary Diagnosis *</label>
@@ -976,8 +1116,8 @@ export default function EmergencyPage() {
                 Cancel
               </button>
               <button
-                onClick={() => admitMutation.mutate(selectedCase.id)}
-                disabled={!admitForm.wardId || !admitForm.primaryDiagnosis || admitMutation.isPending}
+                onClick={() => admitMutation.mutate(selectedCase)}
+                disabled={!admitForm.wardId || !admitForm.bedId || !admitForm.primaryDiagnosis || admitMutation.isPending}
                 className="flex-1 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {admitMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
