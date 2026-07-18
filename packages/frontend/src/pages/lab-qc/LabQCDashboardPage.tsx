@@ -4,8 +4,8 @@ import { toast } from 'sonner';
 import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
 import { labSuppliesService, labService } from '../../services';
+import { getApiErrorMessage } from '../../services/api';
 import { useFacilityId } from '../../lib/facility';
-import { useAuthStore } from '../../store/auth';
 import { toCsv, downloadBlob } from '../reports/_reportUtils';
 import {
   FlaskConical,
@@ -52,38 +52,6 @@ interface QCStatistics {
 
 const statuses = ['All', 'PASS', 'WARNING', 'FAIL'];
 
-interface NewQCRunForm {
-  testName: string;
-  analyte: string;
-  controlLevel: 'L1' | 'L2' | 'L3';
-  measuredValue: string;
-  expectedMean: string;
-  standardDeviation: string;
-  lotNumber: string;
-  equipment: string;
-  runDate: string;
-  runBy: string;
-}
-
-const EMPTY_FORM: NewQCRunForm = {
-  testName: '',
-  analyte: '',
-  controlLevel: 'L1',
-  measuredValue: '',
-  expectedMean: '',
-  standardDeviation: '',
-  lotNumber: '',
-  equipment: '',
-  runDate: new Date().toISOString().split('T')[0],
-  runBy: '',
-};
-
-function calcZScore(value: string, mean: string, sd: string): number | null {
-  const v = parseFloat(value), m = parseFloat(mean), s = parseFloat(sd);
-  if (isNaN(v) || isNaN(m) || isNaN(s) || s === 0) return null;
-  return (v - m) / s;
-}
-
 function zScoreStatus(z: number): 'PASS' | 'WARNING' | 'FAIL' {
   const abs = Math.abs(z);
   if (abs <= 2) return 'PASS';
@@ -94,36 +62,96 @@ function zScoreStatus(z: number): 'PASS' | 'WARNING' | 'FAIL' {
 interface NewQCRunModalProps {
   open: boolean;
   onClose: () => void;
-  testOptions: string[];
-  defaultRunBy: string;
+  facilityId: string;
+  equipmentOptions: Array<{ id: string; name: string }>;
   onSuccess: () => void;
 }
 
-function NewQCRunModal({ open, onClose, testOptions, defaultRunBy, onSuccess }: NewQCRunModalProps) {
-  const [form, setForm] = useState<NewQCRunForm>({ ...EMPTY_FORM, runBy: defaultRunBy });
+/** Records a QC run against a pre-defined QC material (the backend recomputes
+ *  the z-score and Westgard status server-side), and lets the user set up a
+ *  new material inline when none exists yet. */
+function NewQCRunModal({ open, onClose, facilityId, equipmentOptions, onSuccess }: NewQCRunModalProps) {
+  const [mode, setMode] = useState<'run' | 'material'>('run');
+  const [materialId, setMaterialId] = useState('');
+  const [value, setValue] = useState('');
+  const [reagentLot, setReagentLot] = useState('');
+  const [equipmentId, setEquipmentId] = useState('');
+  const [comments, setComments] = useState('');
+  const [mat, setMat] = useState({ name: '', testCode: '', level: 'level_2', targetMean: '', targetSd: '', unit: '', lotNumber: '' });
   const [submitting, setSubmitting] = useState(false);
 
-  const zscore = useMemo(
-    () => calcZScore(form.measuredValue, form.expectedMean, form.standardDeviation),
-    [form.measuredValue, form.expectedMean, form.standardDeviation]
-  );
+  const { data: materials = [], isLoading: materialsLoading, refetch: refetchMaterials } = useQuery({
+    queryKey: ['qc-materials', facilityId],
+    queryFn: () => labSuppliesService.qcMaterials.list(facilityId),
+    enabled: open && !!facilityId,
+  });
+
+  const selected = materials.find((m: any) => m.id === materialId);
+  const zscore = useMemo(() => {
+    if (!selected || value.trim() === '') return null;
+    const v = parseFloat(value);
+    const mean = Number(selected.targetMean);
+    const sd = Number(selected.targetSd);
+    if (isNaN(v) || !sd) return null;
+    return (v - mean) / sd;
+  }, [selected, value]);
   const status = zscore !== null ? zScoreStatus(zscore) : null;
 
-  const set = (field: keyof NewQCRunForm, value: string) =>
-    setForm((prev) => ({ ...prev, [field]: value }));
-
-  const handleSubmit = async (e: React.FormEvent) => {
+  const submitRun = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (zscore === null) { toast.error('Please fill in valid numeric values for Value, Mean, and SD'); return; }
-    // SAFETY: there is NO endpoint that accepts this ad-hoc QC shape. The backend
-    // records a QC run via POST /lab-supplies/qc-results, which requires a
-    // pre-defined QC material (qcMaterialId) and recomputes the z-score/Westgard
-    // status server-side — this free-text form has no material to reference.
-    // `labService.qc.addRun` does not exist, so the previous code silently made
-    // NO request and then showed "recorded successfully" — a fake pass on quality
-    // control. Surface the truth instead of a dangerous illusion until a QC
-    // material picker is wired up. (Flagged in review as P0.)
-    toast.error('QC run recording is not available yet — configure QC materials first.');
+    if (!selected) { toast.error('Select a QC material first'); return; }
+    const v = parseFloat(value);
+    if (isNaN(v)) { toast.error('Enter a numeric measured value'); return; }
+    setSubmitting(true);
+    try {
+      await labSuppliesService.qcResults.record({
+        facilityId,
+        qcMaterialId: selected.id,
+        testCode: selected.testCode,
+        resultValue: v,
+        unit: selected.unit || undefined,
+        equipmentId: equipmentId || undefined,
+        reagentLot: reagentLot.trim() || undefined,
+        comments: comments.trim() || undefined,
+      });
+      toast.success('QC run recorded');
+      setValue(''); setReagentLot(''); setComments('');
+      onSuccess();
+      onClose();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'Failed to record QC run'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const submitMaterial = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const mean = parseFloat(mat.targetMean);
+    const sd = parseFloat(mat.targetSd);
+    if (!mat.name.trim() || !mat.testCode.trim()) { toast.error('Name and test code are required'); return; }
+    if (isNaN(mean) || isNaN(sd) || sd <= 0) { toast.error('Target mean and a positive SD are required'); return; }
+    setSubmitting(true);
+    try {
+      const created = await labSuppliesService.qcMaterials.create({
+        facilityId,
+        name: mat.name.trim(),
+        testCode: mat.testCode.trim(),
+        level: mat.level as any,
+        targetMean: mean,
+        targetSd: sd,
+        unit: mat.unit.trim() || undefined,
+        lotNumber: mat.lotNumber.trim() || undefined,
+      });
+      toast.success(`QC material "${mat.name.trim()}" created`);
+      await refetchMaterials();
+      setMaterialId((created as any)?.id || '');
+      setMode('run');
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'Failed to create QC material'));
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   if (!open) return null;
@@ -133,191 +161,171 @@ function NewQCRunModal({ open, onClose, testOptions, defaultRunBy, onSuccess }: 
     WARNING: 'bg-yellow-100 text-yellow-700 border-yellow-200',
     FAIL: 'bg-red-100 text-red-700 border-red-200',
   };
+  const inputCls = 'w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 text-sm';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-xl mx-4 max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-5 border-b sticky top-0 bg-white">
           <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
             <FlaskConical className="w-5 h-5 text-blue-600" />
-            New QC Run
+            {mode === 'run' ? 'New QC Run' : 'New QC Material'}
           </h2>
           <button onClick={onClose} className="p-1 rounded hover:bg-gray-100">
             <X className="w-5 h-5 text-gray-500" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
-          {/* Test Name */}
-          <div className="grid grid-cols-2 gap-4">
+        <div className="px-5 pt-4 flex gap-2">
+          <button
+            type="button"
+            onClick={() => setMode('run')}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium ${mode === 'run' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'}`}
+          >
+            Record Run
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode('material')}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium ${mode === 'material' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'}`}
+          >
+            New Material
+          </button>
+        </div>
+
+        {mode === 'run' ? (
+          <form onSubmit={submitRun} className="p-5 space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Test Name <span className="text-red-500">*</span></label>
-              {testOptions.filter(t => t !== 'All').length > 0 ? (
-                <select
-                  value={form.testName}
-                  onChange={(e) => set('testName', e.target.value)}
-                  required
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
-                >
-                  <option value="">Select test...</option>
-                  {testOptions.filter(t => t !== 'All').map(t => <option key={t} value={t}>{t}</option>)}
-                </select>
+              <label className="block text-sm font-medium text-gray-700 mb-1">QC Material <span className="text-red-500">*</span></label>
+              {materialsLoading ? (
+                <div className="flex items-center gap-2 text-sm text-gray-500"><Loader2 className="w-4 h-4 animate-spin" /> Loading materials…</div>
+              ) : materials.length === 0 ? (
+                <div className="text-sm text-gray-600 bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                  No QC materials configured yet. Switch to the <button type="button" className="underline font-medium" onClick={() => setMode('material')}>New Material</button> tab to set one up.
+                </div>
               ) : (
-                <input
-                  type="text"
-                  value={form.testName}
-                  onChange={(e) => set('testName', e.target.value)}
-                  required
-                  placeholder="e.g. Glucose"
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
-                />
+                <select value={materialId} onChange={(e) => setMaterialId(e.target.value)} required className={inputCls}>
+                  <option value="">Select material…</option>
+                  {materials.map((m: any) => (
+                    <option key={m.id} value={m.id}>
+                      {m.testName || m.testCode} — {m.name} ({(m.level || '').replace('level_', 'L')})
+                    </option>
+                  ))}
+                </select>
               )}
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Analyte <span className="text-red-500">*</span></label>
-              <input
-                type="text"
-                value={form.analyte}
-                onChange={(e) => set('analyte', e.target.value)}
-                required
-                placeholder="e.g. GLU"
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
-              />
-            </div>
-          </div>
 
-          {/* Control Level */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Control Level <span className="text-red-500">*</span></label>
-            <select
-              value={form.controlLevel}
-              onChange={(e) => set('controlLevel', e.target.value as 'L1' | 'L2' | 'L3')}
-              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
-            >
-              <option value="L1">L1 – Low</option>
-              <option value="L2">L2 – Normal</option>
-              <option value="L3">L3 – High</option>
-            </select>
-          </div>
+            {selected && (
+              <div className="text-sm text-gray-600 bg-gray-50 rounded-lg p-3 flex flex-wrap gap-x-6 gap-y-1">
+                <span>Target mean: <strong>{Number(selected.targetMean)}</strong></span>
+                <span>SD: <strong>{Number(selected.targetSd)}</strong></span>
+                {selected.unit && <span>Unit: <strong>{selected.unit}</strong></span>}
+                {selected.lotNumber && <span>Control lot: <strong>{selected.lotNumber}</strong></span>}
+              </div>
+            )}
 
-          {/* Measured Value / Mean / SD */}
-          <div className="grid grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Measured Value <span className="text-red-500">*</span></label>
-              <input
-                type="number"
-                step="any"
-                value={form.measuredValue}
-                onChange={(e) => set('measuredValue', e.target.value)}
-                required
-                placeholder="0.00"
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
-              />
+              <input type="number" step="any" value={value} onChange={(e) => setValue(e.target.value)} required placeholder="0.00" className={inputCls} />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Expected Mean <span className="text-red-500">*</span></label>
-              <input
-                type="number"
-                step="any"
-                value={form.expectedMean}
-                onChange={(e) => set('expectedMean', e.target.value)}
-                required
-                placeholder="0.00"
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Std. Deviation <span className="text-red-500">*</span></label>
-              <input
-                type="number"
-                step="any"
-                value={form.standardDeviation}
-                onChange={(e) => set('standardDeviation', e.target.value)}
-                required
-                placeholder="0.00"
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
-              />
-            </div>
-          </div>
 
-          {/* Z-Score Preview */}
-          {zscore !== null && status !== null && (
-            <div className={`flex items-center gap-3 px-4 py-3 rounded-lg border text-sm font-medium ${statusColors[status]}`}>
-              <span>Z-Score: <strong>{zscore > 0 ? '+' : ''}{zscore.toFixed(3)}</strong></span>
-              <span className="mx-2">·</span>
-              <span>Status: <strong>{status}</strong></span>
-              {status === 'PASS' && <CheckCircle className="w-4 h-4 ml-auto" />}
-              {status === 'WARNING' && <AlertTriangle className="w-4 h-4 ml-auto" />}
-              {status === 'FAIL' && <XCircle className="w-4 h-4 ml-auto" />}
-            </div>
-          )}
+            {zscore !== null && status !== null && (
+              <div className={`flex items-center gap-3 px-4 py-3 rounded-lg border text-sm font-medium ${statusColors[status]}`}>
+                <span>Z-Score: <strong>{zscore > 0 ? '+' : ''}{zscore.toFixed(3)}</strong></span>
+                <span className="mx-2">·</span>
+                <span>Preview: <strong>{status}</strong></span>
+                {status === 'PASS' && <CheckCircle className="w-4 h-4 ml-auto" />}
+                {status === 'WARNING' && <AlertTriangle className="w-4 h-4 ml-auto" />}
+                {status === 'FAIL' && <XCircle className="w-4 h-4 ml-auto" />}
+              </div>
+            )}
 
-          {/* Lot Number / Equipment */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Lot Number</label>
-              <input
-                type="text"
-                value={form.lotNumber}
-                onChange={(e) => set('lotNumber', e.target.value)}
-                placeholder="Reagent lot #"
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
-              />
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Reagent Lot</label>
+                <input type="text" value={reagentLot} onChange={(e) => setReagentLot(e.target.value)} placeholder="Reagent lot #" className={inputCls} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Equipment / Analyzer</label>
+                <select value={equipmentId} onChange={(e) => setEquipmentId(e.target.value)} className={inputCls}>
+                  <option value="">—</option>
+                  {equipmentOptions.map((eq) => (
+                    <option key={eq.id} value={eq.id}>{eq.name}</option>
+                  ))}
+                </select>
+              </div>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Equipment / Analyzer</label>
-              <input
-                type="text"
-                value={form.equipment}
-                onChange={(e) => set('equipment', e.target.value)}
-                placeholder="Analyzer name/ID"
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
-              />
-            </div>
-          </div>
 
-          {/* Run Date / Run By */}
-          <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Run Date <span className="text-red-500">*</span></label>
-              <input
-                type="date"
-                value={form.runDate}
-                onChange={(e) => set('runDate', e.target.value)}
-                required
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
-              />
+              <label className="block text-sm font-medium text-gray-700 mb-1">Comments</label>
+              <input type="text" value={comments} onChange={(e) => setComments(e.target.value)} placeholder="Optional" className={inputCls} />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Run By</label>
-              <input
-                type="text"
-                value={form.runBy}
-                onChange={(e) => set('runBy', e.target.value)}
-                placeholder="Operator name"
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
-              />
-            </div>
-          </div>
 
-          <div className="flex items-center justify-end gap-3 pt-2 border-t">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 border rounded-lg text-sm text-gray-700 hover:bg-gray-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={submitting}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-60"
-            >
-              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-              Record QC Run
-            </button>
-          </div>
-        </form>
+            <div className="flex items-center justify-end gap-3 pt-2 border-t">
+              <button type="button" onClick={onClose} className="px-4 py-2 border rounded-lg text-sm text-gray-700 hover:bg-gray-50">Cancel</button>
+              <button
+                type="submit"
+                disabled={submitting || !selected}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-60"
+              >
+                {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                Record QC Run
+              </button>
+            </div>
+          </form>
+        ) : (
+          <form onSubmit={submitMaterial} className="p-5 space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Material Name <span className="text-red-500">*</span></label>
+                <input type="text" value={mat.name} onChange={(e) => setMat((m) => ({ ...m, name: e.target.value }))} required placeholder="e.g. Glucose Control L2" className={inputCls} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Test Code <span className="text-red-500">*</span></label>
+                <input type="text" value={mat.testCode} onChange={(e) => setMat((m) => ({ ...m, testCode: e.target.value }))} required placeholder="e.g. GLU" className={inputCls} />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Level</label>
+                <select value={mat.level} onChange={(e) => setMat((m) => ({ ...m, level: e.target.value }))} className={inputCls}>
+                  <option value="level_1">L1 – Low</option>
+                  <option value="level_2">L2 – Normal</option>
+                  <option value="level_3">L3 – High</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Target Mean <span className="text-red-500">*</span></label>
+                <input type="number" step="any" value={mat.targetMean} onChange={(e) => setMat((m) => ({ ...m, targetMean: e.target.value }))} required placeholder="0.00" className={inputCls} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Target SD <span className="text-red-500">*</span></label>
+                <input type="number" step="any" value={mat.targetSd} onChange={(e) => setMat((m) => ({ ...m, targetSd: e.target.value }))} required placeholder="0.00" className={inputCls} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Unit</label>
+                <input type="text" value={mat.unit} onChange={(e) => setMat((m) => ({ ...m, unit: e.target.value }))} placeholder="e.g. mmol/L" className={inputCls} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Control Lot #</label>
+                <input type="text" value={mat.lotNumber} onChange={(e) => setMat((m) => ({ ...m, lotNumber: e.target.value }))} placeholder="Optional" className={inputCls} />
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-3 pt-2 border-t">
+              <button type="button" onClick={() => setMode('run')} className="px-4 py-2 border rounded-lg text-sm text-gray-700 hover:bg-gray-50">Back</button>
+              <button
+                type="submit"
+                disabled={submitting}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-60"
+              >
+                {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                Create Material
+              </button>
+            </div>
+          </form>
+        )}
       </div>
     </div>
   );
@@ -363,7 +371,6 @@ export default function LabQCDashboardPage() {
   const { hasPermission } = usePermissions();
   const facilityId = useFacilityId();
   const queryClient = useQueryClient();
-  const user = useAuthStore((s) => s.user);
   const [selectedTest, setSelectedTest] = useState('All');
   const [selectedEquipment, setSelectedEquipment] = useState('All');
   const [selectedStatus, setSelectedStatus] = useState('All');
@@ -401,61 +408,59 @@ export default function LabQCDashboardPage() {
 
   const testOptions = ['All', ...testsData.map((t: any) => t.name || t.code).filter(Boolean)];
   const equipmentOptions = ['All', ...equipmentData.map((e: any) => e.name).filter(Boolean)];
+  // qc_results stores equipment_id (uuid) — resolve to the analyzer's name for
+  // both the filter and the table.
+  const equipmentNameById = useMemo(
+    () => new Map<string, string>(equipmentData.map((e: any) => [e.id, e.name])),
+    [equipmentData],
+  );
 
-  const { data: qcResults, isLoading } = useQuery({
-    queryKey: ['qc-results', facilityId, selectedTest, dateRange],
+  const { data: qcResults, isLoading, isError: resultsError } = useQuery({
+    queryKey: ['qc-results', facilityId, dateRange],
     queryFn: async (): Promise<QCResult[]> => {
-      try {
-        const { startDate, endDate } = getDateRange();
-        const testCode = selectedTest === 'All' ? 'all' : selectedTest;
-        const apiResults = await labSuppliesService.qcResults.list(facilityId, testCode, startDate, endDate);
-        if (apiResults && apiResults.length > 0) {
-          return apiResults.map((r: any): QCResult => ({
-            id: r.id,
-            testName: r.qcMaterial?.testName || r.testCode,
-            analyte: r.testCode,
-            controlLevel: r.qcMaterial?.level === 'level_1' ? 'L1' : r.qcMaterial?.level === 'level_2' ? 'L2' : 'L3',
-            value: r.resultValue,
-            mean: r.targetMean,
-            sd: r.targetSd,
-            cv: (r.targetSd / r.targetMean) * 100,
-            zscore: r.zScore,
-            status: r.status === 'in_control' ? 'PASS' : r.status === 'warning' ? 'WARNING' : 'FAIL',
-            runDate: r.runDate,
-            runBy: r.performedByUser?.firstName || 'Unknown',
-            lotNumber: r.reagentLot || '',
-            equipment: r.equipmentId || 'Unknown',
-            rule: r.violatedRules?.[0],
-          }));
-        }
-      } catch (error) {
-        console.error('Failed to load QC results:', error);
-      }
-      return [];
+      const { startDate, endDate } = getDateRange();
+      // 'all' = no test filter (handled server-side). Decimal columns arrive as
+      // strings, so every numeric field is coerced before .toFixed() is called.
+      const apiResults = await labSuppliesService.qcResults.list(facilityId, 'all', startDate, endDate);
+      return (apiResults || []).map((r: any): QCResult => {
+        const mean = Number(r.targetMean);
+        const sd = Number(r.targetSd);
+        return {
+          id: r.id,
+          testName: r.qcMaterial?.testName || r.testCode,
+          analyte: r.testCode,
+          controlLevel: r.qcMaterial?.level === 'level_1' ? 'L1' : r.qcMaterial?.level === 'level_2' ? 'L2' : 'L3',
+          value: Number(r.resultValue),
+          mean,
+          sd,
+          cv: mean ? (sd / mean) * 100 : 0,
+          zscore: Number(r.zScore),
+          status: r.status === 'in_control' ? 'PASS' : r.status === 'warning' ? 'WARNING' : 'FAIL',
+          runDate: r.runDate,
+          runBy: r.performedByUser?.fullName || 'Unknown',
+          lotNumber: r.reagentLot || '',
+          equipment: r.equipmentId || '',
+          rule: r.violatedRules?.[0],
+        };
+      });
     },
   });
 
-  const { data: stats } = useQuery({
-    queryKey: ['qc-stats', facilityId],
-    queryFn: async () => {
-      try {
-        const now = new Date();
-        const summary = await labSuppliesService.qcResults.getSummary(facilityId, now.getMonth() + 1, now.getFullYear());
-        if (summary) {
-          return {
-            totalRuns: summary.totalRuns,
-            passRate: summary.passRate,
-            warnings: summary.warningCount,
-            failures: summary.failureCount,
-            meanBias: summary.meanBias,
-          };
-        }
-      } catch (error) {
-        console.error('Failed to load QC stats:', error);
-      }
-      return { totalRuns: 0, passRate: 0, warnings: 0, failures: 0, meanBias: 0 };
-    },
-  });
+  // All stat cards derive from the same date-filtered result set the table
+  // shows — the old separate "summary" query mapped fields that endpoint never
+  // returned, so every card was permanently 0.
+  const stats = useMemo(() => {
+    const rs = qcResults || [];
+    const passes = rs.filter((r) => r.status === 'PASS').length;
+    const biasSum = rs.reduce((s, r) => s + (r.mean ? ((r.value - r.mean) / r.mean) * 100 : 0), 0);
+    return {
+      totalRuns: rs.length,
+      passRate: rs.length ? Math.round((passes / rs.length) * 100) : 0,
+      warnings: rs.filter((r) => r.status === 'WARNING').length,
+      failures: rs.filter((r) => r.status === 'FAIL').length,
+      meanBias: rs.length ? Math.round((biasSum / rs.length) * 10) / 10 : 0,
+    };
+  }, [qcResults]);
 
   if (!hasPermission('lab.read')) {
     return <AccessDenied />;
@@ -463,7 +468,9 @@ export default function LabQCDashboardPage() {
 
   const filteredResults = qcResults?.filter((r) => {
     const matchesTest = selectedTest === 'All' || r.testName === selectedTest;
-    const matchesEquipment = selectedEquipment === 'All' || r.equipment === selectedEquipment;
+    const matchesEquipment =
+      selectedEquipment === 'All' ||
+      (equipmentNameById.get(r.equipment) || r.equipment) === selectedEquipment;
     const matchesStatus = selectedStatus === 'All' || r.status === selectedStatus;
     return matchesTest && matchesEquipment && matchesStatus;
   });
@@ -613,6 +620,12 @@ export default function LabQCDashboardPage() {
           </select>
         </div>
       </div>
+
+      {resultsError && (
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-4 text-sm">
+          Could not load QC results — check your connection and try again.
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
@@ -841,7 +854,7 @@ export default function LabQCDashboardPage() {
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-600">{result.equipment}</td>
+                    <td className="px-4 py-3 text-sm text-gray-600">{equipmentNameById.get(result.equipment) || result.equipment || '—'}</td>
                     <td className="px-4 py-3 text-sm text-gray-600">
                       {new Date(result.runDate).toLocaleString()}
                     </td>
@@ -861,11 +874,10 @@ export default function LabQCDashboardPage() {
       <NewQCRunModal
         open={showNewRunModal}
         onClose={() => setShowNewRunModal(false)}
-        testOptions={testOptions}
-        defaultRunBy={user?.fullName || user?.username || ''}
+        facilityId={facilityId}
+        equipmentOptions={equipmentData.map((e: any) => ({ id: e.id, name: e.name }))}
         onSuccess={() => {
           queryClient.invalidateQueries({ queryKey: ['qc-results'] });
-          queryClient.invalidateQueries({ queryKey: ['qc-stats'] });
         }}
       />
     </div>

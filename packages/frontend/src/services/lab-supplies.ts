@@ -195,12 +195,15 @@ export const labSuppliesService = {
       testCode: string;
       resultValue: number;
       unit?: string;
-      performedBy: string;
+      performedBy?: string;
       reagentLot?: string;
       calibratorLot?: string;
       comments?: string;
     }): Promise<QCResult> => {
-      const response = await api.post('/lab-supplies/qc-results', data);
+      // The backend DTO takes `value` (mapped to resultValue server-side);
+      // sending resultValue trips forbidNonWhitelisted and 400s the request.
+      const { resultValue, ...rest } = data;
+      const response = await api.post('/lab-supplies/qc-results', { ...rest, value: resultValue });
       return response.data;
     },
 
