@@ -21,8 +21,34 @@ import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
 import { useFacilityId } from '../../lib/facility';
 import { prescriptionsService, type ControlledSubstanceLog } from '../../services/prescriptions';
+import { usersService } from '../../services/users';
 import { asList } from '../../utils/unwrapResponse';
 import { toCsv, downloadBlob } from '../reports/_reportUtils';
+
+/** Staff dropdown for witness selection — replaces the old free-text field
+ *  that expected a pharmacist to type a raw user UUID. */
+function WitnessPicker({ value, onChange }: { value: string; onChange: (id: string) => void }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['witness-staff'],
+    queryFn: () => usersService.list({ status: 'active', limit: 200 } as any),
+    staleTime: 300000,
+  });
+  const staff = data?.data || [];
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-4 focus:ring-2 focus:ring-blue-500"
+    >
+      <option value="">{isLoading ? 'Loading staff…' : 'Select witness…'}</option>
+      {staff.map((u: any) => (
+        <option key={u.id} value={u.id}>
+          {u.fullName || u.username}
+        </option>
+      ))}
+    </select>
+  );
+}
 
 export default function ControlledSubstancesRegisterPage() {
   const { hasPermission } = usePermissions();
@@ -362,15 +388,9 @@ export default function ControlledSubstancesRegisterPage() {
               Add Witness
             </h3>
             <p className="text-sm text-gray-600 mb-4">
-              Enter the User ID of the staff member witnessing this controlled substance dispensation.
+              Select the staff member witnessing this controlled substance dispensation.
             </p>
-            <input
-              type="text"
-              placeholder="Witness User ID (UUID)"
-              value={witnessUserId}
-              onChange={(e) => setWitnessUserId(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-4 focus:ring-2 focus:ring-blue-500"
-            />
+            <WitnessPicker value={witnessUserId} onChange={setWitnessUserId} />
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => { setWitnessModal(null); setWitnessUserId(''); }}

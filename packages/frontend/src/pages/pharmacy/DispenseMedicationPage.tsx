@@ -152,19 +152,28 @@ export default function DispenseMedicationPage() {
     staleTime: 30000,
   });
 
-  // Auto-select prescription from URL param (when navigating from queue "Start" button)
+  // Auto-select prescription from URL params. The queue navigates here with
+  // either ?prescription=<rxId> or ?encounter=<encounterId> (patient card path)
+  // — the encounter variant was silently ignored, dropping the pharmacist on a
+  // blank search screen.
   const urlPrescriptionId = searchParams.get('prescription');
+  const urlEncounterId = searchParams.get('encounter');
   useEffect(() => {
-    if (autoSelectDone || !urlPrescriptionId || !prescriptionsData) return;
+    if (autoSelectDone || (!urlPrescriptionId && !urlEncounterId) || !prescriptionsData) return;
     const allRx = Array.isArray(prescriptionsData) ? prescriptionsData : (prescriptionsData as any)?.data || [];
-    const match = allRx.find((p: any) => p.id === urlPrescriptionId);
+    const match = urlPrescriptionId
+      ? allRx.find((p: any) => p.id === urlPrescriptionId)
+      : allRx.find((p: any) => p.encounterId === urlEncounterId);
     if (match) {
       setSelectedPrescription(match);
       setCurrentStep('verify');
       setAutoSelectDone(true);
       toast.success(`Prescription ${match.prescriptionNumber || match.id.slice(0, 8)} loaded from queue`);
+    } else if (urlEncounterId) {
+      setAutoSelectDone(true);
+      toast.info('No pending prescription found for that visit — search below.');
     }
-  }, [urlPrescriptionId, prescriptionsData, autoSelectDone]);
+  }, [urlPrescriptionId, urlEncounterId, prescriptionsData, autoSelectDone]);
 
   // Search prescriptions
   const { data: searchResults } = useQuery({
