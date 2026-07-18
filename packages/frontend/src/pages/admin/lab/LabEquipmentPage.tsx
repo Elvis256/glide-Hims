@@ -174,7 +174,13 @@ export default function LabEquipmentPage() {
     queryKey: ['lab-equipment', facilityId],
     queryFn: async () => {
       const response = await api.get('/lab-supplies/equipment', { params: { facilityId } });
-      return response.data as Equipment[];
+      // DB enum values are lowercase ('operational', 'analyzer'); this page's
+      // filters, badges and stats compare UPPERCASE — normalize on read.
+      return ((response.data as Equipment[]) || []).map((eq: any) => ({
+        ...eq,
+        status: (eq.status || '').toUpperCase(),
+        category: (eq.category || '').toUpperCase(),
+      })) as Equipment[];
     },
   });
 

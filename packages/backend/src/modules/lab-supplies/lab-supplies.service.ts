@@ -80,6 +80,8 @@ export class LabSuppliesService {
       code,
       unit: data.unit?.trim() || 'unit',
       unitSize: data.unitSize != null ? Number(data.unitSize) : 1,
+      // DB enum values are lowercase; the admin UI sends UPPERCASE.
+      ...(data.category ? { category: (data.category as any).toLowerCase() } : {}),
       tenantId: tid,
     });
     return this.reagentRepo.save(reagent);
@@ -113,7 +115,10 @@ export class LabSuppliesService {
       where: { id, tenantId: requireTenantId(tenantId) },
     });
     if (!reagent) throw new NotFoundException('Reagent not found');
-    Object.assign(reagent, data);
+    Object.assign(reagent, {
+      ...data,
+      ...(data.category ? { category: (data.category as any).toLowerCase() } : {}),
+    });
     return this.reagentRepo.save(reagent);
   }
 
@@ -424,7 +429,16 @@ export class LabSuppliesService {
   // ==================== EQUIPMENT ====================
 
   async createEquipment(data: Partial<LabEquipment>, tenantId?: string): Promise<LabEquipment> {
-    const equipment = this.equipmentRepo.create({ ...data, tenantId: requireTenantId(tenantId) });
+    const tid = requireTenantId(tenantId);
+    // asset_code is NOT NULL; enum columns are lowercase in the DB but the UI
+    // historically sent UPPERCASE — normalize both defensively.
+    const equipment = this.equipmentRepo.create({
+      ...data,
+      assetCode: (data.assetCode || '').trim() || `EQ-${Date.now().toString(36).toUpperCase()}`,
+      category: (data.category as any)?.toLowerCase?.() ?? data.category,
+      status: (data.status as any)?.toLowerCase?.() ?? data.status,
+      tenantId: tid,
+    });
     return this.equipmentRepo.save(equipment);
   }
 
@@ -437,7 +451,12 @@ export class LabSuppliesService {
       where: { id, tenantId: requireTenantId(tenantId) },
     });
     if (!equipment) throw new NotFoundException('Equipment not found');
-    Object.assign(equipment, data);
+    Object.assign(equipment, {
+      ...data,
+      // Same enum-case normalization as create.
+      ...(data.category ? { category: (data.category as any).toLowerCase() } : {}),
+      ...(data.status ? { status: (data.status as any).toLowerCase() } : {}),
+    });
     return this.equipmentRepo.save(equipment);
   }
 
@@ -458,7 +477,13 @@ export class LabSuppliesService {
     const where: any = { facilityId };
     if (category) where.category = category;
     where.tenantId = requireTenantId(tenantId);
-    return this.equipmentRepo.find({ where, order: { name: 'ASC' } });
+    // The equipment page renders calibration/maintenance history straight from
+    // this list — without the joins the history tab was always empty.
+    return this.equipmentRepo.find({
+      where,
+      relations: ['calibrations', 'maintenances'],
+      order: { name: 'ASC' },
+    });
   }
 
   async getEquipmentDueForCalibration(
