@@ -103,6 +103,12 @@ export class CreateLabTestDto {
 
   @IsNumber(FINITE)
   @Min(0)
+  @Max(1_000_000)
+  @IsOptional()
+  cost?: number;
+
+  @IsNumber(FINITE)
+  @Min(0)
   @Max(43_200)
   @IsOptional()
   turnaroundTimeMinutes?: number;
@@ -156,6 +162,12 @@ export class UpdateLabTestDto {
 
   @IsNumber(FINITE)
   @Min(0)
+  @Max(1_000_000)
+  @IsOptional()
+  cost?: number;
+
+  @IsNumber(FINITE)
+  @Min(0)
   @Max(43_200)
   @IsOptional()
   turnaroundTimeMinutes?: number;
@@ -165,6 +177,21 @@ export class UpdateLabTestDto {
   @Type(() => ReferenceRangeDto)
   @IsOptional()
   referenceRanges?: ReferenceRangeDto[];
+
+  @IsArray()
+  @IsString({ each: true })
+  @MaxLength(128, { each: true })
+  @IsOptional()
+  components?: string[];
+
+  @IsBoolean()
+  @IsOptional()
+  requiresFasting?: boolean;
+
+  @IsString()
+  @MaxLength(2000)
+  @IsOptional()
+  specialInstructions?: string;
 }
 
 // Sample DTOs

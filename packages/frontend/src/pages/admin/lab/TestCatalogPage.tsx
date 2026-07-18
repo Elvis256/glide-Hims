@@ -60,6 +60,7 @@ interface TestFormData {
   sampleType: string;
   turnaroundTimeMinutes: number;
   price: number;
+  cost: string; // blank = not costed
   requiresFasting: boolean;
   specialInstructions: string;
   referenceRanges: ReferenceRange[];
@@ -73,6 +74,7 @@ const initialFormData: TestFormData = {
   sampleType: 'serum',
   turnaroundTimeMinutes: 240,
   price: 0,
+  cost: '',
   requiresFasting: false,
   specialInstructions: '',
   referenceRanges: [],
@@ -231,6 +233,7 @@ export default function TestCatalogPage() {
       sampleType: test.sampleType,
       turnaroundTimeMinutes: test.turnaroundTimeMinutes || 240,
       price: test.price,
+      cost: test.cost !== null && test.cost !== undefined ? String(test.cost) : '',
       requiresFasting: apiTest?.requiresFasting || false,
       specialInstructions: apiTest?.specialInstructions || '',
       referenceRanges: existingRanges,
@@ -270,6 +273,8 @@ export default function TestCatalogPage() {
         ...(rr.gender && rr.gender !== 'all' ? { gender: rr.gender } : {}),
       }));
 
+    const costValue = formData.cost.trim() === '' ? undefined : Number(formData.cost);
+
     const testData: Partial<APILabTest> = {
       code: formData.code,
       name: formData.name,
@@ -278,23 +283,24 @@ export default function TestCatalogPage() {
       sampleType: formData.sampleType,
       turnaroundTimeMinutes: formData.turnaroundTimeMinutes,
       price: formData.price,
+      cost: costValue,
       requiresFasting: formData.requiresFasting,
       specialInstructions: formData.specialInstructions || undefined,
       referenceRanges: cleanedRanges.length > 0 ? cleanedRanges : undefined,
     };
 
     if (editingTest) {
-      // UpdateLabTestDto only whitelists a subset — code / sampleType /
-      // requiresFasting / specialInstructions are NOT accepted on update and
-      // would trip forbidNonWhitelisted (400 on every edit). Send only the
-      // updatable fields. (Editing sampleType/fasting/instructions is a known
-      // backend gap — see review notes.)
+      // code and sampleType remain immutable on update (test identity); the
+      // other fields are all accepted by UpdateLabTestDto.
       const updatePayload: Partial<APILabTest> = {
         name: formData.name,
         description: formData.description || undefined,
         category: formData.category,
         price: formData.price,
+        cost: costValue,
         turnaroundTimeMinutes: formData.turnaroundTimeMinutes,
+        requiresFasting: formData.requiresFasting,
+        specialInstructions: formData.specialInstructions || undefined,
         referenceRanges: cleanedRanges.length > 0 ? cleanedRanges : undefined,
       };
       updateMutation.mutate({ id: editingTest.id, data: updatePayload });
@@ -681,6 +687,17 @@ export default function TestCatalogPage() {
                     className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     min="0"
                     required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Unit Cost ({CURRENCY_SYMBOL}, optional)</label>
+                  <input
+                    type="number"
+                    value={formData.cost}
+                    onChange={(e) => setFormData({ ...formData, cost: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    min="0"
+                    placeholder="What the test costs to run"
                   />
                 </div>
                 <div className="col-span-2">

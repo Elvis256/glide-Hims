@@ -63,6 +63,10 @@ export class LabTest extends BaseEntity {
   @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
   price: number;
 
+  /** What the test costs the lab to run (reagents etc) — for margin reporting. */
+  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
+  cost: number | null;
+
   @Column({ type: 'int', default: 60 })
   turnaroundTimeMinutes: number;
 
