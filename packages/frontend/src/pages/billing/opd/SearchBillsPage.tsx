@@ -23,7 +23,7 @@ import {
   FlaskConical,
 } from 'lucide-react';
 import { billingService, type Invoice } from '../../../services';
-import api from '../../../services/api';
+import api, { getApiErrorMessage } from '../../../services/api';
 import { useInstitutionInfo } from '../../../lib/useInstitutionInfo';
 import { printService } from '../../../lib/print';
 import { toCsv, downloadBlob } from '../../reports/_reportUtils';
@@ -452,20 +452,31 @@ export default function SearchBillsPage() {
     setActionMenuBill(null);
   };
 
+  // A real reason is required for the audit trail — canned "requested by user"
+  // strings made the financial log meaningless.
+  const promptedReason = (title: string): string | null => {
+    const reason = window.prompt(`${title}\nEnter the reason (required, min 3 characters):`);
+    if (reason === null) return null;
+    if (reason.trim().length < 3) {
+      toast.error('A reason of at least 3 characters is required');
+      return null;
+    }
+    return reason.trim();
+  };
+
   const handleRefundBill = async (bill: Bill) => {
-    if (!confirm(`Process refund for bill ${bill.billNumber}?`)) {
+    const reason = promptedReason(`Process refund for bill ${bill.billNumber}?`);
+    if (!reason) {
       setActionMenuBill(null);
       return;
     }
-    
     setIsProcessing(true);
     try {
-      await billingService.invoices.refund(bill.id, 'Refund requested by user');
+      await billingService.invoices.refund(bill.id, reason);
       queryClient.invalidateQueries({ queryKey: ['billing-invoices'] });
       toast.success('Refund processed successfully');
     } catch (error) {
-      console.error('Refund error:', error);
-      toast.error('Failed to process refund. Please try again.');
+      toast.error(getApiErrorMessage(error, 'Failed to process refund'));
     } finally {
       setIsProcessing(false);
       setActionMenuBill(null);
@@ -473,19 +484,18 @@ export default function SearchBillsPage() {
   };
 
   const handleCancelBill = async (bill: Bill) => {
-    if (!confirm(`Cancel bill ${bill.billNumber}? This action cannot be undone.`)) {
+    const reason = promptedReason(`Cancel bill ${bill.billNumber}? This action cannot be undone.`);
+    if (!reason) {
       setActionMenuBill(null);
       return;
     }
-    
     setIsProcessing(true);
     try {
-      await billingService.invoices.cancel(bill.id, 'Cancelled by user');
+      await billingService.invoices.cancel(bill.id, reason);
       queryClient.invalidateQueries({ queryKey: ['billing-invoices'] });
       toast.success('Bill cancelled successfully');
     } catch (error) {
-      console.error('Cancel error:', error);
-      toast.error('Failed to cancel bill. Please try again.');
+      toast.error(getApiErrorMessage(error, 'Failed to cancel bill'));
     } finally {
       setIsProcessing(false);
       setActionMenuBill(null);

@@ -282,6 +282,10 @@ export default function InvoicesPage() {
     const total = Number(invoice.amount) || subtotal;
     const paidAmount = Number((invoice as any).paidAmount) || 0;
     const balance = Number((invoice as any).balance) || (total - paidAmount);
+    // Real tax/discount from the invoice — printing 0 while the total includes
+    // 18% tax made every printed invoice internally inconsistent.
+    const taxAmount = Number((invoice as any).taxAmount) || 0;
+    const discountAmount = Number((invoice as any).discountAmount) || 0;
     const statusLabel = configFor(invoice.status).label;
     const isPaid = invoice.status === 'paid';
 
@@ -317,8 +321,8 @@ export default function InvoicesPage() {
   <div style="display:flex; justify-content:flex-end;">
     <div style="width:280px;">
       <div style="display:flex; justify-content:space-between; padding:6px 0; font-size:13px;"><span>Subtotal</span><span>UGX ${subtotal.toLocaleString()}</span></div>
-      <div style="display:flex; justify-content:space-between; padding:6px 0; font-size:13px;"><span>Tax</span><span>UGX 0</span></div>
-      <div style="display:flex; justify-content:space-between; padding:6px 0; font-size:13px;"><span>Discount</span><span>UGX 0</span></div>
+      <div style="display:flex; justify-content:space-between; padding:6px 0; font-size:13px;"><span>Tax</span><span>UGX ${taxAmount.toLocaleString()}</span></div>
+      <div style="display:flex; justify-content:space-between; padding:6px 0; font-size:13px;"><span>Discount</span><span>UGX ${discountAmount.toLocaleString()}</span></div>
       <div style="display:flex; justify-content:space-between; padding:10px 0 6px; font-size:16px; font-weight:700; border-top:2px solid #1a1a2e; margin-top:6px;"><span>Total</span><span>UGX ${total.toLocaleString()}</span></div>
       ${paidAmount > 0 ? `<div style="display:flex; justify-content:space-between; padding:6px 0; font-size:13px; color:#15803d; font-weight:600;"><span>Paid</span><span>UGX ${paidAmount.toLocaleString()}</span></div>` : ''}
       ${balance > 0 ? `<div style="display:flex; justify-content:space-between; padding:6px 0; font-size:15px; color:#b91c1c; font-weight:700;"><span>Balance Due</span><span>UGX ${balance.toLocaleString()}</span></div>` : ''}
@@ -454,7 +458,8 @@ export default function InvoicesPage() {
           >
             <option value="all">All Status</option>
             <option value="pending">Pending</option>
-            <option value="partial">Partial</option>
+            <option value="partially_paid">Partially Paid</option>
+            <option value="draft">Draft</option>
             <option value="paid">Paid</option>
             <option value="cancelled">Cancelled</option>
             <option value="refunded">Refunded</option>
@@ -494,14 +499,6 @@ export default function InvoicesPage() {
           {selectedInvoices.length > 0 && (
             <div className="flex items-center gap-2 ml-auto">
               <span className="text-sm text-gray-500">{selectedInvoices.length} selected</span>
-              <button className="flex items-center gap-1 px-3 py-2 bg-blue-50 text-blue-600 rounded-lg text-sm hover:bg-blue-100">
-                <Send className="w-4 h-4" />
-                Send Reminders
-              </button>
-              <button className="flex items-center gap-1 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm hover:bg-gray-200">
-                <Download className="w-4 h-4" />
-                Export
-              </button>
             </div>
           )}
         </div>
@@ -776,7 +773,7 @@ export default function InvoicesPage() {
               </button>
               <button
                 onClick={() => cancelMutation.mutate({ id: cancellingInvoice.id, reason: cancelReason })}
-                disabled={cancelMutation.isPending}
+                disabled={cancelMutation.isPending || cancelReason.trim().length < 3}
                 className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
               >
                 {cancelMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}

@@ -16,6 +16,8 @@ import {
 import { insuranceService } from '../services/insurance';
 import { patientsService } from '../services';
 import { asList } from '../utils/unwrapResponse';
+import { getApiErrorMessage } from '../services/api';
+import { formatCurrency } from '../lib/currency';
 
 /** Search-result shape. The patients table holds no insurance columns — cover
  *  is read from insurance_policies once a patient is selected. */
@@ -66,10 +68,9 @@ export default function VerifyCoveragePage() {
   });
 
   const verifyMutation = useMutation({
-    mutationFn: () => {
-      if (!selectedPolicyId) throw new Error('Select a policy to verify');
-      return insuranceService.policies.verify(selectedPolicyId);
-    },
+    // policyId passed directly — reading state here raced the setState in
+    // handleVerify and made the FIRST click always fail.
+    mutationFn: (policyId: string) => insuranceService.policies.verify(policyId),
     onSuccess: (policy: any) => {
       setVerificationResult({
         status: policy.status === 'active' ? 'verified' : policy.status === 'expired' ? 'expired' : 'invalid',
@@ -85,15 +86,18 @@ export default function VerifyCoveragePage() {
         exclusions: policy.exclusions || [],
       });
     },
-    onError: (err: Error) => toast.error(err.message || 'Verification failed'),
+    onError: (err) => toast.error(getApiErrorMessage(err, 'Verification failed')),
   });
 
   const handleVerify = () => {
     if (!selectedPatient) { toast.error('Please select a patient'); return; }
-    if (!selectedPolicyId && policiesData.length > 0) {
-      setSelectedPolicyId((policiesData[0] as any).id);
+    const policyId = selectedPolicyId || (policiesData[0] as any)?.id;
+    if (!policyId) {
+      toast.error('This patient has no active insurance policy on file');
+      return;
     }
-    verifyMutation.mutate();
+    if (!selectedPolicyId) setSelectedPolicyId(policyId);
+    verifyMutation.mutate(policyId);
   };
 
   const getStatusIcon = (status: string) => {
@@ -147,10 +151,32 @@ export default function VerifyCoveragePage() {
                     <p className="text-sm text-gray-500">{selectedPatient.mrn}</p>
                   </div>
                 </div>
-                <button onClick={() => { setSelectedPatient(null); setVerificationResult(null); }} className="text-xs text-blue-600 hover:underline">
+                <button onClick={() => { setSelectedPatient(null); setSelectedPolicyId(null); setVerificationResult(null); }} className="text-xs text-blue-600 hover:underline">
                   Change
                 </button>
               </div>
+              {/* Policy picker — a patient can carry more than one active policy */}
+              {policiesData.length === 0 ? (
+                <p className="text-sm text-gray-500">No active insurance policies on file.</p>
+              ) : (
+                <div className="space-y-2">
+                  {(policiesData as any[]).map((p) => (
+                    <button
+                      key={p.id}
+                      onClick={() => setSelectedPolicyId(p.id)}
+                      className={`w-full text-left p-2 rounded border text-sm ${
+                        (selectedPolicyId ?? (policiesData[0] as any)?.id) === p.id
+                          ? 'border-blue-500 bg-white'
+                          : 'border-transparent hover:bg-white'
+                      }`}
+                    >
+                      <span className="font-medium">{p.provider?.name || 'Provider'}</span>
+                      <span className="text-gray-500"> · {p.policyNumber}</span>
+                      {p.coverageType && <span className="text-gray-400 capitalize"> · {p.coverageType}</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           ) : (
             <>
@@ -259,7 +285,7 @@ export default function VerifyCoveragePage() {
                   <div className="bg-gray-50 rounded-lg p-3">
                     <div className="flex justify-between text-sm mb-2">
                       <span>Used</span>
-                      <span>UGX {verificationResult.usedAmount.toLocaleString()} / {verificationResult.coverageLimit.toLocaleString()}</span>
+                      <span>{formatCurrency(verificationResult.usedAmount)} / {formatCurrency(verificationResult.coverageLimit)}</span>
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-2">
                       <div
@@ -277,7 +303,7 @@ export default function VerifyCoveragePage() {
                       />
                     </div>
                     <p className="text-xs text-gray-500 mt-2">
-                      Available: UGX {(verificationResult.coverageLimit - verificationResult.usedAmount).toLocaleString()}
+                      Available: {formatCurrency(verificationResult.coverageLimit - verificationResult.usedAmount)}
                     </p>
                   </div>
                 </div>

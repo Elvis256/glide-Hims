@@ -17,6 +17,8 @@ import {
   Loader2,
 } from 'lucide-react';
 import { insuranceService, type InsurancePolicy } from '../services/insurance';
+import { patientsService } from '../services';
+import { getApiErrorMessage } from '../services/api';
 
 interface InsuranceCard {
   id: string;
@@ -54,8 +56,8 @@ const policyToCard = (policy: InsurancePolicy): InsuranceCard => ({
   provider: policy.provider?.name || 'Unknown Provider',
   policyNumber: policy.policyNumber,
   membershipType: policy.coverageType ? policy.coverageType.charAt(0).toUpperCase() + policy.coverageType.slice(1) : 'N/A',
-  issueDate: policy.effectiveDate || policy.startDate || '',
-  expiryDate: policy.expiryDate || policy.endDate || '',
+  issueDate: policy.effectiveDate || '',
+  expiryDate: policy.expiryDate || '',
   status: mapPolicyStatus(policy.status),
   dependents: 0,
   cardNumber: policy.memberNumber || policy.policyNumber,
@@ -73,10 +75,24 @@ export default function InsuranceCardsPage() {
     providerId: '',
     policyNumber: '',
     memberNumber: '',
-    principalName: '',
-    coverageType: 'comprehensive' as const,
-    startDate: '',
-    endDate: '',
+    coverageType: 'comprehensive',
+    effectiveDate: '',
+    expiryDate: '',
+  });
+  const [patientSearch, setPatientSearch] = useState('');
+  const [patientName, setPatientName] = useState('');
+
+  // Patient search + provider list for the register form (the old form asked
+  // clerks to type raw UUIDs — impossible to use)
+  const { data: patientResults = [] } = useQuery({
+    queryKey: ['card-patient-search', patientSearch],
+    queryFn: async () => (await patientsService.search({ search: patientSearch, limit: 5 })).data || [],
+    enabled: showRegisterModal && patientSearch.length >= 2 && !registerForm.patientId,
+  });
+  const { data: providers = [] } = useQuery({
+    queryKey: ['insurance-providers'],
+    queryFn: () => insuranceService.providers.list(),
+    enabled: showRegisterModal,
   });
 
   // Fetch insurance policies from API
@@ -95,15 +111,16 @@ export default function InsuranceCardsPage() {
       queryClient.invalidateQueries({ queryKey: ['insurance-policies'] });
       toast.success('Insurance card registered successfully');
       setShowRegisterModal(false);
-      setRegisterForm({ patientId: '', providerId: '', policyNumber: '', memberNumber: '', principalName: '', coverageType: 'comprehensive', startDate: '', endDate: '' });
+      setRegisterForm({ patientId: '', providerId: '', policyNumber: '', memberNumber: '', coverageType: 'comprehensive', effectiveDate: '', expiryDate: '' });
+      setPatientSearch('');
+      setPatientName('');
     },
-    onError: () => {
-      toast.error('Failed to register insurance card');
-    },
+    onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to register insurance card')),
   });
 
   const handleRegisterCard = () => {
-    if (!registerForm.patientId || !registerForm.providerId || !registerForm.policyNumber || !registerForm.startDate || !registerForm.endDate) {
+    if (!registerForm.patientId || !registerForm.providerId || !registerForm.policyNumber ||
+        !registerForm.memberNumber || !registerForm.effectiveDate || !registerForm.expiryDate) {
       toast.error('Please fill in all required fields');
       return;
     }
@@ -315,11 +332,6 @@ export default function InsuranceCardsPage() {
                   </div>
                 </div>
 
-                <div>
-                  <p className="text-sm text-gray-500">Dependents</p>
-                  <p className="font-medium">{selectedCard.dependents}</p>
-                </div>
-
                 {/* Expiry Warning */}
                 {selectedCard.status === 'expired' && (
                   <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-2">
@@ -332,13 +344,12 @@ export default function InsuranceCardsPage() {
                 )}
 
                 <div className="flex gap-2 pt-2">
-                  <button onClick={() => toast.info(`Policy: ${selectedCard.policyNumber}`)} className="btn-secondary flex-1 flex items-center justify-center gap-1 text-sm">
+                  <button
+                    onClick={() => navigate('/insurance/verify')}
+                    className="btn-primary flex-1 flex items-center justify-center gap-1 text-sm"
+                  >
                     <Eye className="w-4 h-4" />
-                    View
-                  </button>
-                  <button onClick={() => navigate('/insurance')} className="btn-primary flex-1 flex items-center justify-center gap-1 text-sm">
-                    <Edit className="w-4 h-4" />
-                    Update
+                    Verify Coverage
                   </button>
                 </div>
               </div>
@@ -354,28 +365,65 @@ export default function InsuranceCardsPage() {
             <h2 className="text-lg font-bold mb-4">Register Insurance Card</h2>
             <div className="space-y-3">
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Patient ID *</label>
-                <input type="text" value={registerForm.patientId} onChange={(e) => setRegisterForm(f => ({ ...f, patientId: e.target.value }))} className="input py-2 text-sm" placeholder="Enter patient ID" />
+                <label className="block text-xs font-medium text-gray-600 mb-1">Patient *</label>
+                {registerForm.patientId ? (
+                  <div className="flex items-center justify-between p-2 bg-blue-50 border border-blue-200 rounded-lg text-sm">
+                    <span className="font-medium">{patientName}</span>
+                    <button
+                      onClick={() => { setRegisterForm(f => ({ ...f, patientId: '' })); setPatientName(''); setPatientSearch(''); }}
+                      className="text-xs text-blue-600"
+                    >
+                      Change
+                    </button>
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={patientSearch}
+                      onChange={(e) => setPatientSearch(e.target.value)}
+                      className="input py-2 text-sm"
+                      placeholder="Search patient by name or MRN..."
+                    />
+                    {patientResults.length > 0 && (
+                      <div className="absolute z-10 w-full mt-1 bg-white border rounded-lg shadow max-h-32 overflow-y-auto">
+                        {patientResults.map((p: any) => (
+                          <button
+                            key={p.id}
+                            onClick={() => { setRegisterForm(f => ({ ...f, patientId: p.id })); setPatientName(p.fullName); }}
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
+                          >
+                            {p.fullName} <span className="text-gray-400">{p.mrn}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Provider ID *</label>
-                <input type="text" value={registerForm.providerId} onChange={(e) => setRegisterForm(f => ({ ...f, providerId: e.target.value }))} className="input py-2 text-sm" placeholder="Enter provider ID" />
+                <label className="block text-xs font-medium text-gray-600 mb-1">Insurance Provider *</label>
+                <select value={registerForm.providerId} onChange={(e) => setRegisterForm(f => ({ ...f, providerId: e.target.value }))} className="input py-2 text-sm">
+                  <option value="">Select provider...</option>
+                  {(providers as any[]).map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+                {(providers as any[]).length === 0 && (
+                  <p className="text-xs text-orange-600 mt-1">No providers configured — add one under Insurance → Providers.</p>
+                )}
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Policy Number *</label>
                 <input type="text" value={registerForm.policyNumber} onChange={(e) => setRegisterForm(f => ({ ...f, policyNumber: e.target.value }))} className="input py-2 text-sm" placeholder="Enter policy number" />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Member Number</label>
-                <input type="text" value={registerForm.memberNumber} onChange={(e) => setRegisterForm(f => ({ ...f, memberNumber: e.target.value }))} className="input py-2 text-sm" placeholder="Enter member number" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Principal Name</label>
-                <input type="text" value={registerForm.principalName} onChange={(e) => setRegisterForm(f => ({ ...f, principalName: e.target.value }))} className="input py-2 text-sm" placeholder="Enter principal member name" />
+                <label className="block text-xs font-medium text-gray-600 mb-1">Member Number *</label>
+                <input type="text" value={registerForm.memberNumber} onChange={(e) => setRegisterForm(f => ({ ...f, memberNumber: e.target.value }))} className="input py-2 text-sm" placeholder="Number on the member card" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Coverage Type</label>
-                <select value={registerForm.coverageType} onChange={(e) => setRegisterForm(f => ({ ...f, coverageType: e.target.value as any }))} className="input py-2 text-sm">
+                <select value={registerForm.coverageType} onChange={(e) => setRegisterForm(f => ({ ...f, coverageType: e.target.value }))} className="input py-2 text-sm">
                   <option value="comprehensive">Comprehensive</option>
                   <option value="inpatient">Inpatient</option>
                   <option value="outpatient">Outpatient</option>
@@ -385,12 +433,12 @@ export default function InsuranceCardsPage() {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Start Date *</label>
-                  <input type="date" value={registerForm.startDate} onChange={(e) => setRegisterForm(f => ({ ...f, startDate: e.target.value }))} className="input py-2 text-sm" />
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Effective Date *</label>
+                  <input type="date" value={registerForm.effectiveDate} onChange={(e) => setRegisterForm(f => ({ ...f, effectiveDate: e.target.value }))} className="input py-2 text-sm" />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">End Date *</label>
-                  <input type="date" value={registerForm.endDate} onChange={(e) => setRegisterForm(f => ({ ...f, endDate: e.target.value }))} className="input py-2 text-sm" />
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Expiry Date *</label>
+                  <input type="date" value={registerForm.expiryDate} onChange={(e) => setRegisterForm(f => ({ ...f, expiryDate: e.target.value }))} className="input py-2 text-sm" />
                 </div>
               </div>
             </div>

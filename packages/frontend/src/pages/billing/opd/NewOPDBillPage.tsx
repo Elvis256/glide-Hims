@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -80,6 +81,7 @@ import type { PaymentMethod } from '../../../shared/payment-methods';
 type DiscountType = 'percentage' | 'fixed';
 
 export default function NewOPDBillPage() {
+  const navigate = useNavigate();
   const { user } = useAuthStore();
   const facilityId = user?.facilityId || '';
   const inst = useInstitutionInfo();
@@ -535,7 +537,7 @@ export default function NewOPDBillPage() {
       {/* Header with running total */}
       <div className="flex items-center justify-between mb-4 flex-shrink-0">
         <div className="flex items-center gap-4">
-          <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+          <button onClick={() => navigate(-1)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div className="flex items-center gap-3">
@@ -684,7 +686,7 @@ export default function NewOPDBillPage() {
                               </div>
                               <div className="flex justify-between">
                                 <span className="text-gray-500">Co-pay</span>
-                                <span className="font-medium">{Number(selectedPolicy.copayPercent) || 20}%</span>
+                                <span className="font-medium">{Number(selectedPolicy.copayPercent) || 0}%</span>
                               </div>
                             </div>
                           )}
@@ -1025,14 +1027,6 @@ export default function NewOPDBillPage() {
 
               {/* Action Buttons */}
               <div className="flex gap-2 mt-4 flex-shrink-0">
-                <button
-                  onClick={handleSaveDraft}
-                  disabled={!selectedPatient || isCreatingInvoice}
-                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 border border-gray-300 rounded-xl hover:bg-gray-50 disabled:opacity-50 font-medium text-sm transition-colors"
-                >
-                  <Save className="w-4 h-4" />
-                  Save Draft
-                </button>
                 <button
                   onClick={handleGenerateBill}
                   disabled={!selectedPatient || billItems.length === 0 || isCreatingInvoice || (payerType === 'insurance' && !selectedPolicy)}

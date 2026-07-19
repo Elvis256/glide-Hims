@@ -743,10 +743,15 @@ export class AssetsService {
       const xferRepo = manager.getRepository(AssetTransfer);
       const approvalRepo = manager.getRepository(AssetTransferApproval);
 
+      // Lock bare row, then load relations — FOR UPDATE + outer join 500s.
+      const lockedTransfer = await xferRepo.findOne({
+        where: { id: transferId, tenantId: requireTenantId(ctx?.tenantId) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!lockedTransfer) throw new NotFoundException('Transfer not found');
       const transfer = await xferRepo.findOne({
         where: { id: transferId, tenantId: requireTenantId(ctx?.tenantId) },
         relations: ['approvals'],
-        lock: { mode: 'pessimistic_write' },
       });
       if (!transfer) throw new NotFoundException('Transfer not found');
 
@@ -808,10 +813,15 @@ export class AssetsService {
       const assetRepoTx = manager.getRepository(FixedAsset);
       const locRepo = manager.getRepository(AssetLocationHistory);
 
+      // Lock bare row, then load relations — FOR UPDATE + outer join 500s.
+      const lockedTransfer = await xferRepo.findOne({
+        where: { id: transferId, tenantId: requireTenantId(ctx?.tenantId) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!lockedTransfer) throw new NotFoundException('Transfer not found');
       const transfer = await xferRepo.findOne({
         where: { id: transferId, tenantId: requireTenantId(ctx?.tenantId) },
         relations: ['approvals'],
-        lock: { mode: 'pessimistic_write' },
       });
       if (!transfer) throw new NotFoundException('Transfer not found');
       if (transfer.status === 'completed') return transfer;

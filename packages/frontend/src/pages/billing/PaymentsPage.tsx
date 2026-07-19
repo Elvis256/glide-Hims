@@ -27,7 +27,7 @@ import {
   Printer,
 } from 'lucide-react';
 import { billingService, type Payment } from '../../services';
-import api from '../../services/api';
+import api, { getApiErrorMessage } from '../../services/api';
 import PaymentMethodPicker from '../../components/PaymentMethodPicker';
 import { useInstitutionInfo } from '../../lib/useInstitutionInfo';
 import { printService } from '../../lib/print';
@@ -93,13 +93,13 @@ export default function PaymentsPage() {
   const [foundInvoice, setFoundInvoice] = useState<{ id: string; invoiceNumber: string; totalAmount: number; balance: number; patientName?: string; items?: Array<{ id: string; description: string; quantity: number; unitPrice: number; totalPrice?: number }> } | null>(null);
   const [lookupError, setLookupError] = useState('');
 
-  // Fetch payments from API with filters
+  // Fetch payments from API with filters. Empty strings must be OMITTED —
+  // @IsDateString rejects '' and the whole list 400'd after "Clear filters".
   const { data: paymentsData, isLoading } = useQuery({
     queryKey: ['payments', dateFilter, methodFilter],
     queryFn: () => billingService.payments.list({
-      startDate: dateFilter,
-      endDate: dateFilter,
-      method: methodFilter !== 'all' ? methodFilter : undefined,
+      ...(dateFilter && { startDate: dateFilter, endDate: dateFilter }),
+      ...(methodFilter !== 'all' && { method: methodFilter }),
     }),
     staleTime: 30000,
   });
@@ -149,7 +149,7 @@ export default function PaymentsPage() {
       <hr/>
       <div class="row total"><span>Amount Paid:</span><span>${d.amount}</span></div>
       <div class="row"><span>Method:</span><span>${d.method || d.paymentMethod || '-'}</span></div>
-      ${d.referenceNumber ? `<div class="row"><span>Ref:</span><span>${d.referenceNumber}</span></div>` : ''}
+      ${(d as any).transactionReference ? `<div class="row"><span>Ref:</span><span>${(d as any).transactionReference}</span></div>` : ''}
       <div class="row"><span>Cashier:</span><span>${d.receivedBy || '-'}</span></div>
       <hr/><p class="footer">Thank you for your payment.<br/>Keep this receipt for your records.</p>`;
     const extraCss = `
@@ -185,8 +185,8 @@ export default function PaymentsPage() {
       setReferenceNumber('');
       setFoundInvoice(null);
     },
-    onError: (error: Error) => {
-      toast.error(error.message || 'Failed to record payment');
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error, 'Failed to record payment'));
     },
   });
 
@@ -218,7 +218,9 @@ export default function PaymentsPage() {
       queryClient.invalidateQueries({ queryKey: ['payments'] });
       setVoidingPayment(null);
       setVoidReason('');
+      toast.success('Payment voided');
     },
+    onError: (error) => toast.error(getApiErrorMessage(error, 'Failed to void payment')),
   });
 
   const payments = paymentsData || [];
@@ -834,10 +836,10 @@ export default function PaymentsPage() {
                   <span>Method</span>
                   <span className="capitalize">{(receiptData as any).method || receiptData.paymentMethod || '-'}</span>
                 </div>
-                {receiptData.referenceNumber && (
+                {(receiptData as any).transactionReference && (
                   <div className="flex justify-between text-xs text-gray-600">
                     <span>Reference</span>
-                    <span>{receiptData.referenceNumber}</span>
+                    <span>{(receiptData as any).transactionReference}</span>
                   </div>
                 )}
                 <div className="flex justify-between text-xs text-gray-600">

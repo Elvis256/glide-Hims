@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import api from '../../../services/api';
+import { toast } from 'sonner';
+import api, { getApiErrorMessage } from '../../../services/api';
 import { useFacilityId } from '../../../lib/facility';
 import {
   Building2,
@@ -171,7 +172,9 @@ export default function ProvidersPage() {
       queryClient.invalidateQueries({ queryKey: ['insurance-price-lists', selectedProvider?.id] });
       setShowAddPriceModal(false);
       setPriceForm({ serviceId: '', agreedPrice: '', effectiveFrom: '', notes: '' });
+      toast.success('Price added');
     },
+    onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to add price')),
   });
 
   // Create mutation
@@ -197,7 +200,9 @@ export default function ProvidersPage() {
       setShowEditModal(false);
       setSelectedProvider(null);
       resetForm();
+      toast.success('Provider saved');
     },
+    onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to save provider')),
   });
 
   // Update mutation
@@ -222,7 +227,9 @@ export default function ProvidersPage() {
       setShowEditModal(false);
       setSelectedProvider(null);
       resetForm();
+      toast.success('Provider updated');
     },
+    onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to update provider')),
   });
 
   const resetForm = () => {
@@ -275,7 +282,7 @@ export default function ProvidersPage() {
       address: provider.address,
       isActive: provider.isActive,
       claimSubmissionMethod: provider.claimSubmissionMethod || '',
-      averagePaymentDays: provider.averagePaymentDays,
+      averagePaymentDays: (provider as any).paymentTermsDays,
       notes: provider.notes || '',
     });
     setShowEditModal(true);
@@ -416,7 +423,7 @@ export default function ProvidersPage() {
                 </div>
                 <div className="text-center flex-1 border-x">
                   <p className="text-xs text-gray-500">Payment Terms</p>
-                  <p className="font-semibold">{provider.averagePaymentDays || '—'} {provider.averagePaymentDays ? 'days' : ''}</p>
+                  <p className="font-semibold">{(provider as any).paymentTermsDays || '—'} {(provider as any).paymentTermsDays ? 'days' : ''}</p>
                 </div>
                 <div className="text-center flex-1">
                   <p className="text-xs text-gray-500">Status</p>
@@ -560,7 +567,7 @@ export default function ProvidersPage() {
                       </div>
                       <div>
                         <p className="text-xs text-gray-500">Payment Terms</p>
-                        <p className="font-medium">{selectedProvider.averagePaymentDays ? `${selectedProvider.averagePaymentDays} days` : 'N/A'}</p>
+                        <p className="font-medium">{(selectedProvider as any).paymentTermsDays ? `${(selectedProvider as any).paymentTermsDays} days` : 'N/A'}</p>
                       </div>
                       {selectedProvider.contactPerson && (
                         <div>
@@ -887,25 +894,6 @@ export default function ProvidersPage() {
                     className="input"
                   />
                 </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-                <textarea
-                  value={formData.notes}
-                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                  placeholder="Additional notes..."
-                  className="input h-20 resize-none"
-                />
-              </div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="isActive"
-                  checked={formData.isActive}
-                  onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
-                  className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                />
-                <label htmlFor="isActive" className="text-sm text-gray-700">Active provider</label>
               </div>
             </div>
             <div className="flex justify-end gap-2 p-4 border-t">

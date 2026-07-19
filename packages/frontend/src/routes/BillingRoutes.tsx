@@ -15,6 +15,7 @@ const OPDOrderingPage = lazy(() => import('../pages/billing/opd/OPDOrderingPage'
 const PackageBillingPage = lazy(() => import('../pages/billing/opd/PackageBillingPage'));
 const SearchBillsPage = lazy(() => import('../pages/billing/opd/SearchBillsPage'));
 const InvoicesPage = lazy(() => import('../pages/billing/InvoicesPage'));
+const RefundsPage = lazy(() => import('../pages/RefundsPage'));
 const PaymentsPage = lazy(() => import('../pages/billing/PaymentsPage'));
 const PatientTabPage = lazy(() => import('../pages/billing/PatientTabPage'));
 const DoctorFeesPage = lazy(() => import('../pages/billing/DoctorFeesPage'));
@@ -64,6 +65,7 @@ export default function BillingRoutes() {
       <Route path="opd/orders" element={<ModuleRoute module="billing"><BillingRoute><OPDOrderingPage /></BillingRoute></ModuleRoute>} />
       <Route path="opd/packages" element={<ModuleRoute module="billing"><BillingRoute><PackageBillingPage /></BillingRoute></ModuleRoute>} />
       <Route path="opd/search" element={<ModuleRoute module="billing"><BillingRoute><SearchBillsPage /></BillingRoute></ModuleRoute>} />
+      <Route path="reception/refunds" element={<ModuleRoute module="billing"><BillingRoute><RefundsPage /></BillingRoute></ModuleRoute>} />
       <Route path="invoices" element={<ModuleRoute module="billing"><BillingRoute><InvoicesPage /></BillingRoute></ModuleRoute>} />
       <Route path="invoices/:invoiceId" element={<ModuleRoute module="billing"><BillingRoute><InvoicesPage /></BillingRoute></ModuleRoute>} />
       <Route path="payments" element={<ModuleRoute module="billing"><BillingRoute><PaymentsPage /></BillingRoute></ModuleRoute>} />

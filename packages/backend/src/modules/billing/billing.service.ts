@@ -1347,13 +1347,19 @@ export class BillingService {
       const paymentRepo = manager.getRepository(Payment);
       const invoiceRepo = manager.getRepository(Invoice);
 
-      // Lock payment to prevent concurrent void
+      // Lock payment to prevent concurrent void. Lock the bare row first —
+      // FOR UPDATE with outer-joined relations is rejected by Postgres.
+      const lockedPayment = await paymentRepo.findOne({
+        where: { id: paymentId, tenantId: requireTenantId(tenantId) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!lockedPayment) {
+        throw new NotFoundException('Payment not found');
+      }
       const payment = await paymentRepo.findOne({
         where: { id: paymentId, tenantId: requireTenantId(tenantId) },
         relations: ['invoice', 'invoice.encounter'],
-        lock: { mode: 'pessimistic_write' },
       });
-
       if (!payment) {
         throw new NotFoundException('Payment not found');
       }
@@ -1485,10 +1491,15 @@ export class BillingService {
       const paymentRepo = manager.getRepository(Payment);
       const invoiceRepo = manager.getRepository(Invoice);
 
+      // Lock bare row, then load relations — FOR UPDATE + outer join 500s.
+      const lockedOriginal = await paymentRepo.findOne({
+        where: { id: paymentId, tenantId: requireTenantId(tenantId) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!lockedOriginal) throw new NotFoundException('Payment not found');
       const original = await paymentRepo.findOne({
         where: { id: paymentId, tenantId: requireTenantId(tenantId) },
         relations: ['invoice', 'invoice.encounter'],
-        lock: { mode: 'pessimistic_write' },
       });
 
       if (!original) throw new NotFoundException('Payment not found');
@@ -2026,12 +2037,20 @@ export class BillingService {
       const invoiceRepo = manager.getRepository(Invoice);
       const paymentRepo = manager.getRepository(Payment);
 
+      // Lock the bare row first — Postgres rejects FOR UPDATE combined with
+      // outer-joined relations (this 500'd every refund). Relations are loaded
+      // in a second, unlocked read inside the same transaction.
+      const locked = await invoiceRepo.findOne({
+        where: { id, tenantId: requireTenantId(tenantId) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!locked) {
+        throw new NotFoundException('Invoice not found');
+      }
       const invoice = await invoiceRepo.findOne({
         where: { id, tenantId: requireTenantId(tenantId) },
         relations: ['patient', 'payments', 'encounter'],
-        lock: { mode: 'pessimistic_write' },
       });
-
       if (!invoice) {
         throw new NotFoundException('Invoice not found');
       }

@@ -78,28 +78,32 @@ export default function OPDOrderingPage() {
     enabled: searchTerm.length >= 2,
   });
 
-  // Recent orders - fetch last 10 orders for selected patient
+  // Recent orders - fetch last 10 orders for selected patient. The interceptor
+  // flattens {data,meta} to a BARE ARRAY, so `.then(r => r.data)` was always
+  // undefined and the panel rendered permanently empty.
   const { data: recentOrdersData = [] } = useQuery({
     queryKey: ['recent-orders', selectedPatient?.id],
-    queryFn: () => ordersService.list({ patientId: selectedPatient!.id, limit: 10 }).then(r => r.data),
+    queryFn: async () => {
+      const r: any = await ordersService.list({ patientId: selectedPatient!.id, limit: 10 });
+      return Array.isArray(r) ? r : Array.isArray(r?.data) ? r.data : [];
+    },
     enabled: !!selectedPatient?.id,
   });
 
-  // Find active encounter for the selected patient
+  // Find active encounter for the selected patient. NO fallback to a closed
+  // encounter — orders silently attached to completed visits before.
   const { data: activeEncounter } = useQuery({
     queryKey: ['active-encounter', selectedPatient?.id],
     queryFn: async () => {
-      const result = await encountersService.list({
+      const result: any = await encountersService.list({
         patientId: selectedPatient!.id,
-        limit: 1,
+        limit: 10,
       });
-      const encounters = result.data || result || [];
+      const encounters = Array.isArray(result) ? result : result?.data || [];
       const arr = Array.isArray(encounters) ? encounters : [];
-      // Find the most recent non-terminal encounter
-      const active = arr.find((e: any) =>
-        !['completed', 'discharged', 'cancelled'].includes(e.status)
+      return (
+        arr.find((e: any) => !['completed', 'discharged', 'cancelled'].includes(e.status)) || null
       );
-      return active || arr[0] || null;
     },
     enabled: !!selectedPatient?.id,
   });
