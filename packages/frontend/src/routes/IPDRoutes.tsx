@@ -16,7 +16,9 @@ const BedBoardPage = lazy(() => import('../pages/ipd/BedBoardPage'));
 const BHTIssuePage = lazy(() => import('../pages/ipd/BHTIssuePage'));
 const InpatientBillingPage = lazy(() => import('../pages/ipd/InpatientBillingPage'));
 const IPDNursingNotesPage = lazy(() => import('../pages/ipd/IPDNursingNotesPage'));
-const IPDTheatrePage = lazy(() => import('../pages/ipd/TheatrePage'));
+// The full surgery module (WHO checklist, lifecycle, consumables) lives in
+// pages/TheatrePage — the old pages/ipd/TheatrePage duplicate was deleted.
+const IPDTheatrePage = lazy(() => import('../pages/TheatrePage'));
 // The redesigned maternity module (ANC/labour/partograph/PNC/EPI) lives in
 // pages/MaternityPage — the old pages/ipd/MaternityPage shell was deleted.
 const IPDMaternityPage = lazy(() => import('../pages/MaternityPage'));
