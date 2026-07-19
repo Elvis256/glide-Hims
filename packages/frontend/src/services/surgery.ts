@@ -82,6 +82,7 @@ export interface CreateTheatreDto {
 
 export interface SurgeryCase {
   id: string;
+  caseNumber: string;
   facilityId: string;
   patientId: string;
   encounterId?: string;
@@ -190,6 +191,33 @@ export interface SurgeryCaseQuery {
 
 // ── WHO Surgical Safety Checklist ────────────────────────────────────────────
 
+export interface RecordConsumableDto {
+  surgeryCaseId: string;
+  itemId: string;
+  category?: string;
+  quantityUsed: number;
+  unitCost: number;
+  batchNumber?: string;
+  usagePhase: 'pre_op' | 'intra_op' | 'post_op';
+  isBillable?: boolean;
+  deductFromStock?: boolean;
+  notes?: string;
+}
+
+export interface SurgeryConsumable {
+  id: string;
+  surgeryCaseId: string;
+  itemId: string;
+  item?: { id: string; name: string; unit?: string };
+  category?: string;
+  quantityUsed: number;
+  unitCost: number;
+  totalCost?: number;
+  usagePhase: string;
+  isBillable?: boolean;
+  createdAt: string;
+}
+
 export type WhoChecklistPhase = 'sign_in' | 'time_out' | 'sign_out';
 
 export interface WhoChecklist {
@@ -262,6 +290,18 @@ export const surgeryService = {
 
     completePhase: (caseId: string, phase: WhoChecklistPhase, items: Record<string, unknown>) =>
       api.put<WhoChecklist>(`/surgery/cases/${caseId}/who-checklist/${phase}`, { items }),
+  },
+
+  // Consumables
+  consumables: {
+    record: (caseId: string, data: RecordConsumableDto) =>
+      api.post<SurgeryConsumable>(`/surgery/cases/${caseId}/consumables`, data),
+
+    list: (caseId: string) =>
+      api.get<SurgeryConsumable[]>(`/surgery/cases/${caseId}/consumables`),
+
+    remove: (id: string) =>
+      api.delete(`/surgery/consumables/${id}`),
   },
 
   // Schedule & Dashboard

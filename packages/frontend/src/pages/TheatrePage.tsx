@@ -1,7 +1,13 @@
 import { useState, useEffect } from 'react';
-import { api } from '../services/api';
+import { toast } from 'sonner';
+import { api, getApiErrorMessage } from '../services/api';
 import { useFacilityId } from '../lib/facility';
 import WhoChecklistPanel from '../components/surgery/WhoChecklistPanel';
+import ScheduleSurgeryModal from '../components/surgery/ScheduleSurgeryModal';
+import PreOpModal from '../components/surgery/PreOpModal';
+import CompleteSurgeryModal from '../components/surgery/CompleteSurgeryModal';
+import ConsumablesSection from '../components/surgery/ConsumablesSection';
+import { surgeryService } from '../services/surgery';
 import {
   Calendar,
   Clock,
@@ -94,6 +100,97 @@ export default function TheatrePage() {
   const [loading, setLoading] = useState(true);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'schedule' | 'theatres'>('dashboard');
+  const [preOpCase, setPreOpCase] = useState<SurgeryCase | null>(null);
+  const [completeCase, setCompleteCase] = useState<SurgeryCase | null>(null);
+  const [cancelCase, setCancelCase] = useState<SurgeryCase | null>(null);
+  const [cancelForm, setCancelForm] = useState({ reason: '', newDate: '', newTime: '' });
+  const [showTheatreModal, setShowTheatreModal] = useState(false);
+  const [theatreForm, setTheatreForm] = useState({ name: '', code: '', type: 'general' });
+  const [actionPending, setActionPending] = useState(false);
+
+  const refresh = () => {
+    loadDashboard();
+    loadSchedule();
+  };
+
+  const startSurgery = async (c: SurgeryCase) => {
+    try {
+      setActionPending(true);
+      await surgeryService.cases.start(c.id);
+      toast.success('Surgery started — theatre marked in use');
+      setSelectedCase(null);
+      refresh();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'Cannot start surgery'));
+    } finally {
+      setActionPending(false);
+    }
+  };
+
+  const dischargeRecovery = async (c: SurgeryCase) => {
+    try {
+      setActionPending(true);
+      await surgeryService.cases.dischargeRecovery(c.id);
+      toast.success('Patient discharged from recovery');
+      setSelectedCase(null);
+      refresh();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'Failed to discharge from recovery'));
+    } finally {
+      setActionPending(false);
+    }
+  };
+
+  const submitCancel = async () => {
+    if (!cancelCase || !cancelForm.reason) return;
+    try {
+      setActionPending(true);
+      await surgeryService.cases.cancel(cancelCase.id, {
+        reason: cancelForm.reason,
+        newDate: cancelForm.newDate || undefined,
+        newTime: cancelForm.newTime || undefined,
+      } as any);
+      toast.success(cancelForm.newDate ? 'Surgery postponed' : 'Surgery cancelled');
+      setCancelCase(null);
+      setCancelForm({ reason: '', newDate: '', newTime: '' });
+      setSelectedCase(null);
+      refresh();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'Failed to cancel surgery'));
+    } finally {
+      setActionPending(false);
+    }
+  };
+
+  const createTheatre = async () => {
+    try {
+      setActionPending(true);
+      await surgeryService.theatres.create({
+        facilityId,
+        name: theatreForm.name,
+        code: theatreForm.code,
+        type: theatreForm.type as any,
+      } as any);
+      toast.success('Theatre added');
+      setShowTheatreModal(false);
+      setTheatreForm({ name: '', code: '', type: 'general' });
+      refresh();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'Failed to add theatre'));
+    } finally {
+      setActionPending(false);
+    }
+  };
+
+  const markTheatreReady = async (theatreId: string) => {
+    try {
+      await surgeryService.theatres.updateStatus(theatreId, 'available' as any);
+      toast.success('Theatre marked available');
+      refresh();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'Failed to update theatre'));
+    }
+  };
 
   useEffect(() => {
     loadDashboard();
@@ -387,6 +484,22 @@ export default function TheatrePage() {
 
       {/* Theatres Tab */}
       {activeTab === 'theatres' && dashboard && (
+        <div className="space-y-4">
+        <div className="flex justify-end">
+          <button
+            onClick={() => setShowTheatreModal(true)}
+            className="px-4 py-2 border border-indigo-300 text-indigo-600 rounded-lg hover:bg-indigo-50 flex items-center gap-2 text-sm font-medium"
+          >
+            <Plus className="w-4 h-4" />
+            Add Theatre
+          </button>
+        </div>
+        {dashboard.theatres.length === 0 && (
+          <div className="bg-white rounded-lg shadow p-12 text-center text-gray-500">
+            <Scissors className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+            <p>No theatres configured yet — add one to start scheduling surgeries.</p>
+          </div>
+        )}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {dashboard.theatres.map((t) => (
             <div key={t.id} className="bg-white rounded-lg shadow p-6">
@@ -407,21 +520,25 @@ export default function TheatrePage() {
               </div>
               <div className="mt-4 pt-4 border-t flex gap-2">
                 {t.status === 'available' && (
-                  <button className="flex-1 text-center py-2 bg-green-50 text-green-700 rounded hover:bg-green-100 text-sm">
+                  <button
+                    onClick={() => setShowScheduleModal(true)}
+                    className="flex-1 text-center py-2 bg-green-50 text-green-700 rounded hover:bg-green-100 text-sm"
+                  >
                     Schedule
                   </button>
                 )}
-                {t.status === 'cleaning' && (
-                  <button className="flex-1 text-center py-2 bg-blue-50 text-blue-700 rounded hover:bg-blue-100 text-sm">
+                {['cleaning', 'maintenance'].includes(t.status) && (
+                  <button
+                    onClick={() => markTheatreReady(t.id)}
+                    className="flex-1 text-center py-2 bg-blue-50 text-blue-700 rounded hover:bg-blue-100 text-sm"
+                  >
                     Mark Ready
                   </button>
                 )}
-                <button className="px-3 py-2 text-gray-500 hover:bg-gray-100 rounded text-sm">
-                  Details
-                </button>
               </div>
             </div>
           ))}
+        </div>
         </div>
       )}
 
@@ -518,38 +635,57 @@ export default function TheatrePage() {
                   </button>
                 )}
                 {selectedCase.status === 'scheduled' && (
-                  <>
-                    <button className="w-full py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600 flex items-center justify-center gap-2">
-                      <CheckCircle className="w-4 h-4" />
-                      Complete Pre-Op Checklist
-                    </button>
-                  </>
+                  <button
+                    onClick={() => setPreOpCase(selectedCase)}
+                    className="w-full py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600 flex items-center justify-center gap-2"
+                  >
+                    <CheckCircle className="w-4 h-4" />
+                    Complete Pre-Op Checklist
+                  </button>
                 )}
-                {selectedCase.status === 'pre_op' && (
-                  <button className="w-full py-2 bg-green-500 text-white rounded hover:bg-green-600 flex items-center justify-center gap-2">
+                {['scheduled', 'pre_op'].includes(selectedCase.status) && (
+                  <button
+                    onClick={() => startSurgery(selectedCase)}
+                    disabled={actionPending}
+                    className="w-full py-2 bg-green-500 text-white rounded hover:bg-green-600 disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
                     <Play className="w-4 h-4" />
                     Start Surgery
                   </button>
                 )}
                 {selectedCase.status === 'in_progress' && (
-                  <button className="w-full py-2 bg-purple-500 text-white rounded hover:bg-purple-600 flex items-center justify-center gap-2">
+                  <button
+                    onClick={() => setCompleteCase(selectedCase)}
+                    className="w-full py-2 bg-purple-500 text-white rounded hover:bg-purple-600 flex items-center justify-center gap-2"
+                  >
                     <Pause className="w-4 h-4" />
                     Complete Surgery
                   </button>
                 )}
                 {selectedCase.status === 'post_op' && (
-                  <button className="w-full py-2 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center justify-center gap-2">
+                  <button
+                    onClick={() => dischargeRecovery(selectedCase)}
+                    disabled={actionPending}
+                    className="w-full py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
                     <CheckCircle className="w-4 h-4" />
                     Discharge from Recovery
                   </button>
                 )}
                 {['scheduled', 'pre_op'].includes(selectedCase.status) && (
-                  <button className="w-full py-2 border border-red-300 text-red-600 rounded hover:bg-red-50 flex items-center justify-center gap-2">
+                  <button
+                    onClick={() => setCancelCase(selectedCase)}
+                    className="w-full py-2 border border-red-300 text-red-600 rounded hover:bg-red-50 flex items-center justify-center gap-2"
+                  >
                     <XCircle className="w-4 h-4" />
                     Cancel / Postpone
                   </button>
                 )}
               </div>
+
+              {['pre_op', 'in_progress', 'post_op', 'completed'].includes(selectedCase.status) && (
+                <ConsumablesSection caseId={selectedCase.id} />
+              )}
             </div>
           </div>
         </div>
@@ -564,28 +700,146 @@ export default function TheatrePage() {
         />
       )}
 
-      {/* Schedule Surgery Modal (placeholder) */}
+      {/* Schedule Surgery */}
       {showScheduleModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/30" onClick={() => setShowScheduleModal(false)} />
-          <div className="relative bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center">
-              <h2 className="text-lg font-semibold">Schedule Surgery</h2>
+        <ScheduleSurgeryModal
+          theatres={(dashboard?.theatres as any) ?? []}
+          onClose={() => setShowScheduleModal(false)}
+          onScheduled={refresh}
+        />
+      )}
+
+      {/* Pre-Op checklist */}
+      {preOpCase && (
+        <PreOpModal
+          caseId={preOpCase.id}
+          caseNumber={preOpCase.caseNumber}
+          onClose={() => setPreOpCase(null)}
+          onSaved={() => {
+            setSelectedCase(null);
+            refresh();
+          }}
+        />
+      )}
+
+      {/* Complete surgery */}
+      {completeCase && (
+        <CompleteSurgeryModal
+          caseId={completeCase.id}
+          caseNumber={completeCase.caseNumber}
+          onClose={() => setCompleteCase(null)}
+          onCompleted={() => {
+            setSelectedCase(null);
+            refresh();
+          }}
+        />
+      )}
+
+      {/* Cancel / postpone */}
+      {cancelCase && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/30" onClick={() => setCancelCase(null)} />
+          <div className="relative bg-white rounded-lg shadow-xl w-full max-w-md">
+            <div className="border-b px-6 py-4 flex justify-between items-center">
+              <h2 className="text-lg font-semibold">Cancel / Postpone — {cancelCase.caseNumber}</h2>
+              <button onClick={() => setCancelCase(null)} className="text-gray-400 hover:text-gray-600">✕</button>
+            </div>
+            <div className="p-6 space-y-3">
+              <label className="block">
+                <span className="text-sm font-medium text-gray-700">Reason *</span>
+                <textarea
+                  rows={2}
+                  value={cancelForm.reason}
+                  onChange={(e) => setCancelForm((f) => ({ ...f, reason: e.target.value }))}
+                  className="mt-1 w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                />
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block">
+                  <span className="text-sm font-medium text-gray-700">Postpone to date</span>
+                  <input
+                    type="date"
+                    value={cancelForm.newDate}
+                    onChange={(e) => setCancelForm((f) => ({ ...f, newDate: e.target.value }))}
+                    className="mt-1 w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-sm font-medium text-gray-700">New time</span>
+                  <input
+                    type="time"
+                    value={cancelForm.newTime}
+                    onChange={(e) => setCancelForm((f) => ({ ...f, newTime: e.target.value }))}
+                    className="mt-1 w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                  />
+                </label>
+              </div>
+              <p className="text-xs text-gray-500">Leave the date empty to cancel outright.</p>
+            </div>
+            <div className="border-t px-6 py-4 flex justify-end gap-3">
+              <button onClick={() => setCancelCase(null)} className="px-4 py-2 border rounded-lg hover:bg-gray-50">Back</button>
               <button
-                onClick={() => setShowScheduleModal(false)}
-                className="text-gray-400 hover:text-gray-600"
+                onClick={submitCancel}
+                disabled={!cancelForm.reason || actionPending}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
               >
-                ✕
+                {cancelForm.newDate ? 'Postpone' : 'Cancel Surgery'}
               </button>
             </div>
-            <div className="p-6">
-              <p className="text-gray-500 text-center py-12">
-                Surgery scheduling form coming soon...
-                <br />
-                <span className="text-sm">
-                  Will include: patient search, procedure selection, theatre/date/time, surgeon assignment
-                </span>
-              </p>
+          </div>
+        </div>
+      )}
+
+      {/* Add theatre */}
+      {showTheatreModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/30" onClick={() => setShowTheatreModal(false)} />
+          <div className="relative bg-white rounded-lg shadow-xl w-full max-w-sm">
+            <div className="border-b px-6 py-4 flex justify-between items-center">
+              <h2 className="text-lg font-semibold">Add Theatre</h2>
+              <button onClick={() => setShowTheatreModal(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+            </div>
+            <div className="p-6 space-y-3">
+              <label className="block">
+                <span className="text-sm font-medium text-gray-700">Name *</span>
+                <input
+                  value={theatreForm.name}
+                  onChange={(e) => setTheatreForm((f) => ({ ...f, name: e.target.value }))}
+                  placeholder="e.g. Main Theatre 1"
+                  className="mt-1 w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                />
+              </label>
+              <label className="block">
+                <span className="text-sm font-medium text-gray-700">Code *</span>
+                <input
+                  value={theatreForm.code}
+                  onChange={(e) => setTheatreForm((f) => ({ ...f, code: e.target.value }))}
+                  placeholder="e.g. OT1"
+                  className="mt-1 w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                />
+              </label>
+              <label className="block">
+                <span className="text-sm font-medium text-gray-700">Type *</span>
+                <select
+                  value={theatreForm.type}
+                  onChange={(e) => setTheatreForm((f) => ({ ...f, type: e.target.value }))}
+                  className="mt-1 w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                >
+                  {['general', 'orthopedic', 'cardiac', 'neuro', 'obstetric', 'ophthalmic', 'ent', 'minor'].map((t) => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="border-t px-6 py-4 flex justify-end gap-3">
+              <button onClick={() => setShowTheatreModal(false)} className="px-4 py-2 border rounded-lg hover:bg-gray-50">Cancel</button>
+              <button
+                onClick={createTheatre}
+                disabled={!theatreForm.name || !theatreForm.code || actionPending}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+              >
+                Add Theatre
+              </button>
             </div>
           </div>
         </div>
