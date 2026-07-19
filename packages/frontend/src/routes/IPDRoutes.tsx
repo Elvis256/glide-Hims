@@ -17,7 +17,9 @@ const BHTIssuePage = lazy(() => import('../pages/ipd/BHTIssuePage'));
 const InpatientBillingPage = lazy(() => import('../pages/ipd/InpatientBillingPage'));
 const IPDNursingNotesPage = lazy(() => import('../pages/ipd/IPDNursingNotesPage'));
 const IPDTheatrePage = lazy(() => import('../pages/ipd/TheatrePage'));
-const IPDMaternityPage = lazy(() => import('../pages/ipd/MaternityPage'));
+// The redesigned maternity module (ANC/labour/partograph/PNC/EPI) lives in
+// pages/MaternityPage — the old pages/ipd/MaternityPage shell was deleted.
+const IPDMaternityPage = lazy(() => import('../pages/MaternityPage'));
 const IPDDischargePage = lazy(() => import('../pages/ipd/DischargePage'));
 const IPDAnalyticsPage = lazy(() => import('../pages/ipd/IPDAnalyticsPage'));
 

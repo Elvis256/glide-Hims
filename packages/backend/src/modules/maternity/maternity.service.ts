@@ -159,15 +159,18 @@ export class MaternityService {
     return `${prefix}${String(seq).padStart(5, '0')}`;
   }
 
-  private calculateEdd(lmpDate: Date): Date {
+  private calculateEdd(lmpDate: Date | string): Date {
     const edd = new Date(lmpDate);
     edd.setDate(edd.getDate() + 280); // 40 weeks
     return edd;
   }
 
-  private calculateGestationalAge(lmpDate: Date): number {
+  // `lmp_date` is a `date` column — the pg driver returns it as a STRING, not
+  // a Date. Calling .getTime() directly crashed every registrations read.
+  private calculateGestationalAge(lmpDate: Date | string): number {
     const today = new Date();
-    const diffTime = today.getTime() - lmpDate.getTime();
+    const lmp = lmpDate instanceof Date ? lmpDate : new Date(lmpDate);
+    const diffTime = today.getTime() - lmp.getTime();
     const diffWeeks = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 7));
     return diffWeeks;
   }
