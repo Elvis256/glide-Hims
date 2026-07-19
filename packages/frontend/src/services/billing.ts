@@ -243,7 +243,10 @@ export const billingService = {
         invoiceId,
         amount: data.amount,
         method: data.paymentMethod,
-        transactionReference: data.reference,
+        // Callers use either name — dropping referenceNumber made every
+        // non-cash payment 400 ("Transaction reference is required").
+        transactionReference: data.reference ?? data.referenceNumber,
+        notes: data.notes,
       });
       return response.data;
     },

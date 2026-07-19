@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { getFacilityId } from '../../../lib/facility';
+import { useFacilityId } from '../../../lib/facility';
 import {
   FileText,
   Search,
@@ -23,7 +23,7 @@ import {
   UserSearch,
 } from 'lucide-react';
 import { insuranceService, type Claim, type InsuranceProvider, type AwaitingClaimEncounter, type InsurancePolicy } from '../../../services/insurance';
-import api from '../../../services/api';
+import api, { getApiErrorMessage } from '../../../services/api';
 import { patientsService, type Patient } from '../../../services/patients';
 import { formatCurrency } from '../../../lib/currency';
 import { toCsv, downloadBlob } from '../../reports/_reportUtils';
@@ -51,7 +51,7 @@ interface ClaimDisplay {
   submissionDate: string;
   amount: number;
   approvedAmount?: number;
-  status: 'draft' | 'submitted' | 'under_review' | 'approved' | 'rejected' | 'paid' | 'appealed';
+  status: string;
   documents: { name: string }[];
   rejectionReason?: string;
 }
@@ -60,18 +60,18 @@ interface ClaimDisplay {
 const transformClaimToDisplay = (claim: Claim): ClaimDisplay => ({
   id: claim.id,
   claimNumber: claim.claimNumber,
-  patientName: claim.policy?.provider?.name || 'Unknown Patient',
-  patientMrn: claim.patientId || '',
+  patientName: claim.patient?.fullName || 'Unknown Patient',
+  patientMrn: claim.patient?.mrn || '',
   provider: claim.policy?.provider?.name || 'Unknown Provider',
   providerId: claim.policy?.providerId || '',
-  serviceType: 'General',
-  serviceDate: claim.createdAt?.split('T')[0] || '',
+  serviceType: claim.claimType || 'outpatient',
+  serviceDate: claim.serviceDate || claim.createdAt?.split('T')[0] || '',
   submissionDate: claim.submittedAt?.split('T')[0] || claim.createdAt?.split('T')[0] || '',
-  amount: claim.totalAmount || 0,
-  approvedAmount: claim.approvedAmount,
+  amount: Number(claim.totalClaimed) || 0,
+  approvedAmount: Number(claim.totalApproved) > 0 ? Number(claim.totalApproved) : undefined,
   status: claim.status as ClaimDisplay['status'],
   documents: [],
-  rejectionReason: claim.rejectionReason,
+  rejectionReason: claim.denialReason,
 });
 
 
@@ -80,7 +80,7 @@ export default function ClaimsPage() {
   const [activeTab, setActiveTab] = useState<'claims' | 'awaiting'>('awaiting');
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [providerFilter, setProviderFilter] = useState<string>('All Providers');
+  const [providerFilter, setProviderFilter] = useState<string>('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [selectedClaim, setSelectedClaim] = useState<ClaimDisplay | null>(null);
@@ -89,20 +89,19 @@ export default function ClaimsPage() {
   const [rejectReason, setRejectReason] = useState('');
   const [approveAmount, setApproveAmount] = useState<number>(0);
 
-  // New claim form state
+  // New claim form state — mirrors backend CreateClaimDto
   const [newClaimForm, setNewClaimForm] = useState({
-    patientId: '',
-    policyId: '',
-    encounterId: '',
-    totalAmount: 0,
-    serviceType: 'Consultation',
+    claimType: 'outpatient',
     serviceDate: new Date().toISOString().split('T')[0],
+    primaryDiagnosis: '',
   });
   const [patientSearch, setPatientSearch] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [selectedPolicy, setSelectedPolicy] = useState<InsurancePolicy | null>(null);
 
-  const facilityId = getFacilityId();
+  // Reactive hook: getFacilityId() read once at mount raced the async profile
+  // load, so on hard refresh the claims query fired with no facility → [].
+  const facilityId = useFacilityId();
 
   // Search patients for new claim
   const { data: patientResults, isLoading: isSearchingPatients } = useQuery({
@@ -120,13 +119,15 @@ export default function ClaimsPage() {
     staleTime: 30000,
   });
 
-  // Fetch claims from API
+  // Fetch claims from API — facilityId passed explicitly and gated
   const { data: claimsData, isLoading: isLoadingClaims, refetch: refetchClaims } = useQuery({
     queryKey: ['insurance-claims', facilityId, statusFilter, providerFilter],
     queryFn: () => insuranceService.claims.list({
+      facilityId,
       ...(statusFilter !== 'all' && { status: statusFilter }),
-      ...(providerFilter !== 'All Providers' && { providerId: providerFilter }),
-    }),
+      ...(providerFilter && { providerId: providerFilter }),
+    } as any),
+    enabled: !!facilityId,
     staleTime: 30000,
   });
 
@@ -146,13 +147,23 @@ export default function ClaimsPage() {
 
   // Create claim mutation
   const createClaimMutation = useMutation({
-    mutationFn: (data: { policyId: string; patientId: string; encounterId?: string; totalAmount: number }) =>
-      insuranceService.claims.create(data),
-    onSuccess: () => {
+    mutationFn: () =>
+      insuranceService.claims.create({
+        facilityId,
+        policyId: selectedPolicy!.id,
+        claimType: newClaimForm.claimType as any,
+        serviceDate: newClaimForm.serviceDate,
+        primaryDiagnosis: newClaimForm.primaryDiagnosis,
+      }),
+    onSuccess: (claim: any) => {
       queryClient.invalidateQueries({ queryKey: ['insurance-claims'] });
       setShowNewClaimModal(false);
-      setNewClaimForm({ patientId: '', policyId: '', encounterId: '', totalAmount: 0, serviceType: 'Consultation', serviceDate: '' });
+      setNewClaimForm({ claimType: 'outpatient', serviceDate: new Date().toISOString().split('T')[0], primaryDiagnosis: '' });
+      setSelectedPatient(null);
+      setSelectedPolicy(null);
+      toast.success(`Draft claim ${claim?.claimNumber || ''} created — add items, then submit`);
     },
+    onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to create claim')),
   });
 
   // Submit claim mutation
@@ -162,7 +173,9 @@ export default function ClaimsPage() {
       queryClient.invalidateQueries({ queryKey: ['insurance-claims'] });
       setShowDetailsModal(false);
       setSelectedClaim(null);
+      toast.success('Claim submitted to insurer');
     },
+    onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to submit claim')),
   });
 
   // Approve claim mutation
@@ -174,7 +187,9 @@ export default function ClaimsPage() {
       setShowDetailsModal(false);
       setSelectedClaim(null);
       setApproveAmount(0);
+      toast.success('Claim approval recorded');
     },
+    onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to record approval')),
   });
 
   // Reject claim mutation
@@ -186,7 +201,9 @@ export default function ClaimsPage() {
       setShowDetailsModal(false);
       setSelectedClaim(null);
       setRejectReason('');
+      toast.success('Claim rejection recorded');
     },
+    onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to record rejection')),
   });
 
   // Create claim from encounter mutation
@@ -195,7 +212,9 @@ export default function ClaimsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['insurance-claims'] });
       queryClient.invalidateQueries({ queryKey: ['insurance-awaiting-claims'] });
+      toast.success('Claim created from encounter');
     },
+    onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to create claim from encounter')),
   });
 
   // Transform claims to display format
@@ -203,17 +222,18 @@ export default function ClaimsPage() {
     return (claimsData || []).map(transformClaimToDisplay);
   }, [claimsData]);
 
-  // Build providers list for dropdown
-  const providers = useMemo(() => {
-    const providerNames = (providersData || []).map((p: InsuranceProvider) => p.name);
-    return ['All Providers', ...providerNames];
-  }, [providersData]);
+  // Provider options — VALUE is the id (sending the name as providerId cast a
+  // non-UUID into a uuid column and 500'd the whole list)
+  const providerOptions = useMemo(
+    () => (providersData || []).map((p: InsuranceProvider) => ({ id: p.id, name: p.name })),
+    [providersData],
+  );
 
   const stats = useMemo(() => ({
     submitted: claims.filter(c => c.status === 'submitted').length,
     approved: claims.filter(c => c.status === 'approved').length,
     rejected: claims.filter(c => c.status === 'rejected').length,
-    pending: claims.filter(c => c.status === 'under_review').length,
+    pending: claims.filter(c => c.status === 'in_review').length,
     totalAmount: claims.reduce((sum, c) => sum + c.amount, 0),
     approvedAmount: claims.filter(c => c.status === 'approved').reduce((sum, c) => sum + (c.approvedAmount || 0), 0),
   }), [claims]);
@@ -223,7 +243,7 @@ export default function ClaimsPage() {
       const matchesSearch = claim.claimNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
         claim.patientName.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesStatus = statusFilter === 'all' || claim.status === statusFilter;
-      const matchesProvider = providerFilter === 'All Providers' || claim.provider === providerFilter;
+      const matchesProvider = !providerFilter || claim.providerId === providerFilter;
       const matchesDateFrom = !dateFrom || claim.submissionDate >= dateFrom;
       const matchesDateTo = !dateTo || claim.submissionDate <= dateTo;
       return matchesSearch && matchesStatus && matchesProvider && matchesDateFrom && matchesDateTo;
@@ -234,7 +254,7 @@ export default function ClaimsPage() {
     const styles: Record<string, string> = {
       draft: 'bg-gray-100 text-gray-700',
       submitted: 'bg-blue-100 text-blue-700',
-      under_review: 'bg-yellow-100 text-yellow-700',
+      in_review: 'bg-yellow-100 text-yellow-700',
       approved: 'bg-green-100 text-green-700',
       rejected: 'bg-red-100 text-red-700',
       paid: 'bg-emerald-100 text-emerald-700',
@@ -243,13 +263,13 @@ export default function ClaimsPage() {
     const icons: Record<string, React.ReactNode> = {
       draft: <FileText className="w-3 h-3" />,
       submitted: <Send className="w-3 h-3" />,
-      under_review: <Clock className="w-3 h-3" />,
+      in_review: <Clock className="w-3 h-3" />,
       approved: <CheckCircle className="w-3 h-3" />,
       rejected: <XCircle className="w-3 h-3" />,
       paid: <CheckCircle className="w-3 h-3" />,
       appealed: <RefreshCw className="w-3 h-3" />,
     };
-    const displayName = status === 'under_review' ? 'Under Review' : status.charAt(0).toUpperCase() + status.slice(1);
+    const displayName = status === 'in_review' ? 'In Review' : status.charAt(0).toUpperCase() + status.slice(1);
     return (
       <span className={`px-2 py-0.5 rounded text-xs font-medium flex items-center gap-1 ${styles[status] || 'bg-gray-100 text-gray-700'}`}>
         {icons[status]}
@@ -280,7 +300,7 @@ export default function ClaimsPage() {
   // line-items rather than the on-screen summary, so the file is uploadable to
   // an insurer portal.
   const handleBatchPayerExport = async () => {
-    if (providerFilter === 'All Providers') {
+    if (!providerFilter) {
       toast.error('Pick a specific provider for the batch export');
       return;
     }
@@ -317,21 +337,12 @@ export default function ClaimsPage() {
     }
   };
 
-  const handleResubmit = (claim: ClaimDisplay) => {
-    submitClaimMutation.mutate(claim.id);
-  };
-
   const handleCreateClaim = () => {
-    if (!selectedPatient || !selectedPolicy || !newClaimForm.totalAmount) {
-      toast.error('Please select a patient, policy, and enter amount');
+    if (!selectedPatient || !selectedPolicy || !newClaimForm.primaryDiagnosis) {
+      toast.error('Please select a patient, policy, and enter the diagnosis');
       return;
     }
-    createClaimMutation.mutate({
-      policyId: selectedPolicy.id,
-      patientId: selectedPatient.id,
-      encounterId: newClaimForm.encounterId || undefined,
-      totalAmount: newClaimForm.totalAmount,
-    });
+    createClaimMutation.mutate();
   };
 
   const handleApprove = (claim: ClaimDisplay) => {
@@ -553,7 +564,7 @@ export default function ClaimsPage() {
             <XCircle className="w-8 h-8 text-red-200" />
           </div>
         </div>
-        <div className="card p-3 cursor-pointer hover:ring-2 ring-yellow-500" onClick={() => setStatusFilter('under_review')}>
+        <div className="card p-3 cursor-pointer hover:ring-2 ring-yellow-500" onClick={() => setStatusFilter('in_review')}>
           <div className="flex items-center justify-between">
             <div>
               <p className="text-xs text-gray-500">Under Review</p>
@@ -582,8 +593,9 @@ export default function ClaimsPage() {
             onChange={(e) => setProviderFilter(e.target.value)}
             className="input py-2 text-sm w-40"
           >
-            {providers.map(p => (
-              <option key={p} value={p}>{p}</option>
+            <option value="">All Providers</option>
+            {providerOptions.map(p => (
+              <option key={p.id} value={p.id}>{p.name}</option>
             ))}
           </select>
           <select
@@ -594,7 +606,7 @@ export default function ClaimsPage() {
             <option value="all">All Status</option>
             <option value="draft">Draft</option>
             <option value="submitted">Submitted</option>
-            <option value="under_review">Under Review</option>
+            <option value="in_review">Under Review</option>
             <option value="approved">Approved</option>
             <option value="rejected">Rejected</option>
             <option value="paid">Paid</option>
@@ -617,9 +629,9 @@ export default function ClaimsPage() {
               placeholder="To"
             />
           </div>
-          {(statusFilter !== 'all' || providerFilter !== 'All Providers' || dateFrom || dateTo) && (
+          {(statusFilter !== 'all' || providerFilter || dateFrom || dateTo) && (
             <button
-              onClick={() => { setStatusFilter('all'); setProviderFilter('All Providers'); setDateFrom(''); setDateTo(''); }}
+              onClick={() => { setStatusFilter('all'); setProviderFilter(''); setDateFrom(''); setDateTo(''); }}
               className="text-sm text-blue-600 hover:underline flex items-center gap-1"
             >
               <Filter className="w-3 h-3" />
@@ -664,7 +676,7 @@ export default function ClaimsPage() {
                   <td className="p-3 text-gray-600">{claim.provider}</td>
                   <td className="p-3 text-gray-600">{claim.serviceType}</td>
                   <td className="p-3 text-right font-medium">
-                    UGX {claim.amount.toLocaleString()}
+                    {formatCurrency(claim.amount)}
                     {claim.approvedAmount && claim.approvedAmount !== claim.amount && (
                       <p className="text-xs text-green-600">Approved: {claim.approvedAmount.toLocaleString()}</p>
                     )}
@@ -681,16 +693,6 @@ export default function ClaimsPage() {
                       >
                         <Eye className="w-4 h-4" />
                       </button>
-                      {claim.status === 'rejected' && (
-                        <button
-                          onClick={() => handleResubmit(claim)}
-                          className="p-1.5 hover:bg-gray-100 rounded text-gray-500 hover:text-orange-600"
-                          title="Resubmit"
-                          disabled={isMutating}
-                        >
-                          {submitClaimMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                        </button>
-                      )}
                     </div>
                   </td>
                 </tr>
@@ -715,8 +717,8 @@ export default function ClaimsPage() {
         <div className="p-3 border-t bg-gray-50 flex-shrink-0 flex items-center justify-between text-sm text-gray-600">
           <span>Showing {filteredClaims.length} of {claims.length} claims</span>
           <div className="flex items-center gap-4">
-            <span>Total: <strong>UGX {stats.totalAmount.toLocaleString()}</strong></span>
-            <span className="text-green-600">Approved: <strong>UGX {stats.approvedAmount.toLocaleString()}</strong></span>
+            <span>Total: <strong>{formatCurrency(stats.totalAmount)}</strong></span>
+            <span className="text-green-600">Approved: <strong>{formatCurrency(stats.approvedAmount)}</strong></span>
           </div>
         </div>
       </div>
@@ -814,25 +816,24 @@ export default function ClaimsPage() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Service Type</label>
-                  <select 
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Claim Type *</label>
+                  <select
                     className="input"
-                    value={newClaimForm.serviceType}
-                    onChange={(e) => setNewClaimForm({ ...newClaimForm, serviceType: e.target.value })}
+                    value={newClaimForm.claimType}
+                    onChange={(e) => setNewClaimForm({ ...newClaimForm, claimType: e.target.value })}
                   >
-                    <option>Consultation</option>
-                    <option>Lab Tests</option>
-                    <option>Radiology</option>
-                    <option>Pharmacy</option>
-                    <option>Surgery</option>
-                    <option>Inpatient</option>
-                    <option>Maternity</option>
+                    <option value="outpatient">Outpatient</option>
+                    <option value="inpatient">Inpatient</option>
+                    <option value="maternity">Maternity</option>
+                    <option value="emergency">Emergency</option>
+                    <option value="surgical">Surgical</option>
+                    <option value="diagnostic">Diagnostic</option>
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Service Date</label>
-                  <input 
-                    type="date" 
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Service Date *</label>
+                  <input
+                    type="date"
                     className="input"
                     value={newClaimForm.serviceDate}
                     onChange={(e) => setNewClaimForm({ ...newClaimForm, serviceDate: e.target.value })}
@@ -840,41 +841,29 @@ export default function ClaimsPage() {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Claim Amount (UGX) *</label>
-                <input 
-                  type="number" 
-                  placeholder="Enter amount..." 
+                <label className="block text-sm font-medium text-gray-700 mb-1">Primary Diagnosis *</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Malaria (B54)"
                   className="input"
-                  value={newClaimForm.totalAmount || ''}
-                  onChange={(e) => setNewClaimForm({ ...newClaimForm, totalAmount: parseFloat(e.target.value) || 0 })}
+                  value={newClaimForm.primaryDiagnosis}
+                  onChange={(e) => setNewClaimForm({ ...newClaimForm, primaryDiagnosis: e.target.value })}
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Supporting Documents</label>
-                <div className="border-2 border-dashed rounded-lg p-6 text-center">
-                  <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                  <p className="text-sm text-gray-600">Drag & drop files or click to upload</p>
-                  <p className="text-xs text-gray-400 mt-1">PDF, JPG, PNG up to 10MB</p>
-                </div>
-              </div>
-              {createClaimMutation.isError && (
-                <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-                  <div className="flex items-center gap-2 text-red-700">
-                    <AlertCircle className="w-4 h-4" />
-                    <span className="text-sm">Failed to create claim. Please try again.</span>
-                  </div>
-                </div>
-              )}
+              <p className="text-xs text-gray-500">
+                The claim is created as a DRAFT — claimed amounts come from the invoice items you
+                attach; use "Create from encounter" on the Awaiting tab when billing an existing visit.
+              </p>
             </div>
             <div className="flex justify-end gap-2 p-4 border-t">
               <button onClick={() => { setShowNewClaimModal(false); setPatientSearch(''); setSelectedPatient(null); setSelectedPolicy(null); }} className="btn-secondary" disabled={createClaimMutation.isPending}>Cancel</button>
-              <button 
-                onClick={handleCreateClaim} 
-                className="btn-primary flex items-center gap-2" 
-                disabled={createClaimMutation.isPending || !selectedPatient || !selectedPolicy || !newClaimForm.totalAmount}
+              <button
+                onClick={handleCreateClaim}
+                className="btn-primary flex items-center gap-2"
+                disabled={createClaimMutation.isPending || !selectedPatient || !selectedPolicy || !newClaimForm.primaryDiagnosis}
               >
                 {createClaimMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                {createClaimMutation.isPending ? 'Submitting...' : 'Submit Claim'}
+                {createClaimMutation.isPending ? 'Creating…' : 'Create Draft Claim'}
               </button>
             </div>
           </div>
@@ -915,7 +904,7 @@ export default function ClaimsPage() {
                 </div>
                 <div>
                   <p className="text-xs text-gray-500">Claim Amount</p>
-                  <p className="font-medium text-lg">UGX {selectedClaim.amount.toLocaleString()}</p>
+                  <p className="font-medium text-lg">{formatCurrency(selectedClaim.amount)}</p>
                 </div>
                 <div>
                   <p className="text-xs text-gray-500">Submission Date</p>
@@ -927,7 +916,7 @@ export default function ClaimsPage() {
                 <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4">
                   <div className="flex items-center gap-2 text-green-700">
                     <CheckCircle className="w-5 h-5" />
-                    <span className="font-medium">Approved Amount: UGX {selectedClaim.approvedAmount.toLocaleString()}</span>
+                    <span className="font-medium">Approved Amount: {formatCurrency(selectedClaim.approvedAmount)}</span>
                   </div>
                 </div>
               )}
@@ -944,7 +933,7 @@ export default function ClaimsPage() {
                 </div>
               )}
 
-              {selectedClaim.status === 'under_review' && (
+              {selectedClaim.status === 'in_review' && (
                 <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
                   <div className="flex items-center gap-2 text-yellow-700">
                     <Clock className="w-5 h-5" />
@@ -953,8 +942,8 @@ export default function ClaimsPage() {
                 </div>
               )}
 
-              {/* Approve/Reject Actions for submitted or under_review claims */}
-              {(selectedClaim.status === 'submitted' || selectedClaim.status === 'under_review') && (
+              {/* Approve/Reject Actions for submitted or in_review claims */}
+              {(selectedClaim.status === 'submitted' || selectedClaim.status === 'in_review') && (
                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-4">
                   <p className="text-sm font-medium text-gray-700 mb-3">Claim Actions</p>
                   <div className="space-y-3">
@@ -1000,41 +989,18 @@ export default function ClaimsPage() {
                 </div>
               )}
 
-              <div>
-                <p className="text-sm font-medium text-gray-700 mb-2">Attached Documents</p>
-                <div className="space-y-2">
-                  {selectedClaim.documents.map((doc, idx) => (
-                    <div key={idx} className="flex items-center justify-between p-2 bg-gray-50 rounded">
-                      <div className="flex items-center gap-2">
-                        <FileText className="w-4 h-4 text-gray-400" />
-                        <span className="text-sm">{doc.name}</span>
-                      </div>
-                      <button onClick={() => window.open('#', '_blank')} className="text-blue-600 text-sm hover:underline">View</button>
-                    </div>
-                  ))}
-                </div>
-              </div>
 
-              {/* Status Timeline */}
+              {/* Status */}
               <div className="mt-4">
-                <p className="text-sm font-medium text-gray-700 mb-2">Status History</p>
-                <div className="space-y-3">
-                  <div className="flex items-start gap-3">
-                    <div className="w-2 h-2 bg-blue-500 rounded-full mt-1.5"></div>
-                    <div>
-                      <p className="text-sm font-medium">Claim Submitted</p>
-                      <p className="text-xs text-gray-500">{selectedClaim.submissionDate} at 09:30 AM</p>
-                    </div>
+                <p className="text-sm font-medium text-gray-700 mb-2">Status</p>
+                <div className="flex items-start gap-3">
+                  <div className={`w-2 h-2 rounded-full mt-1.5 ${selectedClaim.status === 'approved' || selectedClaim.status === 'paid' ? 'bg-green-500' : selectedClaim.status === 'rejected' ? 'bg-red-500' : 'bg-yellow-500'}`}></div>
+                  <div>
+                    <p className="text-sm font-medium capitalize">{String(selectedClaim.status).replace('_', ' ')}</p>
+                    <p className="text-xs text-gray-500">
+                      {selectedClaim.submissionDate ? `Submitted ${selectedClaim.submissionDate}` : 'Not yet submitted'}
+                    </p>
                   </div>
-                  {selectedClaim.status !== 'submitted' && (
-                    <div className="flex items-start gap-3">
-                      <div className={`w-2 h-2 rounded-full mt-1.5 ${selectedClaim.status === 'approved' ? 'bg-green-500' : selectedClaim.status === 'rejected' ? 'bg-red-500' : 'bg-yellow-500'}`}></div>
-                      <div>
-                        <p className="text-sm font-medium capitalize">{selectedClaim.status}</p>
-                        <p className="text-xs text-gray-500">{selectedClaim.submissionDate} at 02:15 PM</p>
-                      </div>
-                    </div>
-                  )}
                 </div>
               </div>
             </div>
@@ -1055,16 +1021,6 @@ export default function ClaimsPage() {
                 >
                   {submitClaimMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                   Submit Claim
-                </button>
-              )}
-              {selectedClaim.status === 'rejected' && (
-                <button 
-                  onClick={() => handleResubmit(selectedClaim)} 
-                  className="btn-primary flex items-center gap-2"
-                  disabled={submitClaimMutation.isPending}
-                >
-                  {submitClaimMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                  Resubmit Claim
                 </button>
               )}
               <button onClick={() => { setShowDetailsModal(false); setRejectReason(''); setApproveAmount(0); }} className="btn-secondary">Close</button>

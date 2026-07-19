@@ -37,43 +37,45 @@ interface InsuranceProvider {
   claimSubmissionMethod: string;
 }
 
+// Mirrors insurance-policy.entity.ts
 interface InsurancePolicy {
   id: string;
   policyNumber: string;
-  membershipNumber: string;
+  memberNumber: string;
   provider: InsuranceProvider;
   // patients table stores a single full_name column — there is no first/last split
   patient?: { id: string; fullName: string; mrn: string };
-  planName?: string;
   coverageType: string;
-  maxCoverageAmount?: number;
-  usedAmount: number;
-  startDate: string;
-  endDate: string;
+  annualLimit?: number | string;
+  usedAmount: number | string;
+  effectiveDate: string;
+  expiryDate: string;
   status: string;
 }
 
+// Mirrors insurance-claim.entity.ts
 interface InsuranceClaim {
   id: string;
   claimNumber: string;
   status: string;
-  totalAmount: number;
-  approvedAmount?: number;
-  paidAmount?: number;
-  submissionDate?: string;
+  totalClaimed: number | string;
+  totalApproved?: number | string;
+  totalPaid?: number | string;
+  submittedAt?: string;
   provider?: InsuranceProvider;
   patient?: { id: string; fullName: string; mrn: string };
   createdAt: string;
 }
 
+// Mirrors pre-authorization.entity.ts
 interface PreAuthorization {
   id: string;
-  preAuthNumber: string;
+  authNumber: string;
   status: string;
-  requestedAmount?: number;
-  approvedAmount?: number;
-  serviceDescription: string;
-  patient: { id: string; fullName: string };
+  estimatedCost?: number | string;
+  approvedAmount?: number | string;
+  proposedTreatment?: string;
+  patient?: { id: string; fullName: string };
   createdAt: string;
 }
 
@@ -124,7 +126,7 @@ export default function InsurancePage() {
           totalProviders: providersList.length,
           activePolicies: policiesList.filter((p: any) => p.status === 'active').length,
           pendingClaims: claimsList.filter((c: any) => ['draft', 'submitted', 'processing'].includes(c.status)).length,
-          totalClaimsValue: claimsList.reduce((sum: number, c: any) => sum + Number(c.totalAmount || 0), 0),
+          totalClaimsValue: claimsList.reduce((sum: number, c: any) => sum + Number(c.totalClaimed || 0), 0),
           pendingPreAuths: preAuthsList.filter((p: any) => ['pending', 'submitted'].includes(p.status)).length,
           claimsThisMonth: claimsList.filter((c: any) => new Date(c.createdAt) >= monthStart).length,
           approvedThisMonth: claimsList.filter((c: any) => c.status === 'approved' && new Date(c.createdAt) >= monthStart).length,
@@ -293,7 +295,7 @@ export default function InsurancePage() {
             className="pl-10 pr-4 py-2 w-full border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
         </div>
-        <button onClick={() => navigate('/insurance/providers')} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+        <button onClick={() => navigate('/billing/insurance/providers')} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
           <Plus className="h-4 w-4" />
           Add Provider
         </button>
@@ -342,8 +344,8 @@ export default function InsurancePage() {
             </div>
 
             <div className="mt-4 pt-4 border-t flex justify-end gap-2">
-              <button onClick={() => navigate('/insurance/providers')} className="text-blue-600 hover:text-blue-800 text-sm">Edit</button>
-              <button onClick={() => navigate('/insurance/providers')} className="text-gray-600 hover:text-gray-800 text-sm">View</button>
+              <button onClick={() => navigate('/billing/insurance/providers')} className="text-blue-600 hover:text-blue-800 text-sm">Edit</button>
+              <button onClick={() => navigate('/billing/insurance/providers')} className="text-gray-600 hover:text-gray-800 text-sm">View</button>
             </div>
           </div>
         ))}
@@ -421,7 +423,7 @@ export default function InsurancePage() {
               <tr key={policy.id} className="hover:bg-gray-50">
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="text-sm font-medium text-gray-900">{policy.policyNumber}</div>
-                  <div className="text-sm text-gray-500">Member: {policy.membershipNumber}</div>
+                  <div className="text-sm text-gray-500">Member: {policy.memberNumber}</div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="text-sm text-gray-900">
@@ -434,10 +436,10 @@ export default function InsurancePage() {
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="text-sm text-gray-900">
-                    {policy.maxCoverageAmount ? formatCurrency(policy.maxCoverageAmount) : 'Unlimited'}
+                    {Number(policy.annualLimit) > 0 ? formatCurrency(Number(policy.annualLimit)) : 'Unlimited'}
                   </div>
                   <div className="text-sm text-gray-500">
-                    Used: {formatCurrency(policy.usedAmount || 0)}
+                    Used: {formatCurrency(Number(policy.usedAmount) || 0)}
                   </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
@@ -492,7 +494,7 @@ export default function InsurancePage() {
             <option value="rejected">Rejected</option>
             <option value="paid">Paid</option>
           </select>
-          <button onClick={() => navigate('/insurance/submit')} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+          <button onClick={() => navigate('/billing/insurance/claims')} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
             <Plus className="h-4 w-4" />
             New Claim
           </button>
@@ -545,10 +547,10 @@ export default function InsurancePage() {
                   <div className="text-sm text-gray-900">{claim.provider?.name || '-'}</div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="text-sm font-medium text-gray-900">{formatCurrency(claim.totalAmount)}</div>
-                  {claim.approvedAmount && (
+                  <div className="text-sm font-medium text-gray-900">{formatCurrency(Number(claim.totalClaimed) || 0)}</div>
+                  {Number(claim.totalApproved) > 0 && (
                     <div className="text-sm text-green-600">
-                      Approved: {formatCurrency(claim.approvedAmount)}
+                      Approved: {formatCurrency(Number(claim.totalApproved))}
                     </div>
                   )}
                 </td>
@@ -562,7 +564,7 @@ export default function InsurancePage() {
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                   <div className="flex items-center justify-end gap-2">
-                    <button onClick={() => navigate('/insurance/claims')} className="text-blue-600 hover:text-blue-900">
+                    <button onClick={() => navigate('/billing/insurance/claims')} className="text-blue-600 hover:text-blue-900">
                       <Eye className="h-4 w-4" />
                     </button>
                     {claim.status === 'draft' && (
@@ -640,7 +642,7 @@ export default function InsurancePage() {
             {preAuths.map((preAuth) => (
               <tr key={preAuth.id} className="hover:bg-gray-50">
                 <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="text-sm font-medium text-blue-600">{preAuth.preAuthNumber}</div>
+                  <div className="text-sm font-medium text-blue-600">{preAuth.authNumber}</div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="text-sm text-gray-900">
@@ -648,15 +650,15 @@ export default function InsurancePage() {
                   </div>
                 </td>
                 <td className="px-6 py-4">
-                  <div className="text-sm text-gray-900">{preAuth.serviceDescription}</div>
+                  <div className="text-sm text-gray-900">{preAuth.proposedTreatment}</div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="text-sm text-gray-900">
-                    {preAuth.requestedAmount ? formatCurrency(preAuth.requestedAmount) : '-'}
+                    {Number(preAuth.estimatedCost) > 0 ? formatCurrency(Number(preAuth.estimatedCost)) : '-'}
                   </div>
-                  {preAuth.approvedAmount && (
+                  {Number(preAuth.approvedAmount) > 0 && (
                     <div className="text-sm text-green-600">
-                      Approved: {formatCurrency(preAuth.approvedAmount)}
+                      Approved: {formatCurrency(Number(preAuth.approvedAmount))}
                     </div>
                   )}
                 </td>

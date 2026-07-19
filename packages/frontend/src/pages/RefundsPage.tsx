@@ -13,20 +13,19 @@ import {
   Loader2,
 } from 'lucide-react';
 import { billingService } from '../services';
+import { getApiErrorMessage } from '../services/api';
+import { formatCurrency } from '../lib/currency';
 import { asList } from '../utils/unwrapResponse';
 
 interface RefundRequest {
   id: string;
-  originalReceipt: string;
-  billNumber: string;
+  invoiceNumber: string;
   patientName: string;
   patientMrn: string;
   originalAmount: number;
   refundAmount: number;
   reason: string;
-  status: 'pending' | 'approved' | 'processed' | 'rejected';
   requestDate: string;
-  processedDate?: string;
 }
 
 const refundReasons = [
@@ -45,7 +44,6 @@ export default function RefundsPage() {
   const [showNewRefund, setShowNewRefund] = useState(false);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState('');
   const [receiptSearch, setReceiptSearch] = useState('');
-  const [refundAmount, setRefundAmount] = useState('');
   const [refundReason, setRefundReason] = useState('');
   const [otherReason, setOtherReason] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
@@ -61,20 +59,17 @@ export default function RefundsPage() {
 
   const refunds: RefundRequest[] = (asList(invoicesData)).map((inv: any) => ({
     id: inv.id,
-    originalReceipt: inv.receiptNumber || inv.id,
-    billNumber: inv.billNumber || inv.id,
+    invoiceNumber: inv.invoiceNumber || inv.id,
     patientName: inv.patient?.fullName || 'N/A',
     patientMrn: inv.patient?.mrn || '',
-    originalAmount: inv.totalAmount || 0,
-    refundAmount: inv.paidAmount || 0,
+    originalAmount: Number(inv.totalAmount) || 0,
+    refundAmount: Number(inv.amountPaid) || 0,
     reason: inv.notes || '',
-    status: 'processed' as const,
     requestDate: inv.updatedAt || inv.createdAt,
   }));
 
   const refundMutation = useMutation({
     mutationFn: () => {
-      if (!selectedInvoiceId) throw new Error('Select an invoice to refund');
       const reason = refundReason === 'Other' ? otherReason : refundReason;
       return billingService.invoices.refund(selectedInvoiceId, reason);
     },
@@ -82,39 +77,31 @@ export default function RefundsPage() {
       queryClient.invalidateQueries({ queryKey: ['invoices'] });
       setShowSuccess(true);
       setShowNewRefund(false);
-      setReceiptSearch(''); setRefundAmount(''); setRefundReason(''); setOtherReason(''); setSelectedInvoiceId('');
+      setReceiptSearch(''); setRefundReason(''); setOtherReason(''); setSelectedInvoiceId('');
       setTimeout(() => setShowSuccess(false), 3000);
     },
-    onError: (err: Error) => toast.error(err.message || 'Refund failed'),
+    onError: (err) => toast.error(getApiErrorMessage(err, 'Refund failed')),
   });
 
   const filteredRefunds = refunds.filter(
     (refund) =>
       refund.patientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      refund.originalReceipt.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      refund.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
       refund.patientMrn.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const searchedInvoices = (allInvoices?.data ?? []).filter((inv: any) => {
-    const receipt = inv.receiptNumber || inv.billNumber || inv.id;
-    return receipt.toLowerCase().includes(receiptSearch.toLowerCase()) ||
-      (inv.patient?.fullName || '').toLowerCase().includes(receiptSearch.toLowerCase());
-  });
+  // Only paid/partially-paid invoices can meaningfully be refunded
+  const searchedInvoices = (allInvoices?.data ?? [])
+    .filter((inv: any) => Number(inv.amountPaid) > 0 && inv.status !== 'refunded')
+    .filter((inv: any) => {
+      const num = inv.invoiceNumber || inv.id;
+      return (
+        num.toLowerCase().includes(receiptSearch.toLowerCase()) ||
+        (inv.patient?.fullName || '').toLowerCase().includes(receiptSearch.toLowerCase())
+      );
+    });
 
   const handleSubmitRefund = () => { refundMutation.mutate(); };
-  const getStatusBadge = (status: string) => {
-    const styles: Record<string, string> = {
-      pending: 'bg-yellow-100 text-yellow-700',
-      approved: 'bg-blue-100 text-blue-700',
-      processed: 'bg-green-100 text-green-700',
-      rejected: 'bg-red-100 text-red-700',
-    };
-    return (
-      <span className={`px-2 py-0.5 rounded text-xs font-medium ${styles[status]}`}>
-        {status.charAt(0).toUpperCase() + status.slice(1)}
-      </span>
-    );
-  };
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col">
@@ -168,11 +155,11 @@ export default function RefundsPage() {
                   <div key={refund.id} className="p-3 border rounded-lg hover:bg-gray-50">
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
-                        <span className="font-mono text-sm text-blue-600">{refund.originalReceipt}</span>
-                        {getStatusBadge(refund.status)}
+                        <span className="font-mono text-sm text-blue-600">{refund.invoiceNumber}</span>
+                        <span className="px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700">Refunded</span>
                       </div>
                       <span className="font-bold text-red-600">
-                        -UGX {refund.refundAmount.toLocaleString()}
+                        -{formatCurrency(refund.refundAmount)}
                       </span>
                     </div>
                     <div className="flex items-center gap-3">
@@ -184,8 +171,7 @@ export default function RefundsPage() {
                         <p className="text-xs text-gray-500">{refund.patientMrn}</p>
                       </div>
                       <div className="text-right text-xs text-gray-500">
-                        <p>Requested: {refund.requestDate}</p>
-                        {refund.processedDate && <p>Processed: {refund.processedDate}</p>}
+                        <p>{new Date(refund.requestDate).toLocaleString()}</p>
                       </div>
                     </div>
                     <p className="text-sm text-gray-600 mt-2 ml-11">{refund.reason}</p>
@@ -204,8 +190,8 @@ export default function RefundsPage() {
                 <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
                   <CheckCircle className="w-10 h-10 text-green-600" />
                 </div>
-                <h3 className="text-lg font-semibold text-gray-900">Refund Submitted!</h3>
-                <p className="text-gray-500 text-sm">Awaiting approval</p>
+                <h3 className="text-lg font-semibold text-gray-900">Refund Processed</h3>
+                <p className="text-gray-500 text-sm">The invoice has been refunded</p>
               </div>
             </div>
           ) : showNewRefund ? (
@@ -214,13 +200,13 @@ export default function RefundsPage() {
               <div className="flex-1 overflow-y-auto space-y-3">
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">
-                    Original Receipt Number
+                    Invoice Number or Patient Name
                   </label>
                   <input
                     type="text"
                     value={receiptSearch}
                     onChange={(e) => setReceiptSearch(e.target.value)}
-                    placeholder="REC-XXXXXXXX"
+                    placeholder="INV… or patient name"
                     className="input py-2 font-mono"
                   />
                 </div>
@@ -230,11 +216,13 @@ export default function RefundsPage() {
                     {searchedInvoices.slice(0, 5).map((inv: any) => (
                       <button
                         key={inv.id}
-                        onClick={() => { setSelectedInvoiceId(inv.id); setRefundAmount(String(inv.totalAmount || '')); }}
+                        onClick={() => setSelectedInvoiceId(inv.id)}
                         className={`w-full text-left text-sm p-2 rounded border ${selectedInvoiceId === inv.id ? 'border-blue-500 bg-blue-50' : 'border-transparent hover:bg-gray-100'}`}
                       >
-                        <div className="font-medium">{inv.receiptNumber || inv.billNumber || inv.id}</div>
-                        <div className="text-gray-500">{inv.patient?.fullName || ''} — UGX {(inv.totalAmount || 0).toLocaleString()}</div>
+                        <div className="font-medium">{inv.invoiceNumber || inv.id}</div>
+                        <div className="text-gray-500">
+                          {inv.patient?.fullName || ''} — paid {formatCurrency(Number(inv.amountPaid) || 0)}
+                        </div>
                       </button>
                     ))}
                   </div>
@@ -242,19 +230,6 @@ export default function RefundsPage() {
                 {receiptSearch && searchedInvoices.length === 0 && (
                   <p className="text-sm text-gray-500">No invoices found.</p>
                 )}
-
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">
-                    Refund Amount (UGX)
-                  </label>
-                  <input
-                    type="number"
-                    value={refundAmount}
-                    onChange={(e) => setRefundAmount(e.target.value)}
-                    placeholder="Enter amount"
-                    className="input py-2"
-                  />
-                </div>
 
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">
@@ -289,7 +264,8 @@ export default function RefundsPage() {
                 <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 flex items-start gap-2">
                   <AlertTriangle className="w-4 h-4 text-yellow-600 flex-shrink-0 mt-0.5" />
                   <p className="text-xs text-yellow-700">
-                    Refund requests require approval from a supervisor before processing.
+                    This refunds the FULL invoice immediately and reverses its payments.
+                    The action is recorded in the audit log with your name and reason.
                   </p>
                 </div>
               </div>
@@ -303,10 +279,15 @@ export default function RefundsPage() {
                 </button>
                 <button
                   onClick={handleSubmitRefund}
-                  disabled={!receiptSearch || !refundAmount || !refundReason}
+                  disabled={
+                    !selectedInvoiceId ||
+                    !refundReason ||
+                    (refundReason === 'Other' && otherReason.trim().length < 3) ||
+                    refundMutation.isPending
+                  }
                   className="btn-primary flex-1 disabled:opacity-50"
                 >
-                  Submit
+                  {refundMutation.isPending ? 'Processing…' : 'Process Refund'}
                 </button>
               </div>
             </>
@@ -314,21 +295,15 @@ export default function RefundsPage() {
             <>
               <h2 className="text-sm font-semibold mb-4 flex-shrink-0">Refund Summary</h2>
               <div className="space-y-3">
-                <div className="p-3 bg-yellow-50 rounded-lg text-center">
-                  <p className="text-2xl font-bold text-yellow-700">0</p>
-                  <p className="text-xs text-yellow-600">Pending Approval</p>
-                </div>
-                <div className="p-3 bg-blue-50 rounded-lg text-center">
-                  <p className="text-2xl font-bold text-blue-700">0</p>
-                  <p className="text-xs text-blue-600">Approved</p>
-                </div>
                 <div className="p-3 bg-green-50 rounded-lg text-center">
-                  <p className="text-2xl font-bold text-green-700">0</p>
-                  <p className="text-xs text-green-600">Processed Today</p>
+                  <p className="text-2xl font-bold text-green-700">{refunds.length}</p>
+                  <p className="text-xs text-green-600">Refunded Invoices</p>
                 </div>
                 <div className="p-3 bg-gray-50 rounded-lg text-center">
-                  <p className="text-lg font-bold text-gray-700">UGX 0</p>
-                  <p className="text-xs text-gray-600">Total Refunded (Month)</p>
+                  <p className="text-lg font-bold text-gray-700">
+                    {formatCurrency(refunds.reduce((s, r) => s + r.refundAmount, 0))}
+                  </p>
+                  <p className="text-xs text-gray-600">Total Refunded</p>
                 </div>
               </div>
             </>

@@ -55,7 +55,6 @@ export default function PackageBillingPage() {
   const [showEnrollModal, setShowEnrollModal] = useState(false);
   const [showCustomizeModal, setShowCustomizeModal] = useState(false);
   const [showApplyModal, setShowApplyModal] = useState(false);
-  const [showCreateTemplate, setShowCreateTemplate] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [patientSearch, setPatientSearch] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<{ id: string; mrn: string; fullName: string } | null>(null);
@@ -79,13 +78,25 @@ export default function PackageBillingPage() {
     enabled: !!facilityId,
   });
 
+  // Patient search for the apply modal
+  const { data: applyPatients = [] } = useQuery({
+    queryKey: ['package-patient-search', patientSearch],
+    queryFn: async () => {
+      const res = await api.get('/patients', { params: { search: patientSearch, limit: 5 } });
+      const raw: any = res.data;
+      return Array.isArray(raw) ? raw : raw?.data || [];
+    },
+    enabled: showApplyModal && patientSearch.length >= 2 && !selectedPatient,
+  });
+
   const filteredPackages = useMemo(() => {
     return packages.filter((pkg) => {
       const matchesSearch = pkg.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         (pkg.description || '').toLowerCase().includes(searchQuery.toLowerCase());
-      return matchesSearch;
+      const matchesCategory = activeCategory === 'all' || (pkg as any).category === activeCategory;
+      return matchesSearch && matchesCategory;
     });
-  }, [packages, searchQuery]);
+  }, [packages, searchQuery, activeCategory]);
 
   const summaryStats = useMemo(() => {
     return {
@@ -106,31 +117,37 @@ export default function PackageBillingPage() {
     setSelectedPackage(pkg);
   };
 
+  const [applying, setApplying] = useState(false);
+
+  // Bill the package as a single line at the package price (same pattern as
+  // Emergency Billing) — the old flow was unreachable and sent fields the
+  // backend DTO rejects.
   const handleApplyPackage = async () => {
     if (!selectedPackage || !selectedPatient) return;
+    setApplying(true);
     try {
-      const includedServices = customServices.filter(s => s.included);
-      // Create invoice with package items
-      const invoiceRes = await api.post('/billing/invoices', {
+      const res: any = await api.post('/billing/invoices', {
         patientId: selectedPatient.id,
         paymentType: 'cash',
-        items: includedServices.map(s => ({
-          serviceCode: s.id,
-          description: `${selectedPackage.name} — ${s.name}`,
-          chargeType: 'service',
+        items: [{
+          serviceCode: 'PACKAGE',
+          description: `Package: ${selectedPackage.name}`,
+          chargeType: 'other',
           quantity: 1,
-          unitPrice: s.price,
-          referenceType: 'package',
-        })),
+          unitPrice: Number(selectedPackage.packagePrice),
+        }],
+        notes: `Service package: ${selectedPackage.name}`,
       });
-      toast.success(`Package "${selectedPackage.name}" applied for ${selectedPatient.fullName}. Invoice created.`);
+      const invNo = res.data?.invoiceNumber || res.data?.data?.invoiceNumber || '';
+      toast.success(`Package billed for ${selectedPatient.fullName} — invoice ${invNo} payable at cashier`);
       queryClient.invalidateQueries({ queryKey: ['invoices'] });
       setShowApplyModal(false);
       setSelectedPackage(null);
       setSelectedPatient(null);
-      setShowSuccess(true);
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'Failed to apply package');
+    } finally {
+      setApplying(false);
     }
   };
 
@@ -316,7 +333,7 @@ export default function PackageBillingPage() {
                   </div>
                 </div>
                 <button
-                  onClick={() => setShowEnrollModal(true)}
+                  onClick={() => { setSelectedPatient(null); setPatientSearch(''); setShowApplyModal(true); }}
                   className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                 >
                   <CheckCircle className="w-4 h-4" />
@@ -382,27 +399,54 @@ export default function PackageBillingPage() {
       </div>
 
       {/* Apply Package Modal */}
-      {showApplyModal && selectedPackage && selectedPatient && (
+      {showApplyModal && selectedPackage && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 max-w-md w-full mx-4">
             <h3 className="text-lg font-bold text-gray-900 mb-4">Confirm Package Application</h3>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Patient *</label>
+              {selectedPatient ? (
+                <div className="flex items-center justify-between p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <UserCircle className="w-5 h-5 text-blue-600" />
+                    <div>
+                      <p className="font-medium text-sm">{selectedPatient.fullName}</p>
+                      <p className="text-xs text-gray-500">{selectedPatient.mrn}</p>
+                    </div>
+                  </div>
+                  <button onClick={() => setSelectedPatient(null)} className="text-xs text-blue-600">Change</button>
+                </div>
+              ) : (
+                <div className="relative">
+                  <input
+                    value={patientSearch}
+                    onChange={(e) => setPatientSearch(e.target.value)}
+                    placeholder="Search patient by name or MRN..."
+                    className="w-full px-3 py-2 border rounded-lg text-sm"
+                    autoFocus
+                  />
+                  {applyPatients.length > 0 && (
+                    <div className="absolute z-10 w-full mt-1 bg-white border rounded-lg shadow max-h-32 overflow-y-auto">
+                      {applyPatients.map((p: any) => (
+                        <button
+                          key={p.id}
+                          onClick={() => setSelectedPatient({ id: p.id, mrn: p.mrn, fullName: p.fullName })}
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
+                        >
+                          {p.fullName} <span className="text-gray-400">{p.mrn}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
             <div className="bg-gray-50 rounded-lg p-4 mb-4">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                  <UserCircle className="w-6 h-6 text-blue-600" />
-                </div>
-                <div>
-                  <p className="font-medium text-gray-900">{selectedPatient.fullName}</p>
-                  <p className="text-xs text-gray-500">{selectedPatient.mrn}</p>
-                </div>
-              </div>
-              <div className="border-t pt-3">
-                <p className="font-medium text-gray-900">{selectedPackage.name}</p>
-                <p className="text-sm text-gray-500 mt-1">
-                  {customServices.filter((s) => s.included).length} services included
-                </p>
-                <p className="text-lg font-bold text-blue-600 mt-2">UGX {customTotal.toLocaleString()}</p>
-              </div>
+              <p className="font-medium text-gray-900">{selectedPackage.name}</p>
+              <p className="text-sm text-gray-500 mt-1">
+                {selectedPackage.includedServices?.length || 0} services included
+              </p>
+              <p className="text-lg font-bold text-blue-600 mt-2">UGX {Number(selectedPackage.packagePrice).toLocaleString()}</p>
             </div>
             <div className="flex gap-3">
               <button
@@ -413,82 +457,16 @@ export default function PackageBillingPage() {
               </button>
               <button
                 onClick={handleApplyPackage}
-                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                disabled={!selectedPatient || applying}
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
               >
-                Confirm
+                {applying ? 'Billing…' : 'Confirm & Bill'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Create Package Template Modal */}
-      {showCreateTemplate && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 max-w-lg w-full mx-4">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-gray-900">Create New Package Template</h3>
-              <button onClick={() => setShowCreateTemplate(false)} className="p-1 hover:bg-gray-100 rounded">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Package Name</label>
-                <input
-                  type="text"
-                  placeholder="e.g., Premium Health Checkup"
-                  className="w-full px-4 py-2 border rounded-lg text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
-                <select className="w-full px-4 py-2 border rounded-lg text-sm">
-                  <option value="health_checkup">Health Checkup</option>
-                  <option value="maternity">Maternity</option>
-                  <option value="surgery">Surgery</option>
-                  <option value="wellness">Wellness</option>
-                </select>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Price (UGX)</label>
-                  <input type="number" placeholder="0" className="w-full px-4 py-2 border rounded-lg text-sm" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Validity</label>
-                  <input type="text" placeholder="e.g., 1 year" className="w-full px-4 py-2 border rounded-lg text-sm" />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                <textarea
-                  placeholder="Package description..."
-                  rows={3}
-                  className="w-full px-4 py-2 border rounded-lg text-sm resize-none"
-                />
-              </div>
-            </div>
-            <div className="flex gap-3 mt-6">
-              <button
-                onClick={() => setShowCreateTemplate(false)}
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  setShowCreateTemplate(false);
-                  toast.success('Package template created!');
-                }}
-                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-              >
-                Create Package
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import api from './api';
+import { useAuthStore } from '../store/auth';
 
 // Insurance Provider
 export interface InsuranceProvider {
@@ -58,32 +59,36 @@ export interface InsurancePolicy {
   createdAt: string;
 }
 
+// Mirrors backend CreatePolicyDto — effectiveDate/expiryDate (NOT
+// startDate/endDate) and memberNumber is REQUIRED.
 export interface CreatePolicyDto {
   patientId: string;
   providerId: string;
   policyNumber: string;
-  memberNumber?: string;
-  principalName?: string;
-  relationship?: string;
-  coverageType: 'inpatient' | 'outpatient' | 'comprehensive' | 'maternity' | 'dental';
-  coverageLimit?: number;
-  copayPercent?: number;
-  startDate: string;
-  endDate: string;
+  memberNumber: string;
+  memberType?: string;
+  principalMemberNumber?: string;
+  employerName?: string;
+  coverageType?: string;
+  annualLimit?: number;
+  copayPercentage?: number;
+  effectiveDate: string;
+  expiryDate: string;
 }
 
-// Pre-Authorization
+// Pre-Authorization — mirrors pre-authorization.entity.ts
 export interface PreAuth {
   id: string;
   policyId: string;
   policy?: InsurancePolicy;
-  patientId: string;
-  requestNumber: string;
-  serviceType: string;
+  authNumber: string;
+  authType: string;
+  primaryDiagnosis?: string;
+  clinicalJustification?: string;
+  proposedTreatment?: string;
   estimatedCost: number;
-  approvedAmount?: number;
+  approvedAmount?: number | string;
   status: 'pending' | 'submitted' | 'approved' | 'denied' | 'expired';
-  notes?: string;
   denialReason?: string;
   validUntil?: string;
   submittedAt?: string;
@@ -91,38 +96,66 @@ export interface PreAuth {
   createdAt: string;
 }
 
+// Mirrors backend CreatePreAuthDto (patientId/serviceType/notes do not exist
+// there — forbidNonWhitelisted 400s them).
 export interface CreatePreAuthDto {
+  facilityId: string;
   policyId: string;
-  patientId: string;
-  serviceType: string;
+  authType: 'admission' | 'surgery' | 'procedure' | 'investigation' | 'maternity' | 'extension';
+  primaryDiagnosis: string;
+  diagnosisCode?: string;
+  clinicalJustification: string;
+  proposedTreatment: string;
   estimatedCost: number;
-  notes?: string;
 }
 
 // Claim
+// Mirrors insurance-claim.entity.ts (totalClaimed/totalApproved/denialReason —
+// totalAmount/approvedAmount/rejectionReason never existed on the backend).
 export interface Claim {
   id: string;
   claimNumber: string;
   policyId: string;
   policy?: InsurancePolicy;
   patientId: string;
+  patient?: { id: string; fullName: string; mrn?: string };
   encounterId?: string;
-  totalAmount: number;
-  approvedAmount?: number;
-  paidAmount?: number;
-  status: 'draft' | 'submitted' | 'processing' | 'approved' | 'rejected' | 'paid' | 'appealed';
-  rejectionReason?: string;
+  claimType?: string;
+  serviceDate?: string;
+  primaryDiagnosis?: string;
+  totalClaimed: number | string;
+  totalApproved?: number | string;
+  totalPaid?: number | string;
+  status:
+    | 'draft'
+    | 'submitted'
+    | 'acknowledged'
+    | 'in_review'
+    | 'approved'
+    | 'partially_approved'
+    | 'rejected'
+    | 'paid'
+    | 'appealed'
+    | 'cancelled';
+  denialReason?: string;
   submittedAt?: string;
   processedAt?: string;
   paidAt?: string;
   createdAt: string;
 }
 
+// Mirrors backend CreateClaimDto (patientId/totalAmount are forbidden there).
 export interface CreateClaimDto {
+  facilityId: string;
   policyId: string;
-  patientId: string;
   encounterId?: string;
-  totalAmount: number;
+  preAuthId?: string;
+  claimType: 'outpatient' | 'inpatient' | 'maternity' | 'emergency' | 'surgical' | 'diagnostic';
+  serviceDate: string;
+  admissionDate?: string;
+  dischargeDate?: string;
+  primaryDiagnosis: string;
+  diagnosisCode?: string;
 }
 
 export interface ClaimItem {
@@ -135,11 +168,14 @@ export interface ClaimItem {
   totalPrice: number;
 }
 
+// Mirrors backend CreateClaimItemDto — itemType and serviceDate are REQUIRED.
 export interface CreateClaimItemDto {
-  serviceCode: string;
+  itemType: 'consultation' | 'procedure' | 'laboratory' | 'radiology' | 'pharmacy' | 'supplies' | string;
+  serviceCode?: string;
   description: string;
-  quantity: number;
+  quantity?: number;
   unitPrice: number;
+  serviceDate: string;
 }
 
 // Insurance encounter awaiting claim creation
@@ -195,7 +231,10 @@ export const insuranceService = {
   // Providers
   providers: {
     list: async (facilityId?: string): Promise<InsuranceProvider[]> => {
-      const fId = facilityId || sessionStorage.getItem('glide_active_facility_id');
+      const fId =
+        facilityId ||
+        sessionStorage.getItem('glide_active_facility_id') ||
+        useAuthStore.getState().user?.facilityId;
       const response = await api.get<InsuranceProvider[]>('/insurance/providers', {
         params: { facilityId: fId },
       });
@@ -246,7 +285,11 @@ export const insuranceService = {
   // Pre-Authorization
   preAuth: {
     list: async (params?: { patientId?: string; status?: string }): Promise<PreAuth[]> => {
-      const facilityId = sessionStorage.getItem('glide_active_facility_id');
+      // Nothing sets glide_active_facility_id — without the auth-store
+      // fallback the list queried facilityId=null and came back empty.
+      const facilityId =
+        sessionStorage.getItem('glide_active_facility_id') ||
+        useAuthStore.getState().user?.facilityId;
       const response = await api.get<PreAuth[]>('/insurance/pre-auth', {
         params: { facilityId, ...params },
       });
@@ -277,7 +320,9 @@ export const insuranceService = {
   // Claims
   claims: {
     list: async (params?: { patientId?: string; status?: string }): Promise<Claim[]> => {
-      const facilityId = sessionStorage.getItem('glide_active_facility_id');
+      const facilityId =
+        sessionStorage.getItem('glide_active_facility_id') ||
+        useAuthStore.getState().user?.facilityId;
       const response = await api.get<Claim[]>('/insurance/claims', {
         params: { facilityId, ...params },
       });
@@ -304,11 +349,20 @@ export const insuranceService = {
       return response.data;
     },
     reject: async (id: string, reason: string): Promise<Claim> => {
-      const response = await api.post<Claim>(`/insurance/claims/${id}/reject`, { reason });
+      // Backend ProcessClaimDto: approvedAmount required, denialReason optional
+      const response = await api.post<Claim>(`/insurance/claims/${id}/reject`, {
+        approvedAmount: 0,
+        denialReason: reason,
+      });
       return response.data;
     },
     recordPayment: async (id: string, amount: number, paymentDate: string, reference?: string): Promise<Claim> => {
-      const response = await api.post<Claim>(`/insurance/claims/${id}/payment`, { amount, paymentDate, reference });
+      // Backend RecordPaymentDto: paidAmount + paymentReference (+ paymentDate)
+      const response = await api.post<Claim>(`/insurance/claims/${id}/payment`, {
+        paidAmount: amount,
+        paymentReference: reference || 'N/A',
+        paymentDate,
+      });
       return response.data;
     },
   },
@@ -334,7 +388,10 @@ export const insuranceService = {
   // Dashboard & Analytics
   dashboard: {
     get: async (facilityId?: string): Promise<any> => {
-      const fId = facilityId || sessionStorage.getItem('glide_active_facility_id');
+      const fId =
+        facilityId ||
+        sessionStorage.getItem('glide_active_facility_id') ||
+        useAuthStore.getState().user?.facilityId;
       const response = await api.get('/insurance/dashboard', { params: { facilityId: fId } });
       return response.data;
     },

@@ -2096,10 +2096,15 @@ export class HrService {
       const swapRepo = manager.getRepository(ShiftSwapRequest);
       const rosterRepo = manager.getRepository(StaffRoster);
 
+      // Lock bare row, then load relations — FOR UPDATE + outer join 500s.
+      const lockedSwap = await swapRepo.findOne({
+        where: { id, tenantId: requireTenantId(tenantId) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!lockedSwap) throw new NotFoundException('Swap request not found');
       const swap = await swapRepo.findOne({
         where: { id, tenantId: requireTenantId(tenantId) },
         relations: ['requesterRoster', 'targetRoster'],
-        lock: { mode: 'pessimistic_write' },
       });
       if (!swap) throw new NotFoundException('Swap request not found');
 

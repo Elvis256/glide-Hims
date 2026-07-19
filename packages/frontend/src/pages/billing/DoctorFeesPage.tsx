@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import api from '../../services/api';
 import { formatCurrency } from '../../lib/currency';
+import { confirmDialog } from '../../components/ConfirmDialog';
 
 type FeeMode = 'flat' | 'percent_of_specialty' | 'split';
 type EmploymentType = 'employed' | 'visiting_consultant' | 'locum';
@@ -178,7 +179,7 @@ export default function DoctorFeesPage() {
                 <tr key={p.id} className="border-t hover:bg-gray-50">
                   <td className="px-4 py-3">
                     <div className="font-medium">
-                      {p.doctor?.firstName} {p.doctor?.lastName}
+                      {(p.doctor as any)?.fullName || `${p.doctor?.firstName ?? ''} ${p.doctor?.lastName ?? ''}`.trim() || '—'}
                     </div>
                     {p.doctor?.department && (
                       <div className="text-xs text-gray-500">{p.doctor.department.name}</div>
@@ -240,8 +241,8 @@ export default function DoctorFeesPage() {
                         <Edit2 className="w-4 h-4" />
                       </button>
                       <button
-                        onClick={() => {
-                          if (confirm(`Remove fee profile for ${p.doctor?.firstName ?? 'doctor'}?`))
+                        onClick={async () => {
+                          if (await confirmDialog(`Remove fee profile for ${(p.doctor as any)?.fullName ?? 'this doctor'}?`))
                             deleteMutation.mutate(p.doctorId);
                         }}
                         className="p-1.5 hover:bg-red-50 rounded text-red-600"

@@ -3,8 +3,20 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { patientsService, type Patient } from '../services/patients';
-import { insuranceService, type PreAuth, type InsurancePolicy } from '../services/insurance';
+import { insuranceService, type CreatePreAuthDto } from '../services/insurance';
+import { getApiErrorMessage } from '../services/api';
+import { formatCurrency } from '../lib/currency';
+import { useFacilityId } from '../lib/facility';
 import { asList } from '../utils/unwrapResponse';
+
+const AUTH_TYPES = [
+  { value: 'admission', label: 'Admission' },
+  { value: 'surgery', label: 'Surgery' },
+  { value: 'procedure', label: 'Procedure' },
+  { value: 'investigation', label: 'Investigation (CT/MRI…)' },
+  { value: 'maternity', label: 'Maternity' },
+  { value: 'extension', label: 'Stay extension' },
+] as const;
 import {
   FileCheck,
   Search,
@@ -23,16 +35,17 @@ interface SelectedPatient {
   id: string;
   mrn: string;
   fullName: string;
-  insuranceProvider?: string;
-  policyId?: string;
 }
 
 export default function PreAuthorizationPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const facilityId = useFacilityId();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<SelectedPatient | null>(null);
-  const [serviceType, setServiceType] = useState('');
+  const [authType, setAuthType] = useState<string>('procedure');
+  const [primaryDiagnosis, setPrimaryDiagnosis] = useState('');
+  const [proposedTreatment, setProposedTreatment] = useState('');
   const [estimatedCost, setEstimatedCost] = useState<number>(0);
   const [clinicalNotes, setClinicalNotes] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
@@ -64,23 +77,21 @@ export default function PreAuthorizationPage() {
 
   // Create pre-auth mutation
   const createPreAuthMutation = useMutation({
-    mutationFn: (data: { policyId: string; patientId: string; serviceType: string; estimatedCost: number; notes?: string }) =>
-      insuranceService.preAuth.create(data),
+    mutationFn: (data: CreatePreAuthDto) => insuranceService.preAuth.create(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['pre-auth-requests'] });
-      toast.success('Pre-authorization request submitted');
+      toast.success('Pre-authorization request created');
       setShowSuccess(true);
       setTimeout(() => {
         setShowSuccess(false);
         setSelectedPatient(null);
-        setServiceType('');
+        setPrimaryDiagnosis('');
+        setProposedTreatment('');
         setEstimatedCost(0);
         setClinicalNotes('');
       }, 2000);
     },
-    onError: () => {
-      toast.error('Failed to submit pre-authorization request');
-    },
+    onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to submit pre-authorization request')),
   });
 
   // Get active policy for selected patient
@@ -91,20 +102,22 @@ export default function PreAuthorizationPage() {
   const filteredRequests = preAuthRequests || [];
 
   const handleSubmit = () => {
-    if (!selectedPatient || !serviceType || estimatedCost <= 0) return;
-    
-    const policyId = activePolicy?.id || selectedPatient.policyId;
+    if (!selectedPatient || !primaryDiagnosis || !proposedTreatment || !clinicalNotes || estimatedCost <= 0) return;
+
+    const policyId = activePolicy?.id;
     if (!policyId) {
       toast.error('Patient does not have an active insurance policy');
       return;
     }
 
     createPreAuthMutation.mutate({
+      facilityId,
       policyId,
-      patientId: selectedPatient.id,
-      serviceType,
+      authType: authType as CreatePreAuthDto['authType'],
+      primaryDiagnosis,
+      clinicalJustification: clinicalNotes,
+      proposedTreatment,
       estimatedCost,
-      notes: clinicalNotes || undefined,
     });
   };
 
@@ -113,7 +126,6 @@ export default function PreAuthorizationPage() {
       id: patient.id,
       mrn: patient.mrn,
       fullName: patient.fullName,
-      insuranceProvider: patient.insuranceProvider,
     });
     setSearchTerm('');
   };
@@ -183,7 +195,11 @@ export default function PreAuthorizationPage() {
                       <UserCircle className="w-8 h-8 text-blue-600" />
                       <div>
                         <p className="font-medium text-sm">{selectedPatient.fullName}</p>
-                        <p className="text-xs text-gray-500">{selectedPatient.insuranceProvider}</p>
+                        <p className="text-xs text-gray-500">
+                          {activePolicy
+                            ? `${(activePolicy as any).provider?.name || 'Insurance'} · ${activePolicy.policyNumber}`
+                            : selectedPatient.mrn}
+                        </p>
                       </div>
                     </div>
                     <button onClick={() => setSelectedPatient(null)} className="text-xs text-blue-600">Change</button>
@@ -212,7 +228,7 @@ export default function PreAuthorizationPage() {
                             className="w-full p-2 hover:bg-gray-50 text-left text-sm"
                           >
                             <p className="font-medium">{patient.fullName}</p>
-                            <p className="text-xs text-gray-500">{patient.insuranceProvider || 'No insurance'}</p>
+                            <p className="text-xs text-gray-500">{patient.mrn}</p>
                           </button>
                         ))}
                       </div>
@@ -224,20 +240,40 @@ export default function PreAuthorizationPage() {
                 )}
               </div>
 
-              {/* Service/Procedure */}
+              {/* Authorization type */}
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Service / Procedure</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Authorization Type *</label>
+                <select value={authType} onChange={(e) => setAuthType(e.target.value)} className="input py-2 text-sm">
+                  {AUTH_TYPES.map((t) => (
+                    <option key={t.value} value={t.value}>{t.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Primary Diagnosis *</label>
                 <input
                   type="text"
-                  value={serviceType}
-                  onChange={(e) => setServiceType(e.target.value)}
-                  placeholder="e.g. CT Scan - Head, MRI - Spine..."
+                  value={primaryDiagnosis}
+                  onChange={(e) => setPrimaryDiagnosis(e.target.value)}
+                  placeholder="e.g. Lumbar disc prolapse"
                   className="input py-2 text-sm"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Estimated Cost (UGX)</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Proposed Treatment / Service *</label>
+                <input
+                  type="text"
+                  value={proposedTreatment}
+                  onChange={(e) => setProposedTreatment(e.target.value)}
+                  placeholder="e.g. MRI - Lumbar spine"
+                  className="input py-2 text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Estimated Cost (UGX) *</label>
                 <input
                   type="number"
                   value={estimatedCost || ''}
@@ -248,26 +284,26 @@ export default function PreAuthorizationPage() {
                 />
               </div>
 
-              {serviceType && estimatedCost > 0 && (
+              {proposedTreatment && estimatedCost > 0 && (
                 <div className="bg-gray-50 rounded-lg p-3 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-gray-500">Service:</span>
-                    <span className="font-medium">{serviceType}</span>
+                    <span className="text-gray-500">Treatment:</span>
+                    <span className="font-medium">{proposedTreatment}</span>
                   </div>
                   <div className="flex justify-between mt-1">
                     <span className="text-gray-500">Estimated Cost:</span>
-                    <span className="font-medium">UGX {estimatedCost.toLocaleString()}</span>
+                    <span className="font-medium">{formatCurrency(estimatedCost)}</span>
                   </div>
                 </div>
               )}
 
-              {/* Clinical Notes */}
+              {/* Clinical Justification */}
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Clinical Justification</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Clinical Justification *</label>
                 <textarea
                   value={clinicalNotes}
                   onChange={(e) => setClinicalNotes(e.target.value)}
-                  placeholder="Enter clinical notes and justification..."
+                  placeholder="Why is this clinically necessary?"
                   className="input py-2 h-20 resize-none text-sm"
                 />
               </div>
@@ -277,7 +313,10 @@ export default function PreAuthorizationPage() {
           {!showSuccess && (
             <button
               onClick={handleSubmit}
-              disabled={!selectedPatient || !serviceType || estimatedCost <= 0 || !activePolicy || createPreAuthMutation.isPending}
+              disabled={
+                !selectedPatient || !primaryDiagnosis || !proposedTreatment || !clinicalNotes ||
+                estimatedCost <= 0 || !activePolicy || createPreAuthMutation.isPending
+              }
               className="btn-primary mt-4 flex items-center justify-center gap-2 disabled:opacity-50"
             >
               {createPreAuthMutation.isPending ? (
@@ -334,24 +373,24 @@ export default function PreAuthorizationPage() {
             {filteredRequests.map((req) => (
               <div key={req.id} className="p-3 border rounded-lg hover:bg-gray-50">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="font-mono text-sm text-blue-600">{req.requestNumber}</span>
+                  <span className="font-mono text-sm text-blue-600">{req.authNumber}</span>
                   {getStatusBadge(req.status)}
                 </div>
-                <p className="font-medium text-gray-900 text-sm">{req.serviceType}</p>
-                <p className="text-xs text-gray-500">Est. Cost: UGX {req.estimatedCost.toLocaleString()}</p>
+                <p className="font-medium text-gray-900 text-sm">
+                  {req.proposedTreatment || req.primaryDiagnosis}
+                  <span className="text-gray-400 font-normal capitalize"> · {String(req.authType).replace('_', ' ')}</span>
+                </p>
+                <p className="text-xs text-gray-500">Est. Cost: {formatCurrency(Number(req.estimatedCost) || 0)}</p>
                 <div className="flex justify-between mt-2 text-xs text-gray-500">
                   <span>{new Date(req.createdAt).toLocaleDateString()}</span>
-                  {req.approvedAmount && (
+                  {Number(req.approvedAmount) > 0 && (
                     <span className="text-green-600 font-medium">
-                      Approved: UGX {req.approvedAmount.toLocaleString()}
+                      Approved: {formatCurrency(Number(req.approvedAmount))}
                     </span>
                   )}
                 </div>
                 {req.denialReason && (
                   <p className="text-xs text-red-600 mt-1">{req.denialReason}</p>
-                )}
-                {req.notes && (
-                  <p className="text-xs text-gray-500 mt-1">{req.notes}</p>
                 )}
               </div>
             ))}

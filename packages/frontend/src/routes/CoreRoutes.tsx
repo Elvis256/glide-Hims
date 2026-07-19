@@ -34,6 +34,9 @@ const ManageAppointmentsPage = lazy(() => import('../pages/ManageAppointmentsPag
 const InventoryPage = lazy(() => import('../pages/InventoryPage'));
 const InsuranceDashboardPage = lazy(() => import('../pages/insurance/InsuranceDashboardPage'));
 const InsurancePage = lazy(() => import('../pages/InsurancePage'));
+const VerifyCoveragePage = lazy(() => import('../pages/VerifyCoveragePage'));
+const PreAuthorizationPage = lazy(() => import('../pages/PreAuthorizationPage'));
+const InsuranceCardsPage = lazy(() => import('../pages/InsuranceCardsPage'));
 const MembershipPage = lazy(() => import('../pages/MembershipPage'));
 const TenantsPage = lazy(() => import('../pages/TenantsPage'));
 const ClinicalNotesPage = lazy(() => import('../pages/ClinicalNotesPage'));
@@ -87,6 +90,9 @@ export default function CoreRoutes() {
                 <Route path="/hr/*" element={<HRRoutes />} />
                 <Route path="/finance" element={<ModuleRoute module="finance"><FinanceRoute><FinancePage /></FinanceRoute></ModuleRoute>} />
                 <Route path="/insurance/dashboard" element={<ModuleRoute module="billing"><InsuranceRoute><InsuranceDashboardPage /></InsuranceRoute></ModuleRoute>} />
+                <Route path="/insurance/verify" element={<ModuleRoute module="billing"><InsuranceRoute><VerifyCoveragePage /></InsuranceRoute></ModuleRoute>} />
+                <Route path="/insurance/preauth" element={<ModuleRoute module="billing"><InsuranceRoute><PreAuthorizationPage /></InsuranceRoute></ModuleRoute>} />
+                <Route path="/insurance/cards" element={<ModuleRoute module="billing"><InsuranceRoute><InsuranceCardsPage /></InsuranceRoute></ModuleRoute>} />
                 <Route path="/insurance" element={<ModuleRoute module="billing"><InsuranceRoute><InsurancePage /></InsuranceRoute></ModuleRoute>} />
                 <Route path="/analytics" element={<AdminRoute><AnalyticsPage /></AdminRoute>} />
                 <Route path="/membership" element={<ModuleRoute module="billing"><AdminRoute><MembershipPage /></AdminRoute></ModuleRoute>} />
