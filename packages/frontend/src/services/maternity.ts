@@ -100,6 +100,7 @@ export type AdverseReactionSeverity = (typeof AdverseReactionSeverity)[keyof typ
 // Interfaces
 export interface AntenatalRegistration {
   id: string;
+  ancNumber: string;
   facilityId: string;
   patientId: string;
   lmpDate: string;

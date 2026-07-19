@@ -85,7 +85,6 @@ const InventoryPage = lazy(() => import('./pages/InventoryPage'));
 const RadiologyPage = lazy(() => import('./pages/RadiologyPage'));
 const EmergencyPage = lazy(() => import('./pages/EmergencyPage'));
 const TheatrePage = lazy(() => import('./pages/TheatrePage'));
-const MaternityPage = lazy(() => import('./pages/MaternityPage'));
 const InsurancePage = lazy(() => import('./pages/InsurancePage'));
 const MembershipPage = lazy(() => import('./pages/MembershipPage'));
 // StoresPage legacy view removed in audit Phase 1.2 (no route bound it; superseded by MainInventoryPage)

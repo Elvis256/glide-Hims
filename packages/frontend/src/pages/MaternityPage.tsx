@@ -1,18 +1,26 @@
 import { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { api } from '../services/api';
 import { useFacilityId } from '../lib/facility';
 import PartographPanel from '../components/maternity/PartographPanel';
+import AncRegisterModal from '../components/maternity/AncRegisterModal';
+import AncVisitModal from '../components/maternity/AncVisitModal';
+import AdmitLabourModal from '../components/maternity/AdmitLabourModal';
+import DeliveryModal from '../components/maternity/DeliveryModal';
+import EpiTab from '../components/maternity/EpiTab';
+import PncTab from '../components/maternity/PncTab';
+import { maternityService } from '../services/maternity';
 import {
   Baby,
   Calendar,
   Heart,
-  AlertTriangle,
   Users,
   Activity,
   Plus,
-  Clock,
-  User,
   ChevronRight,
+  Syringe,
+  HeartHandshake,
+  CheckCircle,
 } from 'lucide-react';
 
 interface Registration {
@@ -55,11 +63,23 @@ export default function MaternityPage() {
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [registrations, setRegistrations] = useState<Registration[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'anc' | 'labour'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'anc' | 'labour' | 'pnc' | 'epi'>('dashboard');
   const [selectedRegistration, setSelectedRegistration] = useState<Registration | null>(null);
   const [showRegisterModal, setShowRegisterModal] = useState(false);
   const [partographLabourId, setPartographLabourId] = useState<string | null>(null);
   const [activeLabours, setActiveLabours] = useState<any[]>([]);
+  const [showVisitModal, setShowVisitModal] = useState(false);
+  const [showVisitHistory, setShowVisitHistory] = useState(false);
+  const [showAdmitModal, setShowAdmitModal] = useState(false);
+  const [deliveryLabour, setDeliveryLabour] = useState<any | null>(null);
+
+  // ANC visit history for the open registration panel
+  const { data: visitHistory = [] } = useQuery({
+    queryKey: ['anc-visits', selectedRegistration?.id],
+    queryFn: async () =>
+      (await maternityService.anc.getVisits(selectedRegistration!.id)).data,
+    enabled: !!selectedRegistration && showVisitHistory,
+  });
 
   useEffect(() => {
     loadDashboard();
@@ -136,6 +156,8 @@ export default function MaternityPage() {
             { id: 'dashboard', label: 'Dashboard', icon: Activity },
             { id: 'anc', label: 'ANC Register', icon: Users },
             { id: 'labour', label: 'Labour Ward', icon: Baby },
+            { id: 'pnc', label: 'Postnatal', icon: HeartHandshake },
+            { id: 'epi', label: 'Immunization', icon: Syringe },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -316,20 +338,13 @@ export default function MaternityPage() {
           ) : (
             <div className="divide-y">
               {activeLabours.map((l: any) => (
-                <button
-                  key={l.id}
-                  onClick={() => setPartographLabourId(l.id)}
-                  className="w-full p-4 flex items-center justify-between hover:bg-gray-50 text-left"
-                >
-                  <div>
-                    <div className="font-medium">
-                      {l.registration?.patient?.fullName}
-                      {l.registration?.patient?.fullName}
-                    </div>
+                <div key={l.id} className="p-4 flex items-center justify-between hover:bg-gray-50">
+                  <button onClick={() => setPartographLabourId(l.id)} className="flex-1 text-left">
+                    <div className="font-medium">{l.registration?.patient?.fullName}</div>
                     <div className="text-sm text-gray-500">
                       {l.labourNumber} • Admitted: {formatDate(l.admissionTime)}
                     </div>
-                  </div>
+                  </button>
                   <div className="flex items-center gap-3">
                     <div className="text-right">
                       <div className="text-sm font-medium">
@@ -339,16 +354,32 @@ export default function MaternityPage() {
                         {String(l.status).replace(/_/g, ' ')}
                       </div>
                     </div>
-                    <span className="rounded bg-pink-100 px-2 py-1 text-xs font-medium text-pink-700">
+                    <button
+                      onClick={() => setPartographLabourId(l.id)}
+                      className="rounded bg-pink-100 px-2 py-1 text-xs font-medium text-pink-700 hover:bg-pink-200"
+                    >
                       Partograph
-                    </span>
+                    </button>
+                    <button
+                      onClick={() => setDeliveryLabour(l)}
+                      className="rounded bg-green-100 px-2 py-1 text-xs font-medium text-green-700 hover:bg-green-200"
+                    >
+                      <CheckCircle className="w-3 h-3 inline mr-1" />
+                      Delivery
+                    </button>
                   </div>
-                </button>
+                </div>
               ))}
             </div>
           )}
         </div>
       )}
+
+      {/* Postnatal Tab */}
+      {activeTab === 'pnc' && <PncTab />}
+
+      {/* Immunization Tab */}
+      {activeTab === 'epi' && <EpiTab />}
 
       {/* Partograph slide-over */}
       {partographLabourId && (
@@ -423,49 +454,122 @@ export default function MaternityPage() {
               </div>
 
               <div className="pt-4 border-t space-y-2">
-                <button className="w-full py-2 bg-pink-600 text-white rounded hover:bg-pink-700 flex items-center justify-center gap-2">
+                <button
+                  onClick={() => setShowVisitModal(true)}
+                  className="w-full py-2 bg-pink-600 text-white rounded hover:bg-pink-700 flex items-center justify-center gap-2"
+                >
                   <Plus className="w-4 h-4" />
                   Record ANC Visit
                 </button>
-                <button className="w-full py-2 border border-pink-300 text-pink-600 rounded hover:bg-pink-50 flex items-center justify-center gap-2">
+                <button
+                  onClick={() => setShowVisitHistory((v) => !v)}
+                  className="w-full py-2 border border-pink-300 text-pink-600 rounded hover:bg-pink-50 flex items-center justify-center gap-2"
+                >
                   <Calendar className="w-4 h-4" />
-                  View Visit History
+                  {showVisitHistory ? 'Hide Visit History' : 'View Visit History'}
                 </button>
-                <button className="w-full py-2 border border-gray-300 text-gray-600 rounded hover:bg-gray-50 flex items-center justify-center gap-2">
+                <button
+                  onClick={() => setShowAdmitModal(true)}
+                  className="w-full py-2 border border-gray-300 text-gray-600 rounded hover:bg-gray-50 flex items-center justify-center gap-2"
+                >
                   <Baby className="w-4 h-4" />
                   Admit to Labour
                 </button>
               </div>
+
+              {showVisitHistory && (
+                <div className="pt-4 border-t">
+                  <h4 className="text-sm font-semibold text-gray-700 mb-2">Visit History</h4>
+                  {visitHistory.length === 0 ? (
+                    <p className="text-sm text-gray-400">No visits recorded yet.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {visitHistory.map((v: any) => (
+                        <div key={v.id} className="p-3 bg-gray-50 rounded-lg text-sm">
+                          <div className="flex justify-between font-medium text-gray-900">
+                            <span>{new Date(v.visitDate).toLocaleDateString('en-GB')}</span>
+                            <span>{v.gestationalAge} wks</span>
+                          </div>
+                          <p className="text-gray-600 mt-1">
+                            {[
+                              v.weight != null && `Wt ${v.weight}kg`,
+                              v.bpSystolic != null && `BP ${v.bpSystolic}/${v.bpDiastolic}`,
+                              v.fundalHeight != null && `FH ${v.fundalHeight}cm`,
+                              v.fetalHeartRate != null && `FHR ${v.fetalHeartRate}`,
+                              v.hemoglobin != null && `Hb ${v.hemoglobin}`,
+                            ].filter(Boolean).join(' · ') || '—'}
+                          </p>
+                          {(v.urineProtein || v.edema) && (
+                            <p className="text-xs font-medium text-red-600 mt-1">
+                              {[v.urineProtein && 'Proteinuria', v.edema && 'Oedema'].filter(Boolean).join(', ')}
+                            </p>
+                          )}
+                          {v.plan && <p className="text-xs text-gray-500 mt-1">Plan: {v.plan}</p>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
       )}
 
-      {/* Register Modal (placeholder) */}
+      {/* Register ANC */}
       {showRegisterModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/30" onClick={() => setShowRegisterModal(false)} />
-          <div className="relative bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center">
-              <h2 className="text-lg font-semibold">Register Antenatal Case</h2>
-              <button
-                onClick={() => setShowRegisterModal(false)}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                ✕
-              </button>
-            </div>
-            <div className="p-6">
-              <p className="text-gray-500 text-center py-12">
-                ANC registration form coming soon...
-                <br />
-                <span className="text-sm">
-                  Will include: patient search, LMP date, obstetric history, risk assessment
-                </span>
-              </p>
-            </div>
-          </div>
-        </div>
+        <AncRegisterModal
+          onClose={() => setShowRegisterModal(false)}
+          onRegistered={() => {
+            loadRegistrations();
+            loadDashboard();
+          }}
+        />
+      )}
+
+      {/* Record ANC visit */}
+      {showVisitModal && selectedRegistration && (
+        <AncVisitModal
+          registrationId={selectedRegistration.id}
+          gestationalAge={selectedRegistration.currentGestationalAge}
+          onClose={() => setShowVisitModal(false)}
+          onSaved={() => {
+            setShowVisitHistory(true);
+            loadRegistrations();
+          }}
+        />
+      )}
+
+      {/* Admit to labour */}
+      {showAdmitModal && selectedRegistration && (
+        <AdmitLabourModal
+          registrationId={selectedRegistration.id}
+          patientName={selectedRegistration.patient?.fullName || ''}
+          gestationalAge={selectedRegistration.currentGestationalAge}
+          onClose={() => setShowAdmitModal(false)}
+          onAdmitted={(labourId) => {
+            setSelectedRegistration(null);
+            loadDashboard();
+            loadActiveLabours();
+            loadRegistrations();
+            setActiveTab('labour');
+            setPartographLabourId(labourId);
+          }}
+        />
+      )}
+
+      {/* Record delivery + babies */}
+      {deliveryLabour && (
+        <DeliveryModal
+          labourId={deliveryLabour.id}
+          patientName={deliveryLabour.registration?.patient?.fullName || ''}
+          onClose={() => setDeliveryLabour(null)}
+          onFinished={() => {
+            loadDashboard();
+            loadActiveLabours();
+            loadRegistrations();
+          }}
+        />
       )}
     </div>
   );
