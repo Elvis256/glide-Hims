@@ -309,7 +309,7 @@ export class SurgeryController {
   @AuthWithPermissions('surgery.delete')
   @ApiOperation({ summary: 'Delete a consumable record' })
   deleteConsumable(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
-    return this.surgeryService.deleteConsumable(id, req.user?.tenantId);
+    return this.surgeryService.deleteConsumable(id, req.user?.tenantId, req.user?.id);
   }
 
   @Get('reports/consumables')

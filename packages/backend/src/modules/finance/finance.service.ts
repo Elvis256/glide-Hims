@@ -511,12 +511,12 @@ export class FinanceService {
     // Get or create fiscal period
     let fiscalPeriod: FiscalPeriod;
     try {
-      fiscalPeriod = await this.getFiscalPeriodForDate(dto.facilityId, journalDate);
+      fiscalPeriod = await this.getFiscalPeriodForDate(dto.facilityId, journalDate, tenantId);
     } catch {
       // Create the fiscal year if it doesn't exist
       const year = journalDate.getFullYear();
       await this.createFiscalYear({ facilityId: dto.facilityId, year }, tenantId);
-      fiscalPeriod = await this.getFiscalPeriodForDate(dto.facilityId, journalDate);
+      fiscalPeriod = await this.getFiscalPeriodForDate(dto.facilityId, journalDate, tenantId);
     }
 
     return this.dataSource.transaction(async (manager) => {
@@ -1241,6 +1241,11 @@ export class FinanceService {
         );
         return;
       }
+      // Voids/returns arrive as negative totals — flip the sides (DR Revenue /
+      // CR Cash) instead of writing negative amounts, which the
+      // chk_jel_debit_credit_xor constraint rejects.
+      const amount = Math.abs(params.totalAmount);
+      const isReversal = params.totalAmount < 0;
       const journal = await this.createJournalEntry(
         {
           facilityId: params.facilityId,
@@ -1252,14 +1257,14 @@ export class FinanceService {
             {
               accountId: cashAcc.id,
               description: `Cash – ${params.saleNumber}`,
-              debit: params.totalAmount,
-              credit: 0,
+              debit: isReversal ? 0 : amount,
+              credit: isReversal ? amount : 0,
             },
             {
               accountId: revenueAcc.id,
               description: `Revenue – ${params.saleNumber}`,
-              debit: 0,
-              credit: params.totalAmount,
+              debit: isReversal ? amount : 0,
+              credit: isReversal ? 0 : amount,
             },
           ],
         },

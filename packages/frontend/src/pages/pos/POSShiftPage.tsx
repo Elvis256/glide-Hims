@@ -19,49 +19,54 @@ import { useFacilityId } from '../../lib/facility';
 import { formatCurrency } from '../../lib/currency';
 import { asList } from '../../utils/unwrapResponse';
 import { POSComplianceTools } from '../../components/pos/POSComplianceTools';
-
-interface Shift {
-  id: string;
-  cashierName: string;
-  cashierId: string;
-  registerName: string;
-  openedAt: string;
-  closedAt?: string;
-  openingBalance: number;
-  closingBalance?: number;
-  expectedBalance?: number;
-  salesCount: number;
-  totalAmount: number;
-  totalCash: number;
-  totalMobileMoney: number;
-  totalCard: number;
-  difference?: number;
-  status: 'open' | 'closed' | 'z_finalized';
-  notes?: string;
-}
+import { mapShift, type ShiftDisplay } from './shiftUtils';
 
 export default function POSShiftPage() {
   const facilityId = useFacilityId();
   const queryClient = useQueryClient();
 
-  const [registerName, setRegisterName] = useState('Register 1');
+  const [registerId, setRegisterId] = useState('');
+  const [newRegisterName, setNewRegisterName] = useState('');
+  const [newRegisterStoreId, setNewRegisterStoreId] = useState('');
+  const [showNewRegister, setShowNewRegister] = useState(false);
   const [openingBalance, setOpeningBalance] = useState('');
   const [closingCashCount, setClosingCashCount] = useState('');
   const [closingNotes, setClosingNotes] = useState('');
   const [showCloseForm, setShowCloseForm] = useState(false);
 
   // Current shift
-  const { data: currentShift, isLoading: shiftLoading } = useQuery<Shift | null>({
+  const { data: currentShift, isLoading: shiftLoading } = useQuery<ShiftDisplay | null>({
     queryKey: ['pos-current-shift', facilityId],
     queryFn: async () => {
       try {
         const res = await api.get('/pos/shifts/current');
-        return res.data;
+        return res.data?.id ? mapShift(res.data) : null;
       } catch {
         return null;
       }
     },
   });
+
+  // Registers to open a shift against
+  const { data: registersData } = useQuery({
+    queryKey: ['pos-registers', facilityId],
+    queryFn: async () => {
+      const res = await api.get('/pos/registers');
+      return res.data;
+    },
+  });
+  const registers = asList<any>(registersData);
+
+  // Stores (needed to create a register on first-run setup)
+  const { data: storesData } = useQuery({
+    queryKey: ['pos-stores', facilityId],
+    queryFn: async () => {
+      const res = await api.get('/stores');
+      return res.data;
+    },
+    enabled: showNewRegister || registers.length === 0,
+  });
+  const stores = asList<any>(storesData);
 
   // Shift history
   const { data: shiftsData, isLoading: historyLoading } = useQuery({
@@ -72,14 +77,35 @@ export default function POSShiftPage() {
     },
   });
 
-  const shiftHistory = asList<Shift>(shiftsData);
+  const shiftHistory = asList<any>(shiftsData).map(mapShift);
   const shiftOpen = currentShift && currentShift.status === 'open';
+
+  // Create a register (first-run setup)
+  const createRegisterMutation = useMutation({
+    mutationFn: async () => {
+      const res = await api.post('/pos/registers', {
+        name: newRegisterName.trim(),
+        storeId: newRegisterStoreId,
+      });
+      return res.data;
+    },
+    onSuccess: (reg: any) => {
+      queryClient.invalidateQueries({ queryKey: ['pos-registers'] });
+      if (reg?.id) setRegisterId(reg.id);
+      setShowNewRegister(false);
+      setNewRegisterName('');
+      toast.success('Register created');
+    },
+    onError: (err) => {
+      toast.error(getApiErrorMessage(err, 'Failed to create register'));
+    },
+  });
 
   // Open shift
   const openShiftMutation = useMutation({
     mutationFn: async () => {
       const res = await api.post('/pos/shifts/open', {
-        registerName,
+        registerId,
         openingBalance: parseFloat(openingBalance) || 0,
       });
       return res.data;
@@ -147,14 +173,61 @@ export default function POSShiftPage() {
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700">Register</label>
               <select
-                value={registerName}
-                onChange={(e) => setRegisterName(e.target.value)}
+                value={registerId}
+                onChange={(e) => setRegisterId(e.target.value)}
                 className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               >
-                <option value="Register 1">Register 1</option>
-                <option value="Register 2">Register 2</option>
-                <option value="Register 3">Register 3</option>
+                <option value="">Select a register…</option>
+                {registers.map((r: any) => (
+                  <option key={r.id} value={r.id}>
+                    {r.name}
+                  </option>
+                ))}
               </select>
+              {!showNewRegister ? (
+                <button
+                  onClick={() => setShowNewRegister(true)}
+                  className="mt-1 text-xs text-blue-600 hover:underline"
+                >
+                  {registers.length === 0 ? 'No registers yet — create one' : '+ New register'}
+                </button>
+              ) : (
+                <div className="mt-2 space-y-2 rounded-lg border border-blue-100 bg-blue-50 p-3">
+                  <input
+                    value={newRegisterName}
+                    onChange={(e) => setNewRegisterName(e.target.value)}
+                    placeholder="Register name (e.g. Till 1)"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                  />
+                  <select
+                    value={newRegisterStoreId}
+                    onChange={(e) => setNewRegisterStoreId(e.target.value)}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                  >
+                    <option value="">Select the store it sells from…</option>
+                    {stores.map((s: any) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => createRegisterMutation.mutate()}
+                      disabled={createRegisterMutation.isPending || !newRegisterName.trim() || !newRegisterStoreId}
+                      className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      Create
+                    </button>
+                    <button
+                      onClick={() => setShowNewRegister(false)}
+                      className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700">Opening Cash Balance</label>
@@ -170,7 +243,7 @@ export default function POSShiftPage() {
             </div>
             <button
               onClick={() => openShiftMutation.mutate()}
-              disabled={openShiftMutation.isPending}
+              disabled={openShiftMutation.isPending || !registerId}
               className="flex w-full items-center justify-center gap-2 rounded-lg bg-green-600 py-3 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50"
             >
               {openShiftMutation.isPending ? (
@@ -228,7 +301,7 @@ export default function POSShiftPage() {
               </div>
               <div>
                 <p className="text-xs text-gray-500">Sales Count</p>
-                <p className="mt-1 font-medium text-gray-900">{currentShift.salesCount}</p>
+                <p className="mt-1 font-medium text-gray-900">{currentShift.transactionCount}</p>
               </div>
             </div>
 
@@ -237,25 +310,25 @@ export default function POSShiftPage() {
               <div className="rounded-lg bg-green-50 p-3">
                 <p className="text-xs text-green-600">Cash</p>
                 <p className="text-lg font-bold text-green-700">
-                  {formatCurrency(currentShift.totalCash)}
+                  {formatCurrency(currentShift.cashSales)}
                 </p>
               </div>
               <div className="rounded-lg bg-blue-50 p-3">
                 <p className="text-xs text-blue-600">Mobile Money</p>
                 <p className="text-lg font-bold text-blue-700">
-                  {formatCurrency(currentShift.totalMobileMoney)}
+                  {formatCurrency(currentShift.mobileMoneySales)}
                 </p>
               </div>
               <div className="rounded-lg bg-purple-50 p-3">
                 <p className="text-xs text-purple-600">Card</p>
                 <p className="text-lg font-bold text-purple-700">
-                  {formatCurrency(currentShift.totalCard)}
+                  {formatCurrency(currentShift.cardSales)}
                 </p>
               </div>
               <div className="rounded-lg bg-amber-50 p-3">
                 <p className="text-xs text-amber-600">Total Sales</p>
                 <p className="text-lg font-bold text-amber-700">
-                  {formatCurrency(currentShift.totalAmount)}
+                  {formatCurrency(currentShift.totalSales)}
                 </p>
               </div>
             </div>
@@ -294,7 +367,7 @@ export default function POSShiftPage() {
                           <span className="text-gray-600">Expected cash</span>
                           <span className="font-medium">
                             {formatCurrency(
-                              currentShift.openingBalance + currentShift.totalCash
+                              currentShift.openingBalance + currentShift.cashSales
                             )}
                           </span>
                         </div>
@@ -310,7 +383,7 @@ export default function POSShiftPage() {
                             <span
                               className={
                                 (parseFloat(closingCashCount) || 0) -
-                                  (currentShift.openingBalance + currentShift.totalCash) >=
+                                  (currentShift.openingBalance + currentShift.cashSales) >=
                                 0
                                   ? 'text-green-600'
                                   : 'text-red-600'
@@ -318,7 +391,7 @@ export default function POSShiftPage() {
                             >
                               {formatCurrency(
                                 (parseFloat(closingCashCount) || 0) -
-                                  (currentShift.openingBalance + currentShift.totalCash)
+                                  (currentShift.openingBalance + currentShift.cashSales)
                               )}
                             </span>
                           </div>
@@ -367,7 +440,7 @@ export default function POSShiftPage() {
           {/* POS Compliance Tools (drawer events, X/Z reports) */}
           <POSComplianceTools
             shiftId={currentShift.id}
-            shiftStatus={currentShift.status}
+            shiftStatus={currentShift.status as 'open' | 'closed' | 'z_finalized'}
           />
         </>
       ) : null}
@@ -402,7 +475,7 @@ export default function POSShiftPage() {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {shiftHistory.map((shift) => {
-                  const expected = shift.openingBalance + (shift.totalCash || 0);
+                  const expected = shift.expectedBalance ?? shift.openingBalance + shift.cashSales;
                   const diff =
                     shift.closingBalance != null ? shift.closingBalance - expected : null;
                   return (

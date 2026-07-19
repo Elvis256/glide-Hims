@@ -63,10 +63,12 @@ interface Product {
 interface CartItem {
   productId: string;
   name: string;
+  code?: string;
   price: number;
   quantity: number;
   maxStock: number;
   unit: string;
+  discountPct?: number;
   prescriptionItemId?: string;
 }
 
@@ -239,15 +241,34 @@ export default function POSSalePage() {
   // Current shift/register info
   const [currentShiftId, setCurrentShiftId] = useState<string | undefined>();
   const [currentRegisterId, setCurrentRegisterId] = useState<string | undefined>();
+  const [currentStoreId, setCurrentStoreId] = useState<string | undefined>();
 
-  // Load current shift
+  // Load current shift; the sale needs the register's store (falls back to the
+  // facility's dispensing store so browsing/pricing still works without a shift)
   useEffect(() => {
-    api.get('/pos/shifts/current').then((res) => {
-      if (res.data?.id) {
-        setCurrentShiftId(res.data.id);
-        setCurrentRegisterId(res.data.registerId);
+    (async () => {
+      try {
+        const res = await api.get('/pos/shifts/current');
+        if (res.data?.id) {
+          setCurrentShiftId(res.data.id);
+          setCurrentRegisterId(res.data.registerId);
+          if (res.data.register?.storeId) {
+            setCurrentStoreId(res.data.register.storeId);
+            return;
+          }
+        }
+      } catch {
+        /* no open shift */
       }
-    }).catch(() => {});
+      try {
+        const stores = await api.get('/stores');
+        const list = Array.isArray(stores.data) ? stores.data : stores.data?.data || [];
+        const store = list.find((s: any) => s.type === 'pharmacy' && s.canDispense !== false) || list[0];
+        if (store?.id) setCurrentStoreId(store.id);
+      } catch {
+        /* sale completion is gated on storeId below */
+      }
+    })();
   }, []);
 
   // D2: Load pending sync count
@@ -412,6 +433,18 @@ export default function POSSalePage() {
     onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to void sale')),
   });
 
+  // B2: recent sales for the void picker (void endpoint needs the sale UUID)
+  const voidableSalesQuery = useQuery({
+    queryKey: ['pos-voidable-sales', currentStoreId, showVoidModal],
+    queryFn: async () => {
+      const res = await api.get('/pharmacy/sales', {
+        params: { storeId: currentStoreId, limit: 20 },
+      });
+      return asList<any>(res.data);
+    },
+    enabled: showVoidModal && !!currentStoreId,
+  });
+
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -435,14 +468,13 @@ export default function POSSalePage() {
 
   // Search products
   const { data: productsData, isLoading: productsLoading } = useQuery({
-    queryKey: ['pos-products', searchTerm, facilityId],
+    queryKey: ['pos-products', searchTerm, currentStoreId],
     queryFn: async () => {
-      const res = await api.get('/inventory', {
-        params: { search: searchTerm || undefined, limit: 50 },
+      const res = await api.get('/stores/inventory', {
+        params: { search: searchTerm || undefined, limit: 50, storeId: currentStoreId || undefined },
       });
       return res.data;
     },
-    enabled: true,
   });
 
   const products = useMemo(() => {
@@ -451,8 +483,8 @@ export default function POSSalePage() {
       id: item.id,
       name: item.name,
       genericName: item.genericName,
-      price: item.retailPrice || item.sellingPrice || item.unitCost || 0,
-      currentStock: item.currentStock ?? 0,
+      price: Number(item.retailPrice) || Number(item.sellingPrice) || Number(item.unitCost) || 0,
+      currentStock: Number(item.availableStock ?? item.currentStock) || 0,
       unit: item.unit || 'unit',
       code: item.code,
       sku: item.sku,
@@ -496,6 +528,7 @@ export default function POSSalePage() {
         {
           productId: product.id,
           name: product.name,
+          code: product.code || product.sku,
           price: product.price,
           quantity: 1,
           maxStock: product.currentStock,
@@ -680,8 +713,19 @@ export default function POSSalePage() {
     () => cart.reduce((sum, item) => sum + item.price * item.quantity, 0),
     [cart]
   );
-  const discountAmount = (subtotal * discount) / 100;
-  const grandTotal = subtotal - discountAmount;
+  // Line discounts apply per item, then the cart-level % on what remains —
+  // mirrors how the backend computes totals from discountPercent + discountAmount
+  const discountedSubtotal = useMemo(
+    () =>
+      cart.reduce(
+        (sum, item) =>
+          sum + item.price * item.quantity * (1 - (item.discountPct || 0) / 100),
+        0
+      ),
+    [cart]
+  );
+  const discountAmount = (discountedSubtotal * discount) / 100;
+  const grandTotal = discountedSubtotal - discountAmount;
 
   // D2: Save sale offline (IndexedDB)
   const saveOfflineSale = useCallback(async () => {
@@ -691,20 +735,20 @@ export default function POSSalePage() {
       ? await getNextSequenceNumber(currentShiftId)
       : 1;
     const payload = {
+      storeId: currentStoreId,
       saleType: 'otc',
       saleChannel: 'retail_pos',
       taxPricingMode: 'inclusive',
       items: cart.map((item) => ({
         itemId: item.productId,
-        itemCode: item.productId,
+        itemCode: item.code || item.productId,
         itemName: item.name,
         quantity: item.quantity,
         unitPrice: item.price,
-        discountPercent: 0,
+        discountPercent: item.discountPct || 0,
       })),
-      discountAmount: (subtotal * discount) / 100,
+      discountAmount,
       paymentMethod: 'cash',
-      amountPaid: grandTotal,
       customerPhone: customerPhone || undefined,
       customerName: customerName || undefined,
       posShiftId: currentShiftId,
@@ -726,7 +770,7 @@ export default function POSSalePage() {
     });
     setPendingSyncCount((c) => c + 1);
     return { clientSaleId, clientSequenceNumber: seqNum };
-  }, [cart, discount, grandTotal, subtotal, customerPhone, customerName, currentShiftId, currentRegisterId]);
+  }, [cart, discountAmount, customerPhone, customerName, currentShiftId, currentRegisterId, currentStoreId]);
 
   // Create and complete sale
   const createSaleMutation = useMutation({
@@ -738,14 +782,18 @@ export default function POSSalePage() {
       }
 
       const saleData = {
+        storeId: currentStoreId,
         saleType: 'otc' as const,
+        saleChannel: 'retail_pos',
         items: cart.map((item) => ({
-          inventoryItemId: item.productId,
+          itemId: item.productId,
+          itemCode: item.code || item.productId,
+          itemName: item.name,
           quantity: item.quantity,
           unitPrice: item.price,
-          prescriptionItemId: item.prescriptionItemId,
+          discountPercent: item.discountPct || 0,
         })),
-        discountPercent: discount,
+        discountAmount,
         paymentMethod,
         customerPhone: customerPhone || undefined,
         customerName: customerName || undefined,
@@ -814,7 +862,7 @@ export default function POSSalePage() {
     }
     try {
       // Verify PIN — attempt to get a token; use same pattern as void-pin flow
-      await api.post('/auth/verify-manager-pin', { pin: ddiOverridePin });
+      await api.post('/pos/verify-manager-pin', { pin: ddiOverridePin });
     } catch {
       toast.error('Invalid manager PIN');
       return;
@@ -828,6 +876,14 @@ export default function POSSalePage() {
 
   const handleCompleteSale = () => {
     if (cart.length === 0) return;
+    if (navigator.onLine && !currentShiftId) {
+      toast.error('No open shift — open a shift on the POS Shifts page before selling');
+      return;
+    }
+    if (navigator.onLine && !currentStoreId) {
+      toast.error('No pharmacy store configured for this register — set one up under Stores');
+      return;
+    }
     const requireOverride = ddiWarnings.filter((w) => w.requireOverride);
     if (requireOverride.length > 0) {
       setShowDdiOverrideModal(true);
@@ -928,6 +984,15 @@ export default function POSSalePage() {
             title="Recall held sale"
           >
             Recall
+          </button>
+          {/* B2: Void a completed sale (manager PIN) */}
+          <button
+            onClick={() => setShowVoidModal(true)}
+            className="flex items-center gap-1 rounded px-2 py-1 text-xs text-red-300 hover:bg-gray-700"
+            title="Void a completed sale (manager PIN required)"
+          >
+            <XCircle className="h-4 w-4" />
+            Void
           </button>
           {/* B7: Quick-keys toggle */}
           <button
@@ -1078,10 +1143,10 @@ export default function POSSalePage() {
                       key={qk.id}
                       onClick={async () => {
                         try {
-                          const res = await api.get(`/pharmacy/items/${qk.itemId}`, { params: { facilityId } });
+                          const res = await api.get(`/stores/inventory/${qk.itemId}`);
                           const item = res.data;
                           if (item) {
-                            addToCart({ id: item.id, name: item.name, price: item.sellingPrice || item.price || 0, currentStock: item.availableQty ?? item.availableQuantity ?? 0, unit: item.unit || 'pcs', code: item.code, genericName: item.genericName, sku: item.sku });
+                            addToCart({ id: item.id, name: item.name, price: Number(item.retailPrice) || Number(item.sellingPrice) || Number(item.unitCost) || 0, currentStock: Number(item.availableStock ?? item.currentStock) || 0, unit: item.unit || 'pcs', code: item.code, genericName: item.genericName, sku: item.sku });
                           }
                         } catch { toast.error('Quick key item not found'); }
                       }}
@@ -1240,7 +1305,7 @@ export default function POSSalePage() {
                         </button>
                       </div>
                       <p className="text-sm font-semibold text-gray-900">
-                        {formatCurrency(item.price * item.quantity)}
+                        {formatCurrency(item.price * item.quantity * (1 - (item.discountPct || 0) / 100))}
                       </p>
                     </div>
                     <div className="mt-1.5 flex items-center gap-2">
@@ -1285,6 +1350,12 @@ export default function POSSalePage() {
                 <span className="text-gray-500">Subtotal</span>
                 <span className="font-medium text-gray-900">{formatCurrency(subtotal)}</span>
               </div>
+              {discountedSubtotal < subtotal && (
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-gray-500">Line discounts</span>
+                  <span className="font-medium text-red-600">-{formatCurrency(subtotal - discountedSubtotal)}</span>
+                </div>
+              )}
               <div className="flex items-center gap-2">
                 <span className="text-sm text-gray-500">Discount %</span>
                 <input
@@ -1294,7 +1365,7 @@ export default function POSSalePage() {
                   value={discount}
                   onChange={(e) => {
                     const newDiscount = Math.min(100, Math.max(0, Number(e.target.value)));
-                    const newDiscountAmount = (subtotal * newDiscount) / 100;
+                    const newDiscountAmount = (discountedSubtotal * newDiscount) / 100;
                     // B4: if > 10% or > 50,000 UGX require manager PIN
                     if (newDiscount > 10 || newDiscountAmount > 50000) {
                       setPendingDiscount(newDiscount);
@@ -1434,13 +1505,22 @@ export default function POSSalePage() {
               <Ban className="h-5 w-5 text-red-500" />
               Void Sale
             </h3>
-            <p className="text-sm text-gray-500">Enter sale ID/number and manager PIN to void.</p>
-            <input
+            <p className="text-sm text-gray-500">Pick the sale to void, then enter the manager PIN.</p>
+            <select
               className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Sale ID or number"
               value={voidSaleId}
               onChange={(e) => setVoidSaleId(e.target.value)}
-            />
+            >
+              <option value="">Select a recent sale…</option>
+              {(voidableSalesQuery.data || [])
+                .filter((s: any) => s.status !== 'voided' && s.status !== 'cancelled')
+                .map((s: any) => (
+                  <option key={s.id} value={s.id}>
+                    {s.saleNumber} — {formatCurrency(Number(s.totalAmount) || 0)}
+                    {s.customerName ? ` (${s.customerName})` : ''}
+                  </option>
+                ))}
+            </select>
             <input
               className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               placeholder="Void reason"
@@ -1498,14 +1578,7 @@ export default function POSSalePage() {
                 disabled={!discountPin}
                 onClick={async () => {
                   try {
-                    await api.post('/pos/discounts', {
-                      saleId: 'pending',
-                      discountType: 'percent',
-                      discountValue: pendingDiscount,
-                      managerPin: discountPin,
-                      reason: `Cart discount ${pendingDiscount}%`,
-                      posShiftId: currentShiftId,
-                    });
+                    await api.post('/pos/verify-manager-pin', { pin: discountPin });
                     setDiscount(pendingDiscount);
                     setShowDiscountPinModal(false);
                     setDiscountPin('');

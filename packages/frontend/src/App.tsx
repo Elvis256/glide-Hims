@@ -464,7 +464,9 @@ function AppRoutes() {
                 <Route path="/ipd/*" element={<IPDRoutes />} />
                 <Route path="/stores/*" element={<StoresRoutes />} />
                 <Route path="/admin/*" element={<AdminRoutes />} />
-                <Route path="/pos/*" element={<POSRoutes />} />
+                {/* Must rank above /pharmacy/* — the sidebar links all point at /pharmacy/pos/... */}
+                <Route path="/pharmacy/pos/*" element={<POSRoutes />} />
+                <Route path="/pos/*" element={<Navigate to="/pharmacy/pos" replace />} />
 <Route path="*" element={<NotFoundPage />} />
               </Routes>
               </Suspense>

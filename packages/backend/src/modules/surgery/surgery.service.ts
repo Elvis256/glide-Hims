@@ -1163,7 +1163,7 @@ export class SurgeryService {
     return this.consumableRepo.save(consumable);
   }
 
-  async deleteConsumable(id: string, tenantId?: string): Promise<void> {
+  async deleteConsumable(id: string, tenantId: string | undefined, userId: string): Promise<void> {
     const tid = requireTenantId(tenantId);
     const where: any = { id };
     where.tenantId = tid;
@@ -1220,7 +1220,7 @@ export class SurgeryService {
               referenceType: 'surgery_consumable_delete',
               referenceId: id,
               notes: 'Stock returned on surgery consumable deletion',
-              createdById: 'system',
+              createdById: userId,
               facilityId,
               tenantId: tid,
             }),

@@ -16,30 +16,7 @@ import { api } from '../../services/api';
 import { useFacilityId } from '../../lib/facility';
 import { formatCurrency } from '../../lib/currency';
 import { asList } from '../../utils/unwrapResponse';
-
-interface Shift {
-  id: string;
-  cashierName: string;
-  openedAt: string;
-  closedAt?: string;
-  openingBalance: number;
-  closingBalance?: number;
-  salesCount: number;
-  totalAmount: number;
-  totalCash: number;
-  totalMobileMoney: number;
-  totalCard: number;
-  status: 'open' | 'closed';
-}
-
-interface DailySummary {
-  date: string;
-  totalSales: number;
-  totalAmount: number;
-  cashAmount: number;
-  mobileMoneyAmount: number;
-  cardAmount: number;
-}
+import { mapShift } from './shiftUtils';
 
 export default function POSReportsPage() {
   const facilityId = useFacilityId();
@@ -50,43 +27,34 @@ export default function POSReportsPage() {
   const [startDate, setStartDate] = useState(thirtyDaysAgo);
   const [endDate, setEndDate] = useState(today);
 
-  // Fetch shifts
+  // Fetch shifts (backend has no date filter — filter client-side on openedAt)
   const { data: shiftsData, isLoading: shiftsLoading } = useQuery({
-    queryKey: ['pos-shifts-report', facilityId, startDate, endDate],
+    queryKey: ['pos-shifts-report', facilityId],
     queryFn: async () => {
-      const res = await api.get('/pos/shifts', {
-        params: { startDate, endDate },
-      });
+      const res = await api.get('/pos/shifts');
       return res.data;
     },
   });
 
-  // Fetch daily summary
-  const { data: summaryData, isLoading: summaryLoading } = useQuery({
-    queryKey: ['pos-daily-summary', facilityId, startDate, endDate],
-    queryFn: async () => {
-      try {
-        const res = await api.get('/pharmacy/summary/daily', {
-          params: { startDate, endDate },
-        });
-        return res.data;
-      } catch {
-        return [];
-      }
-    },
-  });
-
-  const shifts = asList<Shift>(shiftsData);
-  const closedShifts = shifts.filter((s) => s.status === 'closed');
+  const shifts = useMemo(() => asList<any>(shiftsData).map(mapShift), [shiftsData]);
+  const closedShifts = useMemo(() => {
+    const from = new Date(startDate + 'T00:00:00').getTime();
+    const to = new Date(endDate + 'T23:59:59.999').getTime();
+    return shifts.filter((s) => {
+      if (s.status === 'open') return false;
+      const t = new Date(s.openedAt).getTime();
+      return t >= from && t <= to;
+    });
+  }, [shifts, startDate, endDate]);
 
   // Aggregate stats
   const stats = useMemo(() => {
     const totalShifts = closedShifts.length;
-    const totalSales = closedShifts.reduce((sum, s) => sum + s.salesCount, 0);
-    const totalAmount = closedShifts.reduce((sum, s) => sum + s.totalAmount, 0);
-    const totalCash = closedShifts.reduce((sum, s) => sum + s.totalCash, 0);
-    const totalMobile = closedShifts.reduce((sum, s) => sum + s.totalMobileMoney, 0);
-    const totalCard = closedShifts.reduce((sum, s) => sum + s.totalCard, 0);
+    const totalSales = closedShifts.reduce((sum, s) => sum + s.transactionCount, 0);
+    const totalAmount = closedShifts.reduce((sum, s) => sum + s.totalSales, 0);
+    const totalCash = closedShifts.reduce((sum, s) => sum + s.cashSales, 0);
+    const totalMobile = closedShifts.reduce((sum, s) => sum + s.mobileMoneySales, 0);
+    const totalCard = closedShifts.reduce((sum, s) => sum + s.cardSales, 0);
 
     // Average shift duration
     let avgDuration = 0;
@@ -101,7 +69,7 @@ export default function POSReportsPage() {
     let totalDifference = 0;
     closedShifts.forEach((s) => {
       if (s.closingBalance != null) {
-        const expected = s.openingBalance + s.totalCash;
+        const expected = s.expectedBalance ?? s.openingBalance + s.cashSales;
         totalDifference += s.closingBalance - expected;
       }
     });
@@ -131,8 +99,8 @@ export default function POSReportsPage() {
         totalAmount: 0,
         shifts: 0,
       };
-      existing.salesCount += s.salesCount;
-      existing.totalAmount += s.totalAmount;
+      existing.salesCount += s.transactionCount;
+      existing.totalAmount += s.totalSales;
       existing.shifts += 1;
       map.set(s.cashierName, existing);
     });
@@ -145,7 +113,7 @@ export default function POSReportsPage() {
     return `${hours}h ${minutes}m`;
   };
 
-  const isLoading = shiftsLoading || summaryLoading;
+  const isLoading = shiftsLoading;
 
   return (
     <div className="space-y-6">

@@ -77,6 +77,16 @@ export class PosRetailController {
     return this.service.setManagerPin(dto.pin, req.user.tenantId).then(() => ({ ok: true }));
   }
 
+  @Post('verify-manager-pin')
+  @AuthWithPermissions('pos.read')
+  @ApiOperation({
+    summary:
+      'Verify the manager PIN (used by the POS UI to approve overrides before the sale exists). Throws 400 on a wrong PIN; rate-limited server-side.',
+  })
+  verifyManagerPin(@Body() dto: SetManagerPinDto, @Request() req: any) {
+    return this.service.verifyManagerPin(dto.pin, req.user.tenantId).then(() => ({ valid: true }));
+  }
+
   // ─── B3: Hold / Park ──────────────────────────────────────────────────────
 
   @Post('sales/hold')

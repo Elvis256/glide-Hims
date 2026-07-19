@@ -24,17 +24,16 @@ const POSOfflineSyncPage = lazy(() => import('../pages/pos/POSOfflineSyncPage'))
 export default function POSRoutes() {
   return (
     <Routes>
-      <Route index element={<Navigate to="/pharmacy/pos" replace />} />
-      <Route path="pharmacy/pos" element={<ModuleRoute module="pos"><PharmacistRoute><POSDashboardPage /></PharmacistRoute></ModuleRoute>} />
-      <Route path="pharmacy/pos/sale" element={<ModuleRoute module="pos"><PharmacistRoute><POSSalePage /></PharmacistRoute></ModuleRoute>} />
-      <Route path="pharmacy/pos/shifts" element={<ModuleRoute module="pos"><PharmacistRoute><POSShiftPage /></PharmacistRoute></ModuleRoute>} />
-      <Route path="pharmacy/pos/reports" element={<ModuleRoute module="pos"><PharmacistRoute><POSReportsPage /></PharmacistRoute></ModuleRoute>} />
-      <Route path="pharmacy/pos/wholesale/customers" element={<ModuleRoute module="pos"><PharmacistRoute><WholesaleCustomersPage /></PharmacistRoute></ModuleRoute>} />
-      <Route path="pharmacy/pos/wholesale/tiers" element={<ModuleRoute module="pos"><PharmacistRoute><PricingTiersPage /></PharmacistRoute></ModuleRoute>} />
-      <Route path="pharmacy/pos/deliveries" element={<ModuleRoute module="pos"><PharmacistRoute><DeliveryTrackingPage /></PharmacistRoute></ModuleRoute>} />
-      <Route path="pharmacy/pos/returns" element={<ModuleRoute module="pos"><PharmacistRoute><POSReturnsPage /></PharmacistRoute></ModuleRoute>} />
-      <Route path="pharmacy/pos/receipts" element={<ModuleRoute module="pos"><PharmacistRoute><POSReceiptHistoryPage /></PharmacistRoute></ModuleRoute>} />
-      <Route path="pharmacy/pos/offline-sync" element={<ModuleRoute module="pos"><PharmacistRoute><POSOfflineSyncPage /></PharmacistRoute></ModuleRoute>} />
+      <Route index element={<ModuleRoute module="pos"><PharmacistRoute><POSDashboardPage /></PharmacistRoute></ModuleRoute>} />
+      <Route path="sale" element={<ModuleRoute module="pos"><PharmacistRoute><POSSalePage /></PharmacistRoute></ModuleRoute>} />
+      <Route path="shifts" element={<ModuleRoute module="pos"><PharmacistRoute><POSShiftPage /></PharmacistRoute></ModuleRoute>} />
+      <Route path="reports" element={<ModuleRoute module="pos"><PharmacistRoute><POSReportsPage /></PharmacistRoute></ModuleRoute>} />
+      <Route path="wholesale/customers" element={<ModuleRoute module="pos"><PharmacistRoute><WholesaleCustomersPage /></PharmacistRoute></ModuleRoute>} />
+      <Route path="wholesale/tiers" element={<ModuleRoute module="pos"><PharmacistRoute><PricingTiersPage /></PharmacistRoute></ModuleRoute>} />
+      <Route path="deliveries" element={<ModuleRoute module="pos"><PharmacistRoute><DeliveryTrackingPage /></PharmacistRoute></ModuleRoute>} />
+      <Route path="returns" element={<ModuleRoute module="pos"><PharmacistRoute><POSReturnsPage /></PharmacistRoute></ModuleRoute>} />
+      <Route path="receipts" element={<ModuleRoute module="pos"><PharmacistRoute><POSReceiptHistoryPage /></PharmacistRoute></ModuleRoute>} />
+      <Route path="offline-sync" element={<ModuleRoute module="pos"><PharmacistRoute><POSOfflineSyncPage /></PharmacistRoute></ModuleRoute>} />
     </Routes>
   );
 }

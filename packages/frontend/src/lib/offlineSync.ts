@@ -65,10 +65,18 @@ export async function syncPendingSales(onProgress?: SyncProgressCallback): Promi
           }
         }
 
-        // STEP 2: Complete the sale
+        // STEP 2: Complete the sale. amountPaid is not part of the create
+        // payload (the DTO rejects it) — recompute the due amount from items.
         if (currentServerSaleId) {
+          const items: any[] = (sale.payload as any).items || [];
+          const gross = items.reduce(
+            (s, it) =>
+              s + (Number(it.unitPrice) || 0) * (Number(it.quantity) || 0) * (1 - (Number(it.discountPercent) || 0) / 100),
+            0,
+          );
+          const amountPaid = Math.max(0, gross - (Number((sale.payload as any).discountAmount) || 0));
           await api.post(`/pharmacy/sales/${currentServerSaleId}/complete`, {
-            amountPaid: sale.payload.amountPaid,
+            amountPaid,
             paymentMethod: sale.payload.paymentMethod,
           });
         } else {
@@ -112,7 +120,7 @@ export async function syncPendingSales(onProgress?: SyncProgressCallback): Promi
             payload: sale.payload,
             errorReason: reason,
             occurredAt: new Date().toISOString(),
-            discarded: false,
+            discarded: 0,
           });
           break; // Break out of the retry loop, permanent failure
         }
@@ -135,7 +143,7 @@ export async function syncPendingSales(onProgress?: SyncProgressCallback): Promi
         payload: sale.payload,
         errorReason: 'Max retries exceeded after transient failures',
         occurredAt: new Date().toISOString(),
-        discarded: false,
+        discarded: 0,
       });
     }
   }
