@@ -60,17 +60,24 @@ export default function POSReturnsPage() {
   const [completedReturn, setCompletedReturn] = useState<any>(null);
   const creditNoteRef = useRef<HTMLDivElement>(null);
 
-  // Search sales
+  // Recent completed sales; the list endpoint has no text search, filter client-side
   const salesQuery = useQuery({
-    queryKey: ['pos-sales-search', searchTerm],
+    queryKey: ['pos-sales-search'],
     queryFn: async () => {
-      if (!searchTerm || searchTerm.length < 3) return [];
       const res = await api.get('/pharmacy/sales', {
-        params: { search: searchTerm, limit: 20, status: 'completed' },
+        params: { limit: 50, status: 'completed' },
       });
       return asList(res.data);
     },
-    enabled: searchTerm.length >= 3,
+  });
+  const filteredSales = ((salesQuery.data as Sale[] | undefined) || []).filter((sale) => {
+    if (!searchTerm) return true;
+    const t = searchTerm.toLowerCase();
+    return (
+      (sale.saleNumber || '').toLowerCase().includes(t) ||
+      (sale.customerName || '').toLowerCase().includes(t) ||
+      (sale.customerPhone || '').includes(searchTerm)
+    );
   });
 
   // Existing returns for selected sale
@@ -168,15 +175,15 @@ export default function POSReturnsPage() {
             <Package className="h-4 w-4" />
             Return Items
           </div>
-          {completedReturn.items?.map((item: any) => (
-            <div key={item.id} className="flex justify-between text-sm py-1 border-b">
-              <span>{item.itemId} × {item.qtyReturned}</span>
-              <span>{formatCurrency(item.grossAmount)}</span>
-            </div>
-          ))}
-        </div>
-        <div className="text-xs text-gray-500 text-center bg-yellow-50 border border-yellow-200 rounded p-2">
-          ⚠️ EFRIS Credit Note queued — fiscal reference will update when URA responds
+          {completedReturn.items?.map((item: any) => {
+            const orig = selectedSale?.items.find((i) => i.id === item.originalSaleItemId);
+            return (
+              <div key={item.id} className="flex justify-between text-sm py-1 border-b">
+                <span>{orig?.itemName || item.itemId} × {item.qtyReturned}</span>
+                <span>{formatCurrency(Number(item.netAmount ?? item.grossAmount) || 0)}</span>
+              </div>
+            );
+          })}
         </div>
         </div>
         <div className="flex gap-3">
@@ -231,19 +238,29 @@ export default function POSReturnsPage() {
             </div>
           )}
 
-          {salesQuery.data && salesQuery.data.length === 0 && searchTerm.length >= 3 && (
+          {!salesQuery.isLoading && filteredSales.length === 0 && (
             <p className="text-center text-gray-500 py-4">No completed sales found</p>
           )}
 
           <div className="space-y-2">
-            {salesQuery.data?.map((sale: Sale) => (
+            {filteredSales.map((sale: Sale) => (
               <button
                 key={sale.id}
                 className="w-full text-left bg-white border rounded-lg p-4 hover:border-blue-400 hover:bg-blue-50 transition"
-                onClick={() => {
-                  setSelectedSale(sale);
-                  initReturnLines(sale);
-                  setStep('items');
+                onClick={async () => {
+                  try {
+                    const res = await api.get(`/pharmacy/sales/${sale.id}`);
+                    const full = res.data;
+                    if (!full?.items?.length) {
+                      toast.error('Could not load the items on this sale');
+                      return;
+                    }
+                    setSelectedSale(full);
+                    initReturnLines(full);
+                    setStep('items');
+                  } catch (err) {
+                    toast.error(getApiErrorMessage(err, 'Failed to load sale'));
+                  }
                 }}
               >
                 <div className="flex justify-between items-start">
@@ -255,7 +272,7 @@ export default function POSReturnsPage() {
                     )}
                   </div>
                   <div className="text-right">
-                    <p className="font-semibold text-green-600">{formatCurrency(sale.totalAmount)}</p>
+                    <p className="font-semibold text-green-600">{formatCurrency(Number(sale.totalAmount) || 0)}</p>
                     <p className="text-xs text-gray-500">
                       {new Date(sale.createdAt).toLocaleDateString()}
                     </p>
@@ -281,7 +298,7 @@ export default function POSReturnsPage() {
 
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
             <p className="font-semibold">{selectedSale.saleNumber}</p>
-            <p className="text-sm text-blue-600">{formatCurrency(selectedSale.totalAmount)}</p>
+            <p className="text-sm text-blue-600">{formatCurrency(Number(selectedSale.totalAmount) || 0)}</p>
           </div>
 
           <div className="space-y-3">

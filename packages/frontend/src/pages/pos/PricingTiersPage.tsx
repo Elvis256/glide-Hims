@@ -1,18 +1,11 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import {
-  Plus,
-  Edit2,
-  Trash2,
-  Tag,
-  X,
-  Loader2,
-  Percent,
-} from 'lucide-react';
+import { Plus, Tag, X, Loader2, Percent } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, getApiErrorMessage } from '../../services/api';
 import { useFacilityId } from '../../lib/facility';
 import { asList } from '../../utils/unwrapResponse';
+import { formatCurrency } from '../../lib/currency';
 
 interface PricingTier {
   id: string;
@@ -20,7 +13,7 @@ interface PricingTier {
   discountPercent: number;
   minOrderAmount: number;
   description?: string;
-  isActive: boolean;
+  status: string;
   createdAt: string;
 }
 
@@ -43,7 +36,6 @@ export default function PricingTiersPage() {
   const queryClient = useQueryClient();
 
   const [showModal, setShowModal] = useState(false);
-  const [editingTier, setEditingTier] = useState<PricingTier | null>(null);
   const [form, setForm] = useState<TierFormData>(emptyForm);
 
   const { data: tiersData, isLoading } = useQuery({
@@ -75,57 +67,13 @@ export default function PricingTiersPage() {
     onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to create tier')),
   });
 
-  // Update tier
-  const updateMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: TierFormData }) => {
-      const res = await api.put(`/pos/wholesale/tiers/${id}`, {
-        name: data.name,
-        discountPercent: parseFloat(data.discountPercent) || 0,
-        minOrderAmount: parseFloat(data.minOrderAmount) || 0,
-        description: data.description || undefined,
-      });
-      return res.data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['wholesale-tiers'] });
-      closeModal();
-      toast.success('Tier updated successfully');
-    },
-    onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to update tier')),
-  });
-
-  // Delete tier
-  const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      await api.delete(`/pos/wholesale/tiers/${id}`);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['wholesale-tiers'] });
-      toast.success('Tier deleted');
-    },
-    onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to delete tier')),
-  });
-
   const openAddModal = () => {
-    setEditingTier(null);
     setForm(emptyForm);
-    setShowModal(true);
-  };
-
-  const openEditModal = (tier: PricingTier) => {
-    setEditingTier(tier);
-    setForm({
-      name: tier.name,
-      discountPercent: String(tier.discountPercent),
-      minOrderAmount: String(tier.minOrderAmount),
-      description: tier.description || '',
-    });
     setShowModal(true);
   };
 
   const closeModal = () => {
     setShowModal(false);
-    setEditingTier(null);
     setForm(emptyForm);
   };
 
@@ -135,20 +83,10 @@ export default function PricingTiersPage() {
       toast.error('Tier name is required');
       return;
     }
-    if (editingTier) {
-      updateMutation.mutate({ id: editingTier.id, data: form });
-    } else {
-      createMutation.mutate(form);
-    }
+    createMutation.mutate(form);
   };
 
-  const handleDelete = (tier: PricingTier) => {
-    if (window.confirm(`Delete tier "${tier.name}"? This cannot be undone.`)) {
-      deleteMutation.mutate(tier.id);
-    }
-  };
-
-  const isSaving = createMutation.isPending || updateMutation.isPending;
+  const isSaving = createMutation.isPending;
 
   return (
     <div className="space-y-6">
@@ -187,7 +125,6 @@ export default function PricingTiersPage() {
                   <th className="px-6 py-3 text-right">Min Order Amount</th>
                   <th className="px-6 py-3">Description</th>
                   <th className="px-6 py-3 text-center">Status</th>
-                  <th className="px-6 py-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -200,34 +137,18 @@ export default function PricingTiersPage() {
                         {tier.discountPercent}
                       </span>
                     </td>
-                    <td className="px-6 py-3 text-right text-gray-600">{tier.minOrderAmount}</td>
+                    <td className="px-6 py-3 text-right text-gray-600">{formatCurrency(Number(tier.minOrderAmount) || 0)}</td>
                     <td className="px-6 py-3 text-gray-600">{tier.description || '—'}</td>
                     <td className="px-6 py-3 text-center">
                       <span
                         className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-                          tier.isActive
+                          tier.status === 'active'
                             ? 'bg-green-100 text-green-800'
                             : 'bg-gray-100 text-gray-600'
                         }`}
                       >
-                        {tier.isActive ? 'Active' : 'Inactive'}
+                        {tier.status === 'active' ? 'Active' : 'Inactive'}
                       </span>
-                    </td>
-                    <td className="px-6 py-3 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          onClick={() => openEditModal(tier)}
-                          className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-blue-600"
-                        >
-                          <Edit2 className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(tier)}
-                          className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-red-600"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
                     </td>
                   </tr>
                 ))}
@@ -242,9 +163,7 @@ export default function PricingTiersPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-md rounded-xl bg-white shadow-xl">
             <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
-              <h2 className="text-lg font-semibold text-gray-900">
-                {editingTier ? 'Edit Tier' : 'Add Tier'}
-              </h2>
+              <h2 className="text-lg font-semibold text-gray-900">Add Tier</h2>
               <button onClick={closeModal} className="rounded p-1 text-gray-400 hover:bg-gray-100">
                 <X className="h-5 w-5" />
               </button>
@@ -317,7 +236,7 @@ export default function PricingTiersPage() {
                   className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
                 >
                   {isSaving && <Loader2 className="h-4 w-4 animate-spin" />}
-                  {editingTier ? 'Update' : 'Create'}
+                  Create
                 </button>
               </div>
             </form>

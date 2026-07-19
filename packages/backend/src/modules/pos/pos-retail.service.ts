@@ -174,6 +174,7 @@ export class PosRetailService {
             facilityId,
             tenantId,
             sale.id,
+            userId,
           );
         }
       }
@@ -228,7 +229,9 @@ export class PosRetailService {
           if (lockedShift && lockedShift.status === 'open') {
             await this.posShiftGuard.recordSale(manager, {
               shift: lockedShift,
-              saleId: savedReturn.id,
+              // Split rows FK to pharmacy_sales — attribute the (negative)
+              // refund to the ORIGINAL sale, not the return record
+              saleId: sale.id,
               tenantId,
               paymentMethod: savedReturn.paymentMethod,
               amount: -totalRefund,
@@ -330,6 +333,7 @@ export class PosRetailService {
     facilityId: string,
     tenantId: string,
     referenceId: string,
+    userId: string,
   ): Promise<void> {
     const tid = requireTenantId(tenantId);
     const stockBalance = await manager.findOne(StockBalance, {
@@ -352,7 +356,7 @@ export class PosRetailService {
         referenceType: 'pharmacy_return',
         referenceId,
         notes: 'POS Return restock',
-        createdById: 'system',
+        createdById: userId,
         facilityId,
         tenantId: tid,
       }),
@@ -413,7 +417,7 @@ export class PosRetailService {
       // Restock all items
       if (facilityId) {
         for (const item of sale.items) {
-          await this.restockItem(manager, item.itemId, item.quantity, facilityId, tenantId, saleId);
+          await this.restockItem(manager, item.itemId, item.quantity, facilityId, tenantId, saleId, userId);
         }
       }
 

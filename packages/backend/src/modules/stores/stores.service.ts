@@ -521,8 +521,9 @@ export class StoresService {
       .leftJoinAndSelect('item.brand', 'brand')
       .where('item.status = :status', { status: 'active' });
 
-    // For pharmacy, show drugs
-    qb.andWhere('item.isDrug = :isDrug', { isDrug: true });
+    // Pharmacy inventory: drugs plus sellable retail items (sundries, masks,
+    // consumables) — a retail POS must be able to sell non-drug stock
+    qb.andWhere('(item.isDrug = true OR item.isSellable = true)');
 
     if (category) {
       qb.andWhere('(item.category ILIKE :category OR itemCategory.name ILIKE :category)', {

@@ -559,7 +559,7 @@ export class PharmacyService {
       if (sale.storeId) {
         sale.store = await manager
           .query(
-            `SELECT id, facility_id AS "facilityId" FROM pharmacy_stores WHERE id = $1 LIMIT 1`,
+            `SELECT id, facility_id AS "facilityId" FROM stores WHERE id = $1 LIMIT 1`,
             [sale.storeId],
           )
           .then((rows: any[]) => rows?.[0]) as Store;

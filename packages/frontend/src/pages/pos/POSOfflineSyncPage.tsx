@@ -11,6 +11,18 @@ interface SyncProgress {
   total: number;
 }
 
+
+// The offline payload no longer carries amountPaid — recompute the due amount
+function payloadTotal(payload: any): number {
+  const items: any[] = payload?.items || [];
+  const gross = items.reduce(
+    (sum, it) =>
+      sum + (Number(it.unitPrice) || 0) * (Number(it.quantity) || 0) * (1 - (Number(it.discountPercent) || 0) / 100),
+    0,
+  );
+  return Math.max(0, gross - (Number(payload?.discountAmount) || 0));
+}
+
 export default function POSOfflineSyncPage() {
   const navigate = useNavigate();
   const [pending, setPending] = useState<PendingSale[]>([]);
@@ -57,7 +69,7 @@ export default function POSOfflineSyncPage() {
       clientSequenceNumber: sale.payload.clientSequenceNumber,
       shiftId: sale.payload.posShiftId,
       registerId: sale.payload.posRegisterId,
-      storeId: sale.payload.posShiftId,
+      storeId: sale.payload.storeId,
       payload: sale.payload,
       createdAt: sale.occurredAt,
       status: 'pending',
@@ -74,7 +86,7 @@ export default function POSOfflineSyncPage() {
       return;
     }
     await offlineDb.syncErrors.update(discardModal.clientSaleId, {
-      discarded: true,
+      discarded: 1,
       discardReason: discardReason.trim(),
       discardedAt: new Date().toISOString(),
     });
@@ -188,7 +200,7 @@ export default function POSOfflineSyncPage() {
                   </div>
                   <div className="text-right">
                     <div className="font-bold text-gray-900">
-                      {formatCurrency(sale.payload.amountPaid)}
+                      {formatCurrency(payloadTotal(sale.payload))}
                     </div>
                   </div>
                 </div>
@@ -214,7 +226,7 @@ export default function POSOfflineSyncPage() {
                   <div className="flex-1">
                     <div className="font-medium text-sm text-gray-900">
                       {err.payload.items.length} item{err.payload.items.length !== 1 ? 's' : ''} ·{' '}
-                      {formatCurrency(err.payload.amountPaid)}
+                      {formatCurrency(payloadTotal(err.payload))}
                     </div>
                     <div className="text-xs text-gray-500 mt-0.5">
                       {new Date(err.occurredAt).toLocaleString()} · {err.payload.paymentMethod}

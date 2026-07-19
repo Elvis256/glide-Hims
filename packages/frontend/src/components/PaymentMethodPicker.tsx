@@ -56,7 +56,7 @@ export function PaymentMethodPicker({
     queryKey: ['enabled-payment-methods'],
     queryFn: async (): Promise<PaymentMethod[]> => {
       try {
-        const res = await api.get<EnabledMethodRow[]>('/admin/finance/payment-methods');
+        const res = await api.get<EnabledMethodRow[]>('/finance/payment-methods');
         const rows = Array.isArray(res.data) ? res.data : [];
         const enabled = rows
           .filter((r) => r.isActive !== false && r.enabled !== false)

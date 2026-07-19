@@ -78,21 +78,7 @@ export default function WholesaleCustomersPage() {
     },
   });
 
-  // Fetch tiers for dropdown
-  const { data: tiersData } = useQuery({
-    queryKey: ['wholesale-tiers', facilityId],
-    queryFn: async () => {
-      try {
-        const res = await api.get('/pos/wholesale/tiers');
-        return res.data;
-      } catch {
-        return [];
-      }
-    },
-  });
-
   const customers = asList<WholesaleCustomer>(customersData);
-  const tiers = asList<{ id: string; name: string }>(tiersData);
 
   const filteredCustomers = useMemo(() => {
     let result = customers;
@@ -130,7 +116,7 @@ export default function WholesaleCustomersPage() {
   // Update customer
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: CustomerFormData }) => {
-      const res = await api.put(`/pos/wholesale/customers/${id}`, {
+      const res = await api.patch(`/pos/wholesale/customers/${id}`, {
         ...data,
         creditLimit: parseFloat(data.creditLimit) || 0,
       });
@@ -306,14 +292,10 @@ export default function WholesaleCustomersPage() {
           className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
         >
           <option value="">All Tiers</option>
-          {tiers.map((t) => (
-            <option key={t.id} value={t.name}>
-              {t.name}
-            </option>
-          ))}
           <option value="standard">Standard</option>
-          <option value="premium">Premium</option>
-          <option value="vip">VIP</option>
+          <option value="silver">Silver</option>
+          <option value="gold">Gold</option>
+          <option value="platinum">Platinum</option>
         </select>
         <select
           value={filterStatus}
@@ -323,7 +305,6 @@ export default function WholesaleCustomersPage() {
           <option value="">All Status</option>
           <option value="active">Active</option>
           <option value="inactive">Inactive</option>
-          <option value="suspended">Suspended</option>
         </select>
       </div>
 
@@ -511,17 +492,9 @@ export default function WholesaleCustomersPage() {
                     className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   >
                     <option value="standard">Standard</option>
-                    <option value="premium">Premium</option>
-                    <option value="vip">VIP</option>
-                    {tiers
-                      .filter(
-                        (t) => !['standard', 'premium', 'vip'].includes(t.name.toLowerCase())
-                      )
-                      .map((t) => (
-                        <option key={t.id} value={t.name}>
-                          {t.name}
-                        </option>
-                      ))}
+                    <option value="silver">Silver</option>
+                    <option value="gold">Gold</option>
+                    <option value="platinum">Platinum</option>
                   </select>
                 </div>
               </div>

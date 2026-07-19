@@ -23,20 +23,7 @@ import { api, getApiErrorMessage } from '../../services/api';
 import { useFacilityId } from '../../lib/facility';
 import { formatCurrency } from '../../lib/currency';
 import { asList } from '../../utils/unwrapResponse';
-
-interface Shift {
-  id: string;
-  cashierName: string;
-  registerName: string;
-  openedAt: string;
-  openingBalance: number;
-  salesCount: number;
-  totalCash: number;
-  totalMobileMoney: number;
-  totalCard: number;
-  totalAmount: number;
-  status: 'open' | 'closed';
-}
+import { mapShift, type ShiftDisplay } from './shiftUtils';
 
 interface RecentSale {
   id: string;
@@ -61,12 +48,12 @@ export default function POSDashboardPage() {
   const facilityId = useFacilityId();
   const [refreshKey, setRefreshKey] = useState(0);
 
-  const { data: currentShift, isLoading: shiftLoading } = useQuery<Shift | null>({
+  const { data: currentShift, isLoading: shiftLoading } = useQuery<ShiftDisplay | null>({
     queryKey: ['pos-current-shift', facilityId, refreshKey],
     queryFn: async () => {
       try {
         const res = await api.get('/pos/shifts/current');
-        return res.data;
+        return res.data?.id ? mapShift(res.data) : null;
       } catch {
         return null;
       }
@@ -186,7 +173,7 @@ export default function POSDashboardPage() {
             </div>
             <div>
               <p className="text-xs text-gray-500">Sales Count</p>
-              <p className="font-medium text-gray-900">{currentShift.salesCount}</p>
+              <p className="font-medium text-gray-900">{currentShift.transactionCount}</p>
             </div>
             <div>
               <p className="text-xs text-gray-500">Register</p>
@@ -211,7 +198,7 @@ export default function POSDashboardPage() {
             <div>
               <p className="text-xs text-gray-500">Cash</p>
               <p className="text-xl font-bold text-gray-900">
-                {formatCurrency(currentShift?.totalCash ?? 0)}
+                {formatCurrency(currentShift?.cashSales ?? 0)}
               </p>
             </div>
           </div>
@@ -224,7 +211,7 @@ export default function POSDashboardPage() {
             <div>
               <p className="text-xs text-gray-500">Mobile Money</p>
               <p className="text-xl font-bold text-gray-900">
-                {formatCurrency(currentShift?.totalMobileMoney ?? 0)}
+                {formatCurrency(currentShift?.mobileMoneySales ?? 0)}
               </p>
             </div>
           </div>
@@ -237,7 +224,7 @@ export default function POSDashboardPage() {
             <div>
               <p className="text-xs text-gray-500">Card</p>
               <p className="text-xl font-bold text-gray-900">
-                {formatCurrency(currentShift?.totalCard ?? 0)}
+                {formatCurrency(currentShift?.cardSales ?? 0)}
               </p>
             </div>
           </div>
@@ -250,7 +237,7 @@ export default function POSDashboardPage() {
             <div>
               <p className="text-xs text-gray-500">Total</p>
               <p className="text-xl font-bold text-gray-900">
-                {formatCurrency(currentShift?.totalAmount ?? 0)}
+                {formatCurrency(currentShift?.totalSales ?? 0)}
               </p>
             </div>
           </div>
@@ -285,7 +272,7 @@ export default function POSDashboardPage() {
                   </div>
                   <div className="text-right">
                     <p className="text-sm font-semibold text-gray-900">
-                      {formatCurrency(sale.totalAmount)}
+                      {formatCurrency(Number(sale.totalAmount) || 0)}
                     </p>
                     <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
                       {sale.paymentMethod}

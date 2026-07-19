@@ -19,6 +19,7 @@ export interface PendingSale {
 }
 
 export interface OfflineSalePayload {
+  storeId?: string;
   saleType: string;
   saleChannel: string;
   taxPricingMode: string;
@@ -32,7 +33,6 @@ export interface OfflineSalePayload {
   }>;
   discountAmount?: number;
   paymentMethod: string;
-  amountPaid: number;
   customerPhone?: string;
   customerName?: string;
   posShiftId?: string;
@@ -62,7 +62,9 @@ export interface SyncError {
   payload: OfflineSalePayload;
   errorReason: string;
   occurredAt: string;
-  discarded: boolean;
+  // 0 | 1 (not boolean): IndexedDB cannot index booleans, and the review page
+  // filters with .where('discarded').equals(0)
+  discarded: 0 | 1;
   discardReason?: string;
   discardedAt?: string;
   discardedBy?: string;
