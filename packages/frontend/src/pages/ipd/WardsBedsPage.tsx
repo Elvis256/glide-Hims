@@ -19,7 +19,38 @@ import {
 } from 'lucide-react';
 import api, { getApiErrorMessage } from '../../services/api';
 import { ipdService } from '../../services/ipd';
+import { printElement } from '../../lib/print';
 import { asList } from '../../utils/unwrapResponse';
+
+interface HandoverPatient {
+  admissionId: string;
+  admissionNumber: string;
+  admittedAt: string;
+  patient: { id: string; name: string; mrn?: string; allergies: string[] };
+  bed?: string;
+  attendingDoctor?: string;
+  diagnosis?: string;
+  latestVitals: {
+    recordedAt: string;
+    temperature?: number;
+    pulse?: number;
+    bp?: string | null;
+    respiratoryRate?: number;
+    spo2?: number;
+    newsScore?: number;
+  } | null;
+  medications: {
+    overdue: { drug: string; dose: string; scheduledTime: string }[];
+    dueSoon: { drug: string; dose: string; scheduledTime: string }[];
+  };
+  latestNursingNote: { note: string; type: string; shift: string; at: string } | null;
+}
+
+interface HandoverSheet {
+  ward: { id: string; name: string };
+  generatedAt: string;
+  patients: HandoverPatient[];
+}
 
 const TRANSFER_REASONS = [
   { value: 'clinical', label: 'Clinical need' },
@@ -86,6 +117,17 @@ export default function WardsBedsPage() {
   const [selectedWardId, setSelectedWardId] = useState<string | null>(null);
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [transferForm, setTransferForm] = useState({ toWardId: '', toBedId: '', reason: 'clinical', notes: '' });
+  const [handoverWardId, setHandoverWardId] = useState<string | null>(null);
+
+  // Ward shift-handover sheet
+  const { data: handover, isLoading: handoverLoading } = useQuery({
+    queryKey: ['ward-handover', handoverWardId],
+    queryFn: async () => {
+      const res = await api.get(`/ipd/wards/${handoverWardId}/handover`);
+      return res.data as HandoverSheet;
+    },
+    enabled: !!handoverWardId,
+  });
 
   const refreshBeds = () => {
     queryClient.invalidateQueries({ queryKey: ['ipd-wards'] });
@@ -359,6 +401,16 @@ export default function WardsBedsPage() {
                       <span className="text-sm text-gray-500">
                         {ward.occupiedBeds}/{ward.totalBeds} beds
                       </span>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setHandoverWardId(ward.id);
+                        }}
+                        className="px-3 py-1 text-xs font-medium border border-purple-300 text-purple-700 rounded-lg hover:bg-purple-50"
+                        title="Shift handover sheet for this ward"
+                      >
+                        Handover Sheet
+                      </button>
                     </div>
                   </div>
                   {selectedWardId === ward.id && beds.length > 0 && (
@@ -518,6 +570,133 @@ export default function WardsBedsPage() {
           )}
         </div>
       </div>
+
+      {/* Ward Handover Sheet */}
+      {handoverWardId && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+            <div className="p-4 border-b flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold">
+                  Shift Handover — {handover?.ward?.name || '…'}
+                </h2>
+                {handover && (
+                  <p className="text-sm text-gray-500">
+                    {handover.patients.length} patient{handover.patients.length === 1 ? '' : 's'} · generated{' '}
+                    {new Date(handover.generatedAt).toLocaleString()}
+                  </p>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => printElement('handover-print', `Handover — ${handover?.ward?.name || ''}`)}
+                  disabled={!handover || handover.patients.length === 0}
+                  className="px-4 py-2 border rounded-lg hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Print
+                </button>
+                <button onClick={() => setHandoverWardId(null)} className="text-gray-400 hover:text-gray-600 px-2">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-auto p-4" id="handover-print">
+              {handoverLoading ? (
+                <div className="flex justify-center py-10">
+                  <Loader2 className="w-8 h-8 animate-spin text-purple-600" />
+                </div>
+              ) : !handover || handover.patients.length === 0 ? (
+                <p className="text-center text-gray-500 py-10">No admitted patients in this ward.</p>
+              ) : (
+                <div className="space-y-4">
+                  {handover.patients.map((p) => (
+                    <div key={p.admissionId} className="border rounded-lg p-4">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <p className="font-semibold text-gray-900">
+                            Bed {p.bed || '—'} · {p.patient.name}
+                            {p.patient.mrn && <span className="text-gray-500 font-normal"> · {p.patient.mrn}</span>}
+                          </p>
+                          <p className="text-sm text-gray-600">
+                            {p.diagnosis || 'No diagnosis recorded'} · Dr {p.attendingDoctor || 'unassigned'} ·
+                            admitted {new Date(p.admittedAt).toLocaleDateString()}
+                          </p>
+                          {p.patient.allergies?.length > 0 && (
+                            <p className="text-sm font-medium text-red-700 mt-1">
+                              ⚠ Allergies: {p.patient.allergies.join(', ')}
+                            </p>
+                          )}
+                        </div>
+                        {p.latestVitals?.newsScore != null && (
+                          <span
+                            className={`px-2 py-1 rounded text-xs font-bold ${
+                              p.latestVitals.newsScore >= 5
+                                ? 'bg-red-100 text-red-700'
+                                : p.latestVitals.newsScore >= 3
+                                  ? 'bg-amber-100 text-amber-700'
+                                  : 'bg-green-100 text-green-700'
+                            }`}
+                          >
+                            NEWS {p.latestVitals.newsScore}
+                          </span>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-2 gap-3 mt-3 text-sm">
+                        <div className="bg-gray-50 rounded p-2">
+                          <p className="text-xs text-gray-500 mb-1">Latest vitals</p>
+                          {p.latestVitals ? (
+                            <p className="text-gray-800">
+                              {[
+                                p.latestVitals.temperature != null && `T ${p.latestVitals.temperature}°C`,
+                                p.latestVitals.pulse != null && `HR ${p.latestVitals.pulse}`,
+                                p.latestVitals.bp && `BP ${p.latestVitals.bp}`,
+                                p.latestVitals.respiratoryRate != null && `RR ${p.latestVitals.respiratoryRate}`,
+                                p.latestVitals.spo2 != null && `SpO₂ ${p.latestVitals.spo2}%`,
+                              ]
+                                .filter(Boolean)
+                                .join(' · ') || 'Recorded, no values'}
+                              <span className="text-gray-400">
+                                {' '}({new Date(p.latestVitals.recordedAt).toLocaleTimeString()})
+                              </span>
+                            </p>
+                          ) : (
+                            <p className="text-gray-400">None recorded</p>
+                          )}
+                        </div>
+                        <div className="bg-gray-50 rounded p-2">
+                          <p className="text-xs text-gray-500 mb-1">Medications</p>
+                          {p.medications.overdue.length === 0 && p.medications.dueSoon.length === 0 ? (
+                            <p className="text-gray-400">Nothing due in the next 4h</p>
+                          ) : (
+                            <>
+                              {p.medications.overdue.map((m, i) => (
+                                <p key={`o${i}`} className="text-red-700 font-medium">
+                                  OVERDUE: {m.drug} {m.dose} ({new Date(m.scheduledTime).toLocaleTimeString()})
+                                </p>
+                              ))}
+                              {p.medications.dueSoon.map((m, i) => (
+                                <p key={`d${i}`} className="text-gray-800">
+                                  Due {new Date(m.scheduledTime).toLocaleTimeString()}: {m.drug} {m.dose}
+                                </p>
+                              ))}
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      {p.latestNursingNote && (
+                        <p className="mt-2 text-sm text-gray-700 bg-blue-50 border-l-4 border-blue-300 p-2 rounded">
+                          Last note ({p.latestNursingNote.shift || '—'} shift,{' '}
+                          {new Date(p.latestNursingNote.at).toLocaleString()}): {p.latestNursingNote.note}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Transfer Modal */}
       {showTransferModal && selectedBed && admissionsByBed[selectedBed.id] && (

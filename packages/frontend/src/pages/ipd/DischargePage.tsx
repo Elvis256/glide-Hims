@@ -26,7 +26,27 @@ import {
 import { toast } from 'sonner';
 import api, { getApiErrorMessage } from '../../services/api';
 import { printElement } from '../../lib/print';
+import { formatCurrency } from '../../lib/currency';
+import { getFacilityId } from '../../lib/facility';
 import { asList } from '../../utils/unwrapResponse';
+
+interface PlanningEntry {
+  admissionId: string;
+  admissionNumber: string;
+  patient: { id: string; name: string; mrn?: string };
+  ward?: string;
+  bed?: string;
+  admittedAt: string;
+  expectedDischargeDate: string | null;
+}
+
+interface PlanningBoard {
+  generatedAt: string;
+  overdue: PlanningEntry[];
+  today: PlanningEntry[];
+  upcoming: PlanningEntry[];
+  unplanned: PlanningEntry[];
+}
 
 type DischargeStatus = 'admitted' | 'discharged';
 
@@ -74,11 +94,55 @@ export default function DischargePage() {
   const [activeTab, setActiveTab] = useState<'summary' | 'medications' | 'followup' | 'education'>('summary');
   const [statusFilter, setStatusFilter] = useState<'admitted' | 'all'>('admitted');
   const [showDischargeModal, setShowDischargeModal] = useState(false);
+  const [view, setView] = useState<'queue' | 'planning'>('queue');
+  const [acceptUnpaid, setAcceptUnpaid] = useState(false);
   const [dischargeForm, setDischargeForm] = useState({
     dischargeSummary: '',
     dischargeDiagnosis: '',
     dischargeInstructions: '',
     followUpPlan: '',
+  });
+
+  // Discharge-planning board
+  const facilityId = getFacilityId();
+  const { data: planning, isLoading: planningLoading } = useQuery({
+    queryKey: ['discharge-planning', facilityId],
+    queryFn: async () => {
+      const res = await api.get('/ipd/discharge-planning', { params: { facilityId } });
+      return res.data as PlanningBoard;
+    },
+    enabled: view === 'planning' && !!facilityId,
+  });
+
+  const expectedDateMutation = useMutation({
+    mutationFn: async ({ admissionId, date }: { admissionId: string; date: string | null }) => {
+      const res = await api.patch(`/ipd/admissions/${admissionId}/expected-discharge`, {
+        expectedDischargeDate: date,
+      });
+      return res.data;
+    },
+    onSuccess: (_d, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['discharge-planning'] });
+      toast.success(vars.date ? 'Planned discharge date set' : 'Planned discharge date cleared');
+    },
+    onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to update planned discharge')),
+  });
+
+  // Outstanding-balance check for the discharge gate: invoices raised during
+  // this admission that still carry a balance.
+  const { data: admissionBalance = 0 } = useQuery({
+    queryKey: ['admission-balance', selectedAdmission?.id],
+    queryFn: async () => {
+      if (!selectedAdmission) return 0;
+      const res = await api.get('/billing/invoices', { params: { patientId: selectedAdmission.patientId } });
+      const raw = res.data;
+      const invoices: any[] = Array.isArray(raw) ? raw : raw?.data || [];
+      const since = new Date(selectedAdmission.admissionDate).getTime();
+      return invoices
+        .filter((inv) => new Date(inv.createdAt).getTime() >= since && inv.status !== 'cancelled')
+        .reduce((sum, inv) => sum + Math.max(Number(inv.totalAmount || 0) - Number(inv.amountPaid || 0), 0), 0);
+    },
+    enabled: showDischargeModal && !!selectedAdmission,
   });
 
   // Fetch admissions
@@ -183,8 +247,95 @@ export default function DischargePage() {
             <p className="text-sm text-gray-500">Plan and process patient discharges</p>
           </div>
         </div>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setView('queue')}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              view === 'queue' ? 'bg-cyan-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
+            }`}
+          >
+            Discharge Queue
+          </button>
+          <button
+            onClick={() => setView('planning')}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              view === 'planning' ? 'bg-cyan-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'
+            }`}
+          >
+            <CalendarCheck className="w-4 h-4 inline mr-2" />
+            Planning Board
+          </button>
+        </div>
       </div>
 
+      {view === 'planning' && (
+        <div className="flex-1 overflow-auto">
+          {planningLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-8 h-8 animate-spin text-cyan-600" />
+            </div>
+          ) : (
+            <div className="grid grid-cols-4 gap-4">
+              {([
+                { key: 'overdue', title: 'Overdue', accent: 'border-red-400 bg-red-50', chip: 'bg-red-100 text-red-700' },
+                { key: 'today', title: 'Going Home Today', accent: 'border-amber-400 bg-amber-50', chip: 'bg-amber-100 text-amber-700' },
+                { key: 'upcoming', title: 'Next 7 Days', accent: 'border-blue-400 bg-blue-50', chip: 'bg-blue-100 text-blue-700' },
+                { key: 'unplanned', title: 'No Date Set', accent: 'border-gray-300 bg-gray-50', chip: 'bg-gray-200 text-gray-700' },
+              ] as const).map((col) => {
+                const entries = planning?.[col.key] ?? [];
+                return (
+                  <div key={col.key} className={`rounded-xl border-t-4 ${col.accent} border bg-white flex flex-col`}>
+                    <div className="p-3 flex items-center justify-between border-b">
+                      <h3 className="font-semibold text-gray-900">{col.title}</h3>
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${col.chip}`}>{entries.length}</span>
+                    </div>
+                    <div className="p-3 space-y-3 overflow-auto">
+                      {entries.length === 0 ? (
+                        <p className="text-sm text-gray-400 text-center py-4">None</p>
+                      ) : (
+                        entries.map((e) => (
+                          <div key={e.admissionId} className="p-3 bg-white border rounded-lg shadow-sm">
+                            <p className="font-medium text-gray-900">{e.patient.name}</p>
+                            <p className="text-xs text-gray-500">
+                              {e.ward || '—'} • Bed {e.bed || '—'} • {e.admissionNumber}
+                            </p>
+                            <p className="text-xs text-gray-400 mt-0.5">
+                              Admitted {new Date(e.admittedAt).toLocaleDateString()}
+                            </p>
+                            <div className="mt-2 flex items-center gap-2">
+                              <input
+                                type="date"
+                                defaultValue={e.expectedDischargeDate ? String(e.expectedDischargeDate).slice(0, 10) : ''}
+                                onChange={(ev) =>
+                                  ev.target.value &&
+                                  expectedDateMutation.mutate({ admissionId: e.admissionId, date: ev.target.value })
+                                }
+                                className="flex-1 px-2 py-1 border rounded text-sm"
+                              />
+                              {e.expectedDischargeDate && (
+                                <button
+                                  onClick={() => expectedDateMutation.mutate({ admissionId: e.admissionId, date: null })}
+                                  className="text-xs text-gray-400 hover:text-red-600"
+                                  title="Clear planned date"
+                                >
+                                  Clear
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {view === 'queue' && (
+      <>
       {/* Stats */}
       <div className="grid grid-cols-4 gap-4 mb-6">
         <div className="bg-white rounded-xl p-4 border border-gray-200">
@@ -442,7 +593,10 @@ export default function DischargePage() {
                 </div>
                 {selectedAdmission.status === 'admitted' && (
                   <button
-                    onClick={() => setShowDischargeModal(true)}
+                    onClick={() => {
+                      setAcceptUnpaid(false);
+                      setShowDischargeModal(true);
+                    }}
                     className="px-4 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 transition-colors font-medium"
                   >
                     <LogOut className="w-4 h-4 inline mr-2" />
@@ -460,6 +614,8 @@ export default function DischargePage() {
           </div>
         )}
       </div>
+      </>
+      )}
 
       {/* Discharge Modal */}
       {showDischargeModal && selectedAdmission && (
@@ -470,6 +626,26 @@ export default function DischargePage() {
               <p className="text-sm text-gray-500">Complete discharge information for {selectedAdmission.patient?.fullName}</p>
             </div>
             <div className="p-6 space-y-4">
+              {admissionBalance > 0 && (
+                <div className="p-4 bg-amber-50 border border-amber-300 rounded-lg">
+                  <div className="flex items-center gap-2 text-amber-800 font-medium">
+                    <AlertCircle className="w-5 h-5" />
+                    Unpaid balance: {formatCurrency(admissionBalance)}
+                  </div>
+                  <p className="text-sm text-amber-700 mt-1">
+                    This admission has outstanding charges. Send the patient to the cashier, or
+                    confirm the discharge is approved despite the balance.
+                  </p>
+                  <label className="flex items-center gap-2 mt-3 text-sm text-amber-900">
+                    <input
+                      type="checkbox"
+                      checked={acceptUnpaid}
+                      onChange={(e) => setAcceptUnpaid(e.target.checked)}
+                    />
+                    Discharge approved with unpaid balance
+                  </label>
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Discharge Summary *</label>
                 <textarea
@@ -520,7 +696,11 @@ export default function DischargePage() {
               </button>
               <button
                 onClick={handleDischarge}
-                disabled={dischargeMutation.isPending || !dischargeForm.dischargeSummary}
+                disabled={
+                  dischargeMutation.isPending ||
+                  !dischargeForm.dischargeSummary ||
+                  (admissionBalance > 0 && !acceptUnpaid)
+                }
                 className="px-4 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               >
                 {dischargeMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}

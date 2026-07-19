@@ -54,6 +54,7 @@ panel). The detail panel is the bed operations hub:
 | Admit Patient (empty bed) | → `/ipd/admissions` | — | ✅ |
 | Reserve Bed | POST `/ipd/beds/:id/reserve` | 4-hour hold | 🔎 (same API as bed-board, verified there) |
 | Mark as Available (cleaning/maintenance) | PATCH `/ipd/beds/:id` | bed released | ✅ |
+| Handover Sheet (ward header) | GET `/ipd/wards/:id/handover` → printable modal | per patient: bed, allergies, diagnosis, doctor, latest vitals + NEWS badge, overdue/due-4h medications, latest nursing note; Print | ✅ |
 
 ### 3. `/ipd/bed-board` — Bed-Board & Census (Clinical)
 Live wall-board (30s auto-refresh): per-ward tiles with patient, MRN, LOS,
@@ -83,10 +84,20 @@ Bill, Receive Payment (cash/mobile money/card/bank; posts a real payment,
 receipt numbered). Insurance is explicitly deferred to the billing module.
 
 ### 7. `/ipd/discharge` — Discharge Management (Doctor)
-Admitted-patient list → summary/medications/follow-up/instructions tabs →
-Discharge modal (summary required; diagnosis, instructions, follow-up plan).
-Discharge frees the bed to CLEANING and stamps dischargedBy. Print Summary
-prints the summary tab. Medications tab is an honest pointer to prescriptions.
+Two views:
+- **Discharge Queue**: admitted-patient list → summary/medications/follow-up/
+  instructions tabs → Discharge modal (summary required; diagnosis,
+  instructions, follow-up plan). The modal checks billing: if invoices raised
+  during the admission carry an unpaid balance, an amber warning shows the
+  amount and **Complete Discharge stays disabled until "Discharge approved
+  with unpaid balance" is explicitly ticked** (send to cashier, or approve).
+  Discharge frees the bed to CLEANING and stamps dischargedBy. Print Summary
+  prints the summary tab.
+- **Planning Board**: four columns — Overdue / Going Home Today / Next 7 Days /
+  No Date Set — from `/ipd/discharge-planning`. Each card carries an inline
+  date picker to set/change the planned discharge date (PATCH
+  `…/expected-discharge`) and a Clear action. Lets the ward round plan bed
+  turnover a day ahead.
 
 ### 8. `/ipd/analytics` — IPD Analytics (Clinical)
 Live occupancy KPIs from `/ipd/stats`: occupancy rate, active inpatients,
@@ -151,13 +162,7 @@ facility.
     module; discharge/admission/nursing/billing all report outcomes.
 
 ## Known gaps (deferred)
-- Billing page totals conflate ALL of the patient's invoices (including
-  pre-admission OPD ones) — should scope to the admission's encounter/date.
-- Discharge does not check for unpaid balances (no billing-clearance gate) and
-  doesn't write back to the linked encounter.
-- No UI consumes `/ipd/discharge-planning` + expected-discharge endpoints
-  (backend-complete discharge planning board — candidate quick win).
-- Ward handover endpoint (`/ipd/wards/:id/handover`) has no UI.
+- Discharge doesn't write back to the linked encounter.
 - Bed-board reservation reason still uses `window.prompt` (both pages).
 - MAR has no UI to hold/refuse with reason (backend supports it), and no
   witness capture for controlled drugs.
