@@ -103,10 +103,13 @@ P0s fixed inline (backend rebuilt+restarted, frontend dist deployed, no migratio
 - AdmissionsPage: dead View → /patients/:id; attending-doctor picker added (was uncapturable, all admissions "Not assigned"); onError toast.
 - IPDAnalyticsPage: hardcoded fake trend chips (+5.2%, −0.5 days), no-op date-range filter, dead Export removed — all remaining numbers real (/ipd/stats).
 - WardManagementPage: dead Notes/Transfer/Discharge → navigate to owning pages; ward create facilities[0].id → getFacilityId(); DischargePage onError/success toasts + Print Summary wired.
+Block 7 follow-up batch (2026-07-19) ✅ ALL four deferred items implemented + E2E-verified via browser:
+- Discharge Planning Board (DischargePage view toggle): overdue/today/next-7-days/no-date columns from /ipd/discharge-planning; inline date picker sets/clears expected-discharge per admission.
+- Unpaid-balance discharge gate: discharge modal sums admission-period invoice balances; amber warning + Complete Discharge disabled until "Discharge approved with unpaid balance" ticked.
+- Ward Handover Sheet (WardsBedsPage per-ward button): printable modal — per patient bed/allergies/diagnosis/doctor/latest vitals + NEWS badge/overdue+due-4h meds/latest note.
+- InpatientBilling totals scoped to admission period (createdAt >= admissionDate); label "Balance Due (this admission)".
 P1 deferred:
-- Billing totals conflate all patient invoices incl. pre-admission OPD — scope to admission encounter/date range.
-- No billing-clearance gate on discharge; discharge doesn't update linked encounter.
-- /ipd/discharge-planning + expected-discharge endpoints have NO UI (backend-complete board — quick win); ward handover endpoint has no UI.
+- Discharge doesn't update linked encounter.
 - Reservation reason via window.prompt (WardsBeds + BedBoard); MAR lacks hold/refuse-with-reason UI + witness capture for controlled drugs.
 - BedBoard census date inputs styled with non-existent `input`/`card`/`btn-primary` classes? (uses design-kit classes — verify visually; rendered fine in probe).
 

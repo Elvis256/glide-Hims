@@ -197,14 +197,18 @@ export default function InpatientBillingPage() {
   });
 
   // Fetch invoices for selected patient. The endpoint returns {data, total} —
-  // treating it as a bare array crashed every useMemo below.
+  // treating it as a bare array crashed every useMemo below. Scoped to this
+  // ADMISSION (invoices raised since admission) so totals don't drag in the
+  // patient's old OPD bills.
   const { data: invoices = [], isLoading: invoicesLoading } = useQuery({
-    queryKey: ['patient-invoices', selectedAdmission?.patient.id],
+    queryKey: ['patient-invoices', selectedAdmission?.patient.id, selectedAdmission?.id],
     queryFn: async () => {
       if (!selectedAdmission) return [];
       const res = await api.get('/billing/invoices', { params: { patientId: selectedAdmission.patient.id } });
       const raw = res.data;
-      return (Array.isArray(raw) ? raw : raw?.data || []) as Invoice[];
+      const all = (Array.isArray(raw) ? raw : raw?.data || []) as Invoice[];
+      const since = new Date(selectedAdmission.admissionDate).getTime();
+      return all.filter((inv) => new Date(inv.createdAt).getTime() >= since);
     },
     enabled: !!selectedAdmission,
   });
@@ -653,7 +657,7 @@ export default function InpatientBillingPage() {
                         <p className="text-lg font-semibold text-green-600">{formatCurrencyValue(totalPaid)}</p>
                       </div>
                       <div>
-                        <p className="text-sm text-gray-500">Balance Due</p>
+                        <p className="text-sm text-gray-500">Balance Due (this admission)</p>
                         <p className="text-2xl font-bold text-gray-900">{formatCurrencyValue(balance)}</p>
                       </div>
                     </div>
