@@ -6,77 +6,101 @@ export class PatientSafetyPhase11782900000059 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     // --- Enum types ---
     await queryRunner.query(`
-      CREATE TYPE "active_medication_status_enum" AS ENUM (
-        'active', 'completed', 'stopped', 'expired'
-      )
+      DO $$ BEGIN
+        CREATE TYPE "active_medication_status_enum" AS ENUM (
+          'active', 'completed', 'stopped', 'expired'
+        );
+      EXCEPTION WHEN duplicate_object THEN NULL; END $$;
     `);
 
     await queryRunner.query(`
-      CREATE TYPE "drug_disease_severity_enum" AS ENUM (
-        'minor', 'moderate', 'major', 'contraindicated'
-      )
+      DO $$ BEGIN
+        CREATE TYPE "drug_disease_severity_enum" AS ENUM (
+          'minor', 'moderate', 'major', 'contraindicated'
+        );
+      EXCEPTION WHEN duplicate_object THEN NULL; END $$;
     `);
 
     await queryRunner.query(`
-      CREATE TYPE "consciousness_level_enum" AS ENUM (
-        'A', 'V', 'P', 'U'
-      )
+      DO $$ BEGIN
+        CREATE TYPE "consciousness_level_enum" AS ENUM (
+          'A', 'V', 'P', 'U'
+        );
+      EXCEPTION WHEN duplicate_object THEN NULL; END $$;
     `);
 
     await queryRunner.query(`
-      CREATE TYPE "clinical_risk_level_enum" AS ENUM (
-        'low', 'low_medium', 'medium', 'high'
-      )
+      DO $$ BEGIN
+        CREATE TYPE "clinical_risk_level_enum" AS ENUM (
+          'low', 'low_medium', 'medium', 'high'
+        );
+      EXCEPTION WHEN duplicate_object THEN NULL; END $$;
     `);
 
     await queryRunner.query(`
-      CREATE TYPE "esi_level_enum" AS ENUM (
-        '1', '2', '3', '4', '5'
-      )
+      DO $$ BEGIN
+        CREATE TYPE "esi_level_enum" AS ENUM (
+          '1', '2', '3', '4', '5'
+        );
+      EXCEPTION WHEN duplicate_object THEN NULL; END $$;
     `);
 
     await queryRunner.query(`
-      CREATE TYPE "triage_acuity_color_enum" AS ENUM (
-        'red', 'orange', 'yellow', 'green', 'blue'
-      )
+      DO $$ BEGIN
+        CREATE TYPE "triage_acuity_color_enum" AS ENUM (
+          'red', 'orange', 'yellow', 'green', 'blue'
+        );
+      EXCEPTION WHEN duplicate_object THEN NULL; END $$;
     `);
 
     await queryRunner.query(`
-      CREATE TYPE "triage_disposition_enum" AS ENUM (
-        'consultation', 'emergency_resuscitation', 'observation', 'referral',
-        'discharge', 'admit'
-      )
+      DO $$ BEGIN
+        CREATE TYPE "triage_disposition_enum" AS ENUM (
+          'consultation', 'emergency_resuscitation', 'observation', 'referral',
+          'discharge', 'admit'
+        );
+      EXCEPTION WHEN duplicate_object THEN NULL; END $$;
     `);
 
     await queryRunner.query(`
-      CREATE TYPE "mobility_status_enum" AS ENUM (
-        'ambulatory', 'wheelchair', 'stretcher', 'carried'
-      )
+      DO $$ BEGIN
+        CREATE TYPE "mobility_status_enum" AS ENUM (
+          'ambulatory', 'wheelchair', 'stretcher', 'carried'
+        );
+      EXCEPTION WHEN duplicate_object THEN NULL; END $$;
     `);
 
     await queryRunner.query(`
-      CREATE TYPE "mental_status_enum" AS ENUM (
-        'alert', 'confused', 'agitated', 'lethargic', 'unresponsive'
-      )
+      DO $$ BEGIN
+        CREATE TYPE "mental_status_enum" AS ENUM (
+          'alert', 'confused', 'agitated', 'lethargic', 'unresponsive'
+        );
+      EXCEPTION WHEN duplicate_object THEN NULL; END $$;
     `);
 
     await queryRunner.query(`
-      CREATE TYPE "reconciliation_status_enum" AS ENUM (
-        'draft', 'in_review', 'completed', 'signed'
-      )
+      DO $$ BEGIN
+        CREATE TYPE "reconciliation_status_enum" AS ENUM (
+          'draft', 'in_review', 'completed', 'signed'
+        );
+      EXCEPTION WHEN duplicate_object THEN NULL; END $$;
     `);
 
     await queryRunner.query(`
-      CREATE TYPE "reconciliation_source_type_enum" AS ENUM (
-        'active_medication', 'encounter_prescription', 'manual'
-      )
+      DO $$ BEGIN
+        CREATE TYPE "reconciliation_source_type_enum" AS ENUM (
+          'active_medication', 'encounter_prescription', 'manual'
+        );
+      EXCEPTION WHEN duplicate_object THEN NULL; END $$;
     `);
 
     await queryRunner.query(`
-      CREATE TYPE "reconciliation_item_status_enum" AS ENUM (
-        'pending_review', 'continued_unchanged', 'continued_modified',
-        'discontinued', 'new_at_discharge'
-      )
+      DO $$ BEGIN
+        CREATE TYPE "reconciliation_item_status_enum" AS ENUM (
+          'pending_review', 'continued_unchanged', 'continued_modified',
+          'discontinued', 'new_at_discharge'
+        );
+      EXCEPTION WHEN duplicate_object THEN NULL; END $$;
     `);
 
     // --- New table: patient_active_medications ---

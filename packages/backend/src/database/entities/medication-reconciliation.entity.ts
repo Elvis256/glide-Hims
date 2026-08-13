@@ -129,6 +129,11 @@ export class MedicationReconciliationItem extends BaseEntity {
   @Column({ name: 'reviewed_at', type: 'timestamptz', nullable: true })
   reviewedAt: Date | null;
 
+  // Without an explicit JoinColumn, TypeORM derives the FK column name from the
+  // property ("reconciliationId") and looks for a column that does not exist —
+  // every read through this repository failed. Point it at the reconciliation_id
+  // column already declared above rather than adding a second FK.
   @ManyToOne(() => MedicationReconciliation, (rec) => rec.items)
+  @JoinColumn({ name: 'reconciliation_id' })
   reconciliation: MedicationReconciliation;
 }

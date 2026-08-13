@@ -10,7 +10,7 @@ export class FixHrMissingColumns1774400000000 implements MigrationInterface {
       WHERE table_name = 'leave_requests' AND column_name = 'deleted_at'
     `);
     if (hasDeletedAt.length === 0) {
-      await queryRunner.query(`ALTER TABLE "leave_requests" ADD COLUMN "deleted_at" TIMESTAMP`);
+      await queryRunner.query(`ALTER TABLE "leave_requests" ADD COLUMN IF NOT EXISTS "deleted_at" TIMESTAMP`);
     }
 
     // Add tenant_id to payslips if missing
@@ -19,7 +19,7 @@ export class FixHrMissingColumns1774400000000 implements MigrationInterface {
       WHERE table_name = 'payslips' AND column_name = 'tenant_id'
     `);
     if (payslipTenant.length === 0) {
-      await queryRunner.query(`ALTER TABLE "payslips" ADD COLUMN "tenant_id" UUID`);
+      await queryRunner.query(`ALTER TABLE "payslips" ADD COLUMN IF NOT EXISTS "tenant_id" UUID`);
     }
   }
 

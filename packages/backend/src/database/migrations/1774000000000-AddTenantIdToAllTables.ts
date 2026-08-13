@@ -24,7 +24,7 @@ export class AddTenantIdToAllTables1774000000000 implements MigrationInterface {
                 AND col.table_schema = 'public'
             )
         LOOP
-          EXECUTE format('ALTER TABLE %I ADD COLUMN tenant_id uuid', t);
+          EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS tenant_id uuid', t);
           EXECUTE format(
             'CREATE INDEX IF NOT EXISTS "IDX_%s_tenant_id" ON %I (tenant_id)',
             t, t
