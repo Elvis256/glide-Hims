@@ -2,7 +2,6 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
-  OnModuleInit,
   Logger,
   Inject,
   forwardRef,
@@ -20,7 +19,7 @@ import {
 } from '../../common/constants/facility-presets.constants';
 
 @Injectable()
-export class TenantsService implements OnModuleInit {
+export class TenantsService {
   private readonly logger = new Logger(TenantsService.name);
 
   constructor(
@@ -30,49 +29,6 @@ export class TenantsService implements OnModuleInit {
     @Inject(forwardRef(() => LicenseService))
     private licenseService: LicenseService,
   ) {}
-
-  /** Ensure slug column exists and backfill slugs for existing tenants */
-  async onModuleInit() {
-    try {
-      // Add slug column if it doesn't exist yet (production has synchronize off)
-      await this.dataSource
-        .query(
-          `
-        ALTER TABLE tenants ADD COLUMN IF NOT EXISTS slug VARCHAR(100) UNIQUE
-      `,
-        )
-        .catch(() => {
-          /* column may already exist */
-        });
-
-      // Backfill slugs using raw SQL to avoid BaseEntity column issues
-      const rows: { id: string; name: string }[] = await this.dataSource.query(
-        `SELECT id, name FROM tenants WHERE slug IS NULL`,
-      );
-      for (const row of rows) {
-        const baseSlug = TenantsService.generateSlug(row.name);
-        const slug = await this.ensureUniqueSlugsRaw(baseSlug, row.id);
-        await this.dataSource.query(`UPDATE tenants SET slug = $1 WHERE id = $2`, [slug, row.id]);
-        this.logger.log(`Backfilled slug "${slug}" for tenant "${row.name}"`);
-      }
-    } catch (err) {
-      this.logger.error('Slug backfill failed (non-fatal):', err?.message || err);
-    }
-  }
-
-  /** Raw SQL uniqueness check for backfill (avoids BaseEntity column issues) */
-  private async ensureUniqueSlugsRaw(baseSlug: string, excludeId: string): Promise<string> {
-    let slug = baseSlug;
-    let suffix = 1;
-    while (true) {
-      const [existing] = await this.dataSource.query(
-        `SELECT id FROM tenants WHERE slug = $1 AND id != $2 LIMIT 1`,
-        [slug, excludeId],
-      );
-      if (!existing) return slug;
-      slug = `${baseSlug}-${suffix++}`;
-    }
-  }
 
   /**
    * Convert a name into a URL-friendly slug.

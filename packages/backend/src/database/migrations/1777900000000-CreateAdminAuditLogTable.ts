@@ -152,6 +152,20 @@ export class CreateAdminAuditLogTable1777900000000 implements MigrationInterface
             default: 'CURRENT_TIMESTAMP',
           },
           {
+            // AdminAuditLog extends BaseEntity, which declares @UpdateDateColumn
+            // and @DeleteDateColumn. Both were omitted here, so every read
+            // through the repository failed on the missing columns.
+            name: 'updated_at',
+            type: 'timestamp',
+            default: 'CURRENT_TIMESTAMP',
+            onUpdate: 'CURRENT_TIMESTAMP',
+          },
+          {
+            name: 'deleted_at',
+            type: 'timestamp',
+            isNullable: true,
+          },
+          {
             name: 'is_archived',
             type: 'boolean',
             default: false,
@@ -173,14 +187,14 @@ export class CreateAdminAuditLogTable1777900000000 implements MigrationInterface
         foreignKeys: [
           {
             columnNames: ['admin_user_id'],
-            referencedTableName: 'user',
+            referencedTableName: 'users',
             referencedColumnNames: ['id'],
             onDelete: 'SET NULL',
             name: 'fk_admin_audit_log_admin_user_id',
           },
           {
             columnNames: ['tenant_id'],
-            referencedTableName: 'tenant',
+            referencedTableName: 'tenants',
             referencedColumnNames: ['id'],
             onDelete: 'CASCADE',
             name: 'fk_admin_audit_log_tenant_id',

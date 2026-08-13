@@ -100,7 +100,7 @@ export class UsageMeterAggregate extends BaseEntity {
   @Column({ type: 'timestamp', name: 'period_end' })
   periodEnd: Date;
 
-  @Column({ type: 'decimal', precision: 18, scale: 4, default: 0 })
+  @Column({ type: 'decimal', precision: 18, scale: 4, default: 0, name: 'total_amount' })
   totalAmount: number;
 
   @Column({ type: 'int', default: 0, name: 'event_count' })

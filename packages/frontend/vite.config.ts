@@ -25,6 +25,10 @@ const httpsConfig = hasSSL ? {
   cert: readFileSync(certPath),
 } : undefined
 
+// Backend origin the dev/preview servers proxy to. Overridable because the
+// default port is not always free on a developer machine.
+const apiTarget = process.env.VITE_API_TARGET || 'http://localhost:3000'
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
@@ -72,12 +76,12 @@ export default defineConfig({
     https: httpsConfig,
     proxy: {
       '/api': {
-        target: 'http://localhost:3000',
+        target: apiTarget,
         changeOrigin: true,
         secure: false,
       },
       '/socket.io': {
-        target: 'http://localhost:3000',
+        target: apiTarget,
         changeOrigin: true,
         secure: false,
         ws: true,
@@ -90,12 +94,12 @@ export default defineConfig({
     https: httpsConfig,
     proxy: {
       '/api': {
-        target: 'http://localhost:3000',
+        target: apiTarget,
         changeOrigin: true,
         secure: false,
       },
       '/socket.io': {
-        target: 'http://localhost:3000',
+        target: apiTarget,
         changeOrigin: true,
         secure: false,
         ws: true,

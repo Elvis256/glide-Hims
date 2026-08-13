@@ -72,7 +72,7 @@ export class DualColumnSweep1782900000010 implements MigrationInterface {
         [p.table, p.camel],
       );
       if (exists.length > 0) continue;
-      await queryRunner.query(`ALTER TABLE "${p.table}" ADD COLUMN "${p.camel}" uuid`);
+      await queryRunner.query(`ALTER TABLE "${p.table}" ADD COLUMN IF NOT EXISTS "${p.camel}" uuid`);
       await queryRunner.query(`UPDATE "${p.table}" SET "${p.camel}" = "${p.snake}"`);
     }
   }

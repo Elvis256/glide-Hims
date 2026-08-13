@@ -25,6 +25,67 @@ jobs:
       - name: Run tests
         run: pnpm test
 
+  schema-check:
+    # Guards entity/schema drift: an entity declaring a column or table that no
+    # migration builds compiles fine and only fails as a 500 in production.
+    # Separate from test-backend so that job stays database-free and fast.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/backend
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: glide_hims
+          POSTGRES_PASSWORD: glide_hims_ci
+          POSTGRES_DB: glide_hims_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_USERNAME: glide_hims
+      DB_PASSWORD: glide_hims_ci
+      DB_NAME: glide_hims_ci
+      DB_SSL: 'false'
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v3
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install psql client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Provision extensions
+        # Extensions are provisioning, not schema — the same three
+        # deployment/db-init/10-rls-roles.sh installs. They need privileges the
+        # migration role is not guaranteed to have, so they stay out of the chain.
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
+            -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp"' \
+            -c 'CREATE EXTENSION IF NOT EXISTS "pgcrypto"' \
+            -c 'CREATE EXTENSION IF NOT EXISTS "pg_trgm"'
+        env:
+          DATABASE_URL: postgresql://glide_hims:glide_hims_ci@localhost:5432/glide_hims_ci
+      - name: Build the schema from empty
+        # The whole chain, against a database with no tables at all. This is
+        # the guarantee: migrations alone reproduce the schema, so a fresh
+        # install and an upgraded one converge.
+        run: pnpm db:migrate
+      - name: Check entities match the schema
+        run: pnpm test:schema
+
   lint-frontend:
     runs-on: ubuntu-latest
     defaults:
