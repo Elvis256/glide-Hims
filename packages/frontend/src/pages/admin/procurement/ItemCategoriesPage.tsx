@@ -16,8 +16,8 @@ import {
 import { api, getApiErrorMessage } from '../../../services/api';
 import { useFacilityId } from '../../../lib/facility';
 
-const CATEGORIES_API = '/api/v1/item-classifications/categories';
-const SUBCATEGORIES_API = '/api/v1/item-classifications/subcategories';
+const CATEGORIES_API = '/item-classifications/categories';
+const SUBCATEGORIES_API = '/item-classifications/subcategories';
 
 interface Subcategory {
   id: string;

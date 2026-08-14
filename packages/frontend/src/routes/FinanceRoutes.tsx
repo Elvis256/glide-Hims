@@ -57,23 +57,32 @@ const BudgetVsActualPage = lazy(() => import('../pages/billing/finance/BudgetVsA
 const CustomReportBuilderPage = lazy(() => import('../pages/billing/finance/CustomReportBuilderPage'));
 const FinanceDashboard = lazy(() => import('../pages/billing/finance/FinanceDashboard'));
 
-export default function BillingRoutes() {
+/**
+ * Finance screens, mounted at /finance/*.
+ *
+ * Same cause as ProcurementRoutes: defined under BillingRoutes, linked from the
+ * sidebar as /finance/*, so all 11 Finance menu items opened a blank page.
+ */
+export default function FinanceRoutes() {
   return (
     <Routes>
-      <Route index element={<Navigate to="/billing/invoices" replace />} />
-      <Route path="opd/new" element={<ModuleRoute module="billing"><BillingRoute><NewOPDBillPage /></BillingRoute></ModuleRoute>} />
-      <Route path="opd/orders" element={<ModuleRoute module="billing"><BillingRoute><OPDOrderingPage /></BillingRoute></ModuleRoute>} />
-      <Route path="opd/packages" element={<ModuleRoute module="billing"><BillingRoute><PackageBillingPage /></BillingRoute></ModuleRoute>} />
-      <Route path="opd/search" element={<ModuleRoute module="billing"><BillingRoute><SearchBillsPage /></BillingRoute></ModuleRoute>} />
-      <Route path="reception/refunds" element={<ModuleRoute module="billing"><BillingRoute><RefundsPage /></BillingRoute></ModuleRoute>} />
-      <Route path="invoices" element={<ModuleRoute module="billing"><BillingRoute><InvoicesPage /></BillingRoute></ModuleRoute>} />
-      <Route path="invoices/:invoiceId" element={<ModuleRoute module="billing"><BillingRoute><InvoicesPage /></BillingRoute></ModuleRoute>} />
-      <Route path="payments" element={<ModuleRoute module="billing"><BillingRoute><PaymentsPage /></BillingRoute></ModuleRoute>} />
-      <Route path="patient-tab" element={<ModuleRoute module="billing"><BillingRoute><PatientTabPage /></BillingRoute></ModuleRoute>} />
-      <Route path="patient-tab/:patientId" element={<ModuleRoute module="billing"><BillingRoute><PatientTabPage /></BillingRoute></ModuleRoute>} />
-      <Route path="doctor-fees" element={<ModuleRoute module="billing"><BillingRoute><DoctorFeesPage /></BillingRoute></ModuleRoute>} />
-      <Route path="insurance/claims" element={<ModuleRoute module="billing"><InsuranceRoute><ClaimsPage /></InsuranceRoute></ModuleRoute>} />
-      <Route path="insurance/providers" element={<ModuleRoute module="billing"><InsuranceRoute><InsuranceProvidersPage /></InsuranceRoute></ModuleRoute>} />
+      <Route path="accounts" element={<ModuleRoute module="finance"><FinanceRoute><AccountsPage /></FinanceRoute></ModuleRoute>} />
+      <Route path="journals" element={<ModuleRoute module="finance"><FinanceRoute><JournalEntriesPage /></FinanceRoute></ModuleRoute>} />
+      <Route path="expenses" element={<ModuleRoute module="finance"><FinanceRoute><ExpensesPage /></FinanceRoute></ModuleRoute>} />
+      <Route path="revenue" element={<ModuleRoute module="finance"><FinanceRoute><RevenuePage /></FinanceRoute></ModuleRoute>} />
+      <Route path="reports" element={<ModuleRoute module="finance"><FinanceRoute><FinancialReportsPage /></FinanceRoute></ModuleRoute>} />
+      <Route path="cost-centers" element={<ModuleRoute module="finance"><FinanceRoute><CostCentersPage /></FinanceRoute></ModuleRoute>} />
+      <Route path="budgets" element={<ModuleRoute module="finance"><FinanceRoute><BudgetPage /></FinanceRoute></ModuleRoute>} />
+      <Route path="bank-reconciliation" element={<ModuleRoute module="finance"><FinanceRoute><BankReconciliationPage /></FinanceRoute></ModuleRoute>} />
+      <Route path="patient-finance" element={<ModuleRoute module="finance"><FinanceRoute><PatientFinancePage /></FinanceRoute></ModuleRoute>} />
+      <Route path="petty-cash" element={<ModuleRoute module="finance"><FinanceRoute><PettyCashPage /></FinanceRoute></ModuleRoute>} />
+      <Route path="donor-funds" element={<ModuleRoute module="finance"><FinanceRoute><DonorFundsPage /></FinanceRoute></ModuleRoute>} />
+      <Route path="trial-balance" element={<ModuleRoute module="finance"><FinanceRoute><TrialBalancePage /></FinanceRoute></ModuleRoute>} />
+      <Route path="gl-trends" element={<ModuleRoute module="finance"><FinanceRoute><GLTrendAnalysisPage /></FinanceRoute></ModuleRoute>} />
+      <Route path="revenue-dashboard" element={<ModuleRoute module="finance"><FinanceRoute><RevenueDashboardPage /></FinanceRoute></ModuleRoute>} />
+      <Route path="budget-vs-actual" element={<ModuleRoute module="finance"><FinanceRoute><BudgetVsActualPage /></FinanceRoute></ModuleRoute>} />
+      <Route path="custom-reports" element={<ModuleRoute module="finance"><FinanceRoute><CustomReportBuilderPage /></FinanceRoute></ModuleRoute>} />
+      <Route path="dashboard" element={<ModuleRoute module="finance"><FinanceRoute><FinanceDashboard /></FinanceRoute></ModuleRoute>} />
     </Routes>
   );
 }
