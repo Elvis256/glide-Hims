@@ -44,6 +44,10 @@ const mockManager = {
   create: jest.fn(),
   save: jest.fn(),
   findOne: jest.fn(),
+  // generateCaseNumber takes a transaction-scoped advisory lock before counting
+  // the day's cases, so the case number cannot race. Nothing to simulate — the
+  // lock has no return value the service uses — but the method has to exist.
+  query: jest.fn().mockResolvedValue([]),
   createQueryBuilder: jest.fn(() => ({
     setLock: jest.fn().mockReturnThis(),
     where: jest.fn().mockReturnThis(),
