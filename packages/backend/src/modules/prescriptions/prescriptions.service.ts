@@ -211,7 +211,11 @@ export class PrescriptionsService {
         notes: dto.notes,
         prescriberSignature: dto.prescriberSignature || undefined,
         prescriberSignedAt: dto.prescriberSignature ? new Date() : undefined,
-        items: dto.items.map((item) => manager.create(PrescriptionItem, item)),
+        // tenantId must be stamped on the children too: they are built from the
+        // DTO, which carries none, and cascade inserts do not go through
+        // TenantSubscriber. Without it the rows insert with tenant_id NULL and
+        // prescription_items' RLS policy rejects the whole prescription.
+        items: dto.items.map((item) => manager.create(PrescriptionItem, { ...item, tenantId: tid })),
         tenantId: tid,
       });
 
