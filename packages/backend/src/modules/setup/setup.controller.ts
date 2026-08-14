@@ -70,7 +70,12 @@ export class SetupController {
         'System is already initialized. Re-initialization is not allowed.',
       );
     }
-    return this.setupService.initializeSetup(dto);
+    // Same reason as registerTenant below: this creates the tenant, facility
+    // and admin before any tenant context can exist, so it has to run as
+    // system or RLS rejects the inserts ("new row violates row-level security
+    // policy for table \"facilities\""). Without this a brand-new deployment
+    // cannot complete first-run setup at all.
+    return withSystemContext(() => this.setupService.initializeSetup(dto));
   }
 
   @Post('register-tenant')
