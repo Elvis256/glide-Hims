@@ -2396,7 +2396,10 @@ export class HrService {
 
     return this.appraisalRepo.find({
       where,
-      relations: ['employee', 'employee.departmentRef', 'reviewer'],
+      // PerformanceAppraisal.employee is a User (see performance-appraisal.entity.ts),
+      // and User's relation is `department` — `departmentRef` exists only on Employee,
+      // so this eager-load 500'd every appraisal request.
+      relations: ['employee', 'employee.department', 'reviewer'],
       order: { createdAt: 'DESC' },
     });
   }
@@ -2404,7 +2407,10 @@ export class HrService {
   async getAppraisalById(id: string, tenantId?: string): Promise<PerformanceAppraisal> {
     const appraisal = await this.appraisalRepo.findOne({
       where: { id, tenantId: requireTenantId(tenantId) },
-      relations: ['employee', 'employee.departmentRef', 'reviewer'],
+      // PerformanceAppraisal.employee is a User (see performance-appraisal.entity.ts),
+      // and User's relation is `department` — `departmentRef` exists only on Employee,
+      // so this eager-load 500'd every appraisal request.
+      relations: ['employee', 'employee.department', 'reviewer'],
     });
     if (!appraisal) throw new NotFoundException('Appraisal not found');
     return appraisal;
@@ -2519,7 +2525,10 @@ export class HrService {
     // employeeId now references users table directly
     return this.appraisalRepo.find({
       where: { employeeId: userId, tenantId: requireTenantId(tenantId) },
-      relations: ['employee', 'employee.departmentRef', 'reviewer'],
+      // PerformanceAppraisal.employee is a User (see performance-appraisal.entity.ts),
+      // and User's relation is `department` — `departmentRef` exists only on Employee,
+      // so this eager-load 500'd every appraisal request.
+      relations: ['employee', 'employee.department', 'reviewer'],
       order: { year: 'DESC', createdAt: 'DESC' },
     });
   }

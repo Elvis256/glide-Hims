@@ -48,6 +48,11 @@ const RadiologyRoutes = lazy(() => import('./routes/RadiologyRoutes'));
 const PharmacyRoutes = lazy(() => import('./routes/PharmacyRoutes'));
 const IPDRoutes = lazy(() => import('./routes/IPDRoutes'));
 const StoresRoutes = lazy(() => import('./routes/StoresRoutes'));
+const ProcurementRoutes = lazy(() => import('./routes/ProcurementRoutes'));
+const FinanceRoutes = lazy(() => import('./routes/FinanceRoutes'));
+const InventoryRoutes = lazy(() => import('./routes/InventoryRoutes'));
+const FollowUpsRoutes = lazy(() => import('./routes/FollowUpsRoutes'));
+const ReferralsRoutes = lazy(() => import('./routes/ReferralsRoutes'));
 const AdminRoutes = lazy(() => import('./routes/AdminRoutes'));
 const POSRoutes = lazy(() => import('./routes/POSRoutes'));
 const HRRoutes = lazy(() => import('./routes/HRRoutes'));
@@ -463,6 +468,14 @@ function AppRoutes() {
                 <Route path="/pharmacy/*" element={<PharmacyRoutes />} />
                 <Route path="/ipd/*" element={<IPDRoutes />} />
                 <Route path="/stores/*" element={<StoresRoutes />} />
+                {/* Mounted at the paths the sidebar actually links to. These screens
+                    previously lived only under /billing/* and /stores/*, so every
+                    Procurement, Finance and Inventory menu item opened a blank page. */}
+                <Route path="/procurement/*" element={<ProcurementRoutes />} />
+                <Route path="/finance/*" element={<FinanceRoutes />} />
+                <Route path="/inventory/*" element={<InventoryRoutes />} />
+                <Route path="/follow-ups/*" element={<FollowUpsRoutes />} />
+                <Route path="/referrals/*" element={<ReferralsRoutes />} />
                 <Route path="/admin/*" element={<AdminRoutes />} />
                 {/* Must rank above /pharmacy/* — the sidebar links all point at /pharmacy/pos/... */}
                 <Route path="/pharmacy/pos/*" element={<POSRoutes />} />

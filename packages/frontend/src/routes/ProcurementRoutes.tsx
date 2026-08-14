@@ -57,23 +57,34 @@ const BudgetVsActualPage = lazy(() => import('../pages/billing/finance/BudgetVsA
 const CustomReportBuilderPage = lazy(() => import('../pages/billing/finance/CustomReportBuilderPage'));
 const FinanceDashboard = lazy(() => import('../pages/billing/finance/FinanceDashboard'));
 
-export default function BillingRoutes() {
+/**
+ * Procurement screens, mounted at /procurement/*.
+ *
+ * Previously defined inside BillingRoutes (so they only answered on
+ * /billing/procurement/*) while the sidebar, the Pharmacy/Stores redirects and
+ * the approvals inbox all linked to /procurement/* — where nothing was
+ * mounted, so those 19 menu items rendered a blank page with no error.
+ */
+export default function ProcurementRoutes() {
   return (
     <Routes>
-      <Route index element={<Navigate to="/billing/invoices" replace />} />
-      <Route path="opd/new" element={<ModuleRoute module="billing"><BillingRoute><NewOPDBillPage /></BillingRoute></ModuleRoute>} />
-      <Route path="opd/orders" element={<ModuleRoute module="billing"><BillingRoute><OPDOrderingPage /></BillingRoute></ModuleRoute>} />
-      <Route path="opd/packages" element={<ModuleRoute module="billing"><BillingRoute><PackageBillingPage /></BillingRoute></ModuleRoute>} />
-      <Route path="opd/search" element={<ModuleRoute module="billing"><BillingRoute><SearchBillsPage /></BillingRoute></ModuleRoute>} />
-      <Route path="reception/refunds" element={<ModuleRoute module="billing"><BillingRoute><RefundsPage /></BillingRoute></ModuleRoute>} />
-      <Route path="invoices" element={<ModuleRoute module="billing"><BillingRoute><InvoicesPage /></BillingRoute></ModuleRoute>} />
-      <Route path="invoices/:invoiceId" element={<ModuleRoute module="billing"><BillingRoute><InvoicesPage /></BillingRoute></ModuleRoute>} />
-      <Route path="payments" element={<ModuleRoute module="billing"><BillingRoute><PaymentsPage /></BillingRoute></ModuleRoute>} />
-      <Route path="patient-tab" element={<ModuleRoute module="billing"><BillingRoute><PatientTabPage /></BillingRoute></ModuleRoute>} />
-      <Route path="patient-tab/:patientId" element={<ModuleRoute module="billing"><BillingRoute><PatientTabPage /></BillingRoute></ModuleRoute>} />
-      <Route path="doctor-fees" element={<ModuleRoute module="billing"><BillingRoute><DoctorFeesPage /></BillingRoute></ModuleRoute>} />
-      <Route path="insurance/claims" element={<ModuleRoute module="billing"><InsuranceRoute><ClaimsPage /></InsuranceRoute></ModuleRoute>} />
-      <Route path="insurance/providers" element={<ModuleRoute module="billing"><InsuranceRoute><InsuranceProvidersPage /></InsuranceRoute></ModuleRoute>} />
+      <Route path="approvals" element={<ModuleRoute module="stores"><AdminRoute><ApprovalDashboardPage /></AdminRoute></ModuleRoute>} />
+      <Route path="direct-po" element={<ModuleRoute module="stores"><StoreKeeperRoute><DirectPOPage /></StoreKeeperRoute></ModuleRoute>} />
+      <Route path="requisitions" element={<ModuleRoute module="stores"><StoreKeeperRoute><RequisitionsPage /></StoreKeeperRoute></ModuleRoute>} />
+      <Route path="rfq" element={<ModuleRoute module="stores"><StoreKeeperRoute><RFQPage /></StoreKeeperRoute></ModuleRoute>} />
+      <Route path="quotes/compare" element={<ModuleRoute module="stores"><StoreKeeperRoute><CompareQuotesPage /></StoreKeeperRoute></ModuleRoute>} />
+      <Route path="quotes/approve" element={<ModuleRoute module="stores"><AdminRoute><ApproveQuotationsPage /></AdminRoute></ModuleRoute>} />
+      <Route path="orders" element={<ModuleRoute module="stores"><StoreKeeperRoute><PurchaseOrdersPage /></StoreKeeperRoute></ModuleRoute>} />
+      <Route path="grn" element={<ModuleRoute module="stores"><StoreKeeperRoute><GoodsReceivedPage /></StoreKeeperRoute></ModuleRoute>} />
+      <Route path="invoices/match" element={<ModuleRoute module="stores"><AccountantRoute><InvoiceMatchingPage /></AccountantRoute></ModuleRoute>} />
+      <Route path="trace" element={<ModuleRoute module="stores"><StoreKeeperRoute><ProcurementTracePage /></StoreKeeperRoute></ModuleRoute>} />
+      <Route path="gl-integration" element={<ModuleRoute module="stores"><AccountantRoute><ProcurementGLIntegrationPage /></AccountantRoute></ModuleRoute>} />
+      <Route path="analytics" element={<ModuleRoute module="stores"><StoreKeeperRoute><ProcurementAnalyticsDashboard /></StoreKeeperRoute></ModuleRoute>} />
+      <Route path="vendors" element={<ModuleRoute module="stores"><StoreKeeperRoute><VendorListPage /></StoreKeeperRoute></ModuleRoute>} />
+      <Route path="vendors/contracts" element={<ModuleRoute module="stores"><StoreKeeperRoute><VendorContractsPage /></StoreKeeperRoute></ModuleRoute>} />
+      <Route path="vendors/ratings" element={<ModuleRoute module="stores"><StoreKeeperRoute><VendorRatingsPage /></StoreKeeperRoute></ModuleRoute>} />
+      <Route path="vendors/prices" element={<ModuleRoute module="stores"><StoreKeeperRoute><PriceAgreementsPage /></StoreKeeperRoute></ModuleRoute>} />
+      <Route path="vendors/payments" element={<ModuleRoute module="stores"><AccountantRoute><VendorPaymentsPage /></AccountantRoute></ModuleRoute>} />
     </Routes>
   );
 }

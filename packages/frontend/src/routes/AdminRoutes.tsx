@@ -68,6 +68,8 @@ const MembershipRulesPage = lazy(() => import('../pages/admin/membership/Members
 const CurrenciesPage = lazy(() => import('../pages/admin/finance/CurrenciesPage'));
 const ExchangeRatesPage = lazy(() => import('../pages/admin/finance/ExchangeRatesPage'));
 const PaymentMethodsPage = lazy(() => import('../pages/admin/finance/PaymentMethodsPage'));
+const DoctorFeesPage = lazy(() => import('../pages/billing/DoctorFeesPage'));
+const AuditLogViewerPage = lazy(() => import('../pages/admin/AuditLogViewerPage'));
 
 export default function AdminRoutes() {
   return (
@@ -146,6 +148,10 @@ export default function AdminRoutes() {
       <Route path="finance/currencies" element={<FinanceRoute><CurrenciesPage /></FinanceRoute>} />
       <Route path="finance/exchange-rates" element={<FinanceRoute><ExchangeRatesPage /></FinanceRoute>} />
       <Route path="finance/payment-methods" element={<FinanceRoute><PaymentMethodsPage /></FinanceRoute>} />
+      {/* Moved from BillingRoutes: the sidebar links to /admin/*, but these were
+          only reachable at /billing/admin/* and rendered blank. */}
+      <Route path="services/doctor-fees" element={<AdminRoute><DoctorFeesPage /></AdminRoute>} />
+      <Route path="audit-log" element={<AdminRoute><AuditLogViewerPage /></AdminRoute>} />
     </Routes>
   );
 }
