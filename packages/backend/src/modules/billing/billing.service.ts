@@ -150,12 +150,6 @@ export class BillingService {
       }
     }
 
-    // VAT enforcement: taxPercent can only be 0 if explicitly marked as tax-exempt
-    if (dto.taxPercent !== undefined && dto.taxPercent === 0 && !dto.taxExemptReason) {
-      throw new BadRequestException(
-        'VAT cannot be zero unless the invoice is tax-exempt. Provide a taxExemptReason or remove taxPercent to apply the default 18% VAT.',
-      );
-    }
 
     // Insurance pre-authorization enforcement
     if (dto.insurancePolicyId) {
@@ -247,7 +241,13 @@ export class BillingService {
       });
     });
 
-    const taxPercent = dto.taxPercent ?? 18;
+    // Medical services supplied by a licensed practitioner are VAT-exempt in
+    // Uganda, so a clinical invoice carries no VAT unless the caller states a
+    // rate for something genuinely taxable (a non-medical service, say).
+    // Defaulting to 18% added VAT to every consultation, bed night and
+    // procedure. Retail pharmacy sales are a separate supply and keep their own
+    // standard-rated path (UG_STANDARD_VAT_RATE with a per-item TaxTreatment).
+    const taxPercent = dto.taxPercent ?? 0;
     const taxAmount = divide(multiply(subtotal, taxPercent), 100);
     const discountAmount = dto.discountAmount || 0;
     const totalAmount = subtract(add(subtotal, taxAmount), discountAmount);
@@ -367,7 +367,7 @@ export class BillingService {
       return {
         items: [],
         subtotal: 0,
-        taxPercent: dto.taxPercent ?? 18,
+        taxPercent: dto.taxPercent ?? 0,
         taxAmount: 0,
         discountAmount: dto.discountAmount || 0,
         insuranceCovers: 0,
@@ -447,8 +447,8 @@ export class BillingService {
       };
     });
 
-    // 3. Tax (default 18% VAT, same rule as createInvoice) — use currency.ts to match createInvoice
-    const taxPercent = dto.taxPercent ?? 18;
+    // 3. Tax — exempt by default, same rule as createInvoice
+    const taxPercent = dto.taxPercent ?? 0;
     const taxAmount = divide(multiply(subtotal, taxPercent), 100);
 
     // 4. Membership discount applies BEFORE coverage (covers fewer items)
