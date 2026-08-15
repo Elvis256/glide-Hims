@@ -408,8 +408,12 @@ export class InsuranceService {
 
     const savedClaim = await this.dataSource.transaction(async (manager) => {
       const claimNumber = await this.generateClaimNumber(manager, tenantId);
+      // Keep the item DTOs off the claim entity: they would land on the `items`
+      // relation, and saving the claim again below would make TypeORM treat the
+      // rows we insert here as no longer belonging to it and null their claim_id.
+      const { items: _items, ...claimFields } = dto;
       const claim = manager.create(InsuranceClaim, {
-        ...dto,
+        ...claimFields,
         claimNumber,
         providerId: policy.providerId,
         patientId: policy.patientId,
@@ -460,7 +464,7 @@ export class InsuranceService {
           totalClaimed += item.claimedAmount;
         }
         saved.totalClaimed = totalClaimed;
-        await manager.save(InsuranceClaim, saved);
+        await manager.update(InsuranceClaim, saved.id, { totalClaimed });
       }
 
       return saved;
