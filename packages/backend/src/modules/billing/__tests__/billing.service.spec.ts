@@ -220,7 +220,7 @@ describe('BillingService', () => {
       expect(createCall.balanceDue).toBe(310);
     });
 
-    it('should create invoice with default 18% VAT when no tax specified', async () => {
+    it('should treat clinical invoices as VAT-exempt when no tax is specified', async () => {
       const simpleDto = {
         patientId: 'patient-1',
         items: [{ description: 'Service', quantity: 3, unitPrice: 100, serviceName: 'Gen' }],
@@ -245,9 +245,12 @@ describe('BillingService', () => {
 
       const createCall = mockInvoiceRepo.create.mock.calls[0][0];
       expect(createCall.subtotal).toBe(300);
-      expect(createCall.taxAmount).toBe(54); // 300 * 18% = 54 (mandatory VAT)
+      // Medical services are VAT-exempt in Uganda: no VAT unless the caller
+      // asks for it. This previously defaulted to 18%, adding tax to every
+      // consultation, bed night and procedure.
+      expect(createCall.taxAmount).toBe(0);
       expect(createCall.discountAmount).toBe(0);
-      expect(createCall.totalAmount).toBe(354); // 300 + 54
+      expect(createCall.totalAmount).toBe(300);
     });
   });
 
