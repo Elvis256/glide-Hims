@@ -49,18 +49,28 @@ mkdir -p "$BACKUP_SUBDIR" && chmod 700 "$BACKUP_DIR"
 
 echo "[$(date)] Starting ${BACKUP_TYPE} backup..."
 
-# Create temporary .pgpass file instead of using PGPASSWORD env var
-PGPASS_FILE=$(mktemp "${BACKUP_DIR}/.pgpass.XXXXXX")
-chmod 600 "$PGPASS_FILE"
-echo "${DB_HOST}:${DB_PORT}:${DB_NAME}:${DB_USER}:${DB_PASSWORD:-}" > "$PGPASS_FILE"
-export PGPASSFILE="$PGPASS_FILE"
+# Dump as the postgres superuser via local peer auth: no credentials needed,
+# and app-role dumps fail against tables with row-level security policies.
+# Dump to a temp file postgres can write, then move into the root-only backup dir.
+DUMP_TMP=$(mktemp /tmp/glide_hims_dump.XXXXXX)
+if ! chown postgres:postgres "$DUMP_TMP"; then
+    rm -f "$DUMP_TMP"
+    echo "[$(date)] ERROR: cannot hand the dump file to postgres — run this script as root." >&2
+    exit 1
+fi
 
-# Perform backup with compression
-if pg_dump -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" \
+# On any failure below, drop whichever of the two paths still exists so a
+# truncated dump is never left behind under a valid backup name: pg_dump
+# writes a partial file even when it aborts on an RLS error.
+cleanup_failed_dump() {
+    rm -f "$DUMP_TMP" "${BACKUP_FILE%.gz}"
+}
+
+if sudo -u postgres pg_dump -p "$DB_PORT" -d "$DB_NAME" \
     --format=custom \
     --compress=9 \
-    --verbose \
-    --file="${BACKUP_FILE%.gz}" 2>/dev/null; then
+    --file="$DUMP_TMP" \
+    && mv "$DUMP_TMP" "${BACKUP_FILE%.gz}" && chown root:root "${BACKUP_FILE%.gz}" && chmod 600 "${BACKUP_FILE%.gz}"; then
 
     # Get file size
     BACKUP_SIZE=$(du -h "${BACKUP_FILE%.gz}" | cut -f1)
@@ -80,14 +90,10 @@ if pg_dump -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" \
         echo "[$(date)] WARNING: No passphrase file at ${BACKUP_PASSPHRASE_FILE}, backup is NOT encrypted"
     fi
 else
-    rm -f "$PGPASS_FILE"
+    cleanup_failed_dump
     echo "[$(date)] ERROR: Backup failed!" >&2
     exit 1
 fi
-
-# Clean up .pgpass file
-rm -f "$PGPASS_FILE"
-unset PGPASSFILE
 
 # Clean up old backups based on retention policy
 case "$BACKUP_TYPE" in
