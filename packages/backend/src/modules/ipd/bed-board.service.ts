@@ -298,8 +298,14 @@ export class BedBoardService {
       to: Date;
     }> = [];
     let cursor = new Date(admission.admissionDate);
-    let curBed: Bed | undefined = admission.bed;
-    let curWard: Ward | undefined = admission.ward;
+    // The stay STARTS in the bed the patient was admitted to — which is not
+    // admission.bed once a transfer has happened, because the transfer moves
+    // admission.bedId to the new bed. Taking admission.bed here priced the
+    // whole pre-transfer stay at the post-transfer bed's rate: a patient moved
+    // from a general bed to ICU was billed the ICU rate for both segments.
+    // The first transfer's fromBed is the bed the admission actually began in.
+    let curBed: Bed | undefined = transfers[0]?.fromBed ?? admission.bed;
+    let curWard: Ward | undefined = transfers[0]?.fromWard ?? admission.ward;
 
     // walk transfers — each transfer closes the current segment
     for (const t of transfers) {
