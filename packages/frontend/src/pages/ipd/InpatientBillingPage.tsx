@@ -64,6 +64,21 @@ interface InvoiceItem {
   unitPrice: number;
   amount: number;
   category?: string;
+  serviceCode?: string;
+  chargeType?: string;
+  referenceType?: string;
+  referenceId?: string;
+}
+
+/** A bed-day charge line as computed by GET /ipd/admissions/:id/bed-charges-preview. */
+interface BedChargeLine {
+  serviceCode: string;
+  description: string;
+  chargeType: string;
+  quantity: number;
+  unitPrice: number;
+  referenceType: string;
+  referenceId: string;
 }
 
 interface Invoice {
@@ -160,6 +175,58 @@ export default function InpatientBillingPage() {
     onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to add charge')),
   });
 
+  /**
+   * Post the computed bed-day charges onto the patient's bill.
+   *
+   * The backend has always been able to work these out — it walks the
+   * admission's transfers and prices each segment at that bed's own daily rate
+   * — but nothing in the UI ever called it, so bed nights had to be typed in by
+   * hand and were easy to under-bill or miss entirely.
+   *
+   * invoice_items has a UNIQUE index on (reference_type, reference_id), so the
+   * segments cannot all be posted under the bare admission id; each line gets a
+   * per-segment suffix, which keeps the rows traceable to the admission while
+   * satisfying the constraint.
+   */
+  const addBedChargesMutation = useMutation({
+    mutationFn: async (admission: Admission) => {
+      const preview = await api.get(`/ipd/admissions/${admission.id}/bed-charges-preview`);
+      const lines = (preview.data?.data || preview.data || []) as BedChargeLine[];
+      if (!lines.length) return { posted: 0 };
+
+      const withRefs = lines.map((line, i) => ({
+        serviceCode: line.serviceCode,
+        description: line.description,
+        quantity: line.quantity,
+        unitPrice: line.unitPrice,
+        chargeType: line.chargeType,
+        referenceType: line.referenceType,
+        referenceId: `${line.referenceId}#${i + 1}`,
+      }));
+
+      if (currentInvoice) {
+        for (const item of withRefs) {
+          await api.post(`/billing/invoices/${currentInvoice.id}/items`, item);
+        }
+      } else {
+        await api.post('/billing/invoices', {
+          patientId: admission.patient.id,
+          encounterId: admission.encounterId,
+          items: withRefs,
+          notes: `Bed charges — admission ${admission.admissionNumber}`,
+        });
+      }
+      return { posted: withRefs.length };
+    },
+    onSuccess: ({ posted }) => {
+      queryClient.invalidateQueries({ queryKey: ['patient-invoices'] });
+      toast.success(
+        posted ? `Added ${posted} bed charge${posted > 1 ? 's' : ''}` : 'No billable bed nights yet',
+      );
+    },
+    onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to add bed charges')),
+  });
+
   // Update item price mutation
   const updatePriceMutation = useMutation({
     mutationFn: async (data: { invoiceId: string; itemId: string; unitPrice: number }) => {
@@ -217,6 +284,29 @@ export default function InpatientBillingPage() {
   const currentInvoice = useMemo(() => {
     return invoices.find(inv => inv.status !== 'paid') || invoices[0];
   }, [invoices]);
+
+  /** Bed charges already on this bill — used to warn before posting twice. */
+  const existingBedCharges = useMemo(
+    () =>
+      (currentInvoice?.items || []).filter(
+        (i) => i.chargeType === 'bed' || (i.serviceCode || '').startsWith('BED-'),
+      ),
+    [currentInvoice],
+  );
+
+  const handleAddBedCharges = async () => {
+    if (!selectedAdmission) return;
+    if (existingBedCharges.length) {
+      const ok = await confirmDialog({
+        title: 'Bed charges already on this bill',
+        message: `This bill already has ${existingBedCharges.length} bed charge line(s). Adding them again will bill the stay twice. Continue?`,
+        confirmLabel: 'Add anyway',
+        variant: 'danger',
+      });
+      if (!ok) return;
+    }
+    addBedChargesMutation.mutate(selectedAdmission);
+  };
 
   // Calculate totals from invoices
   const totalCharges = useMemo(() => {
@@ -430,6 +520,19 @@ export default function InpatientBillingPage() {
               <div className="flex items-center justify-between p-4 border-b border-gray-200">
                 <h3 className="font-semibold text-gray-900">Itemized Charges</h3>
                 <div className="flex gap-2">
+                  <button
+                    onClick={handleAddBedCharges}
+                    disabled={addBedChargesMutation.isPending}
+                    title="Bill the bed nights for this admission, priced per bed and split across any transfers"
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:opacity-50"
+                  >
+                    {addBedChargesMutation.isPending ? (
+                      <Loader2 className="w-4 h-4 inline mr-2 animate-spin" />
+                    ) : (
+                      <Bed className="w-4 h-4 inline mr-2" />
+                    )}
+                    Add Bed Charges
+                  </button>
                   <button
                     onClick={() => setShowAddCharge(!showAddCharge)}
                     className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors font-medium"
