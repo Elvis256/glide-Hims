@@ -1,5 +1,7 @@
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { instanceToPlain } from 'class-transformer';
 import * as crypto from 'crypto';
+import { User } from '../../../database/entities/user.entity';
 
 /**
  * Tests for user service security guards:
@@ -291,6 +293,52 @@ describe('Users Security', () => {
 
       expect(softRemove).toHaveBeenCalled();
       expect(revokeUserSessions).toHaveBeenCalledWith(userId);
+    });
+  });
+
+  /**
+   * User creation used to return `{ ...savedUser, employee }`. The spread
+   * produced a plain object, and @Exclude() metadata lives on the class -- so
+   * ClassSerializerInterceptor had nothing to act on and the response carried
+   * passwordHash, mfaSecret and backupCodes. Attach to the instance instead.
+   */
+  describe('created-user response keeps credentials out', () => {
+    const buildUser = () => {
+      const user = new User();
+      user.id = 'user-1';
+      user.username = 'someone';
+      user.passwordHash = '$2b$12$notarealhashjustfortests';
+      user.mfaSecret = 'MFA-SECRET';
+      user.backupCodes = [{ code: 'abc123', used: false }];
+      return user;
+    };
+
+    it('drops @Exclude() fields when a User instance is serialized', () => {
+      const plain = instanceToPlain(buildUser());
+
+      expect(plain.passwordHash).toBeUndefined();
+      expect(plain.mfaSecret).toBeUndefined();
+      expect(plain.backupCodes).toBeUndefined();
+      expect(plain.username).toBe('someone');
+    });
+
+    it('exposes them once the entity is spread into a plain object', () => {
+      const plain = instanceToPlain({ ...buildUser() });
+
+      expect(plain.passwordHash).toBeDefined();
+      expect(plain.mfaSecret).toBeDefined();
+    });
+
+    it('stays an instance when the employee profile is attached', () => {
+      const employee = { id: 'emp-1' };
+
+      const result = Object.assign(buildUser(), { employee });
+      const plain = instanceToPlain(result);
+
+      expect(result).toBeInstanceOf(User);
+      expect(plain.passwordHash).toBeUndefined();
+      expect(plain.mfaSecret).toBeUndefined();
+      expect(plain.employee).toEqual(employee);
     });
   });
 });
