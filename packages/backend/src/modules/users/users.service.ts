@@ -379,7 +379,11 @@ export class UsersService {
 
       await queryRunner.commitTransaction();
 
-      return { ...savedUser, employee };
+      // Attach to the User instance rather than spreading into a plain object:
+      // ClassSerializerInterceptor strips @Exclude() fields (passwordHash,
+      // mfaSecret, backupCodes) only from class instances, and a spread copy
+      // loses that metadata, putting the credentials in the response.
+      return Object.assign(savedUser, { employee });
     } catch (error) {
       await queryRunner.rollbackTransaction();
       throw error;
