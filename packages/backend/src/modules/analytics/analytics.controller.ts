@@ -115,6 +115,19 @@ export class AnalyticsController {
     if (isNaN(start.getTime()) || isNaN(end.getTime())) {
       throw new BadRequestException('Invalid date format for startDate or endDate');
     }
+    // A date-only endDate parses to midnight, and the report filters on
+    // `created_at BETWEEN start AND end` — so ?startDate=X&endDate=X asked for a
+    // single instant and every figure came back zero. Extend a midnight bound to
+    // the end of that day so the range is inclusive, which is what a caller
+    // passing two calendar dates means.
+    if (
+      end.getUTCHours() === 0 &&
+      end.getUTCMinutes() === 0 &&
+      end.getUTCSeconds() === 0 &&
+      end.getUTCMilliseconds() === 0
+    ) {
+      end.setUTCHours(23, 59, 59, 999);
+    }
     return this.analyticsService.getSummaryReport(user.facilityId, start, end, user.tenantId);
   }
 

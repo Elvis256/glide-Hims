@@ -5,6 +5,8 @@ import { AdminRoute, ClinicalRoute, FinanceRoute, StoreKeeperRoute, AssetsRoute 
 
 const ReportsDashboardPage = lazy(() => import('../pages/reports/ReportsDashboardPage'));
 const PatientStatisticsReportPage = lazy(() => import('../pages/reports/PatientStatisticsReportPage'));
+const DailySummaryReportPage = lazy(() => import('../pages/reports/DailySummaryReportPage'));
+const QueuePerformanceReportPage = lazy(() => import('../pages/reports/QueuePerformanceReportPage'));
 const VisitReportsPage = lazy(() => import('../pages/reports/VisitReportsPage'));
 const DiseaseStatisticsPage = lazy(() => import('../pages/reports/DiseaseStatisticsPage'));
 const MortalityReportsPage = lazy(() => import('../pages/reports/MortalityReportsPage'));
@@ -22,6 +24,8 @@ export default function ReportRoutes() {
     <Routes>
 
       <Route index element={<ModuleRoute module="reports"><AdminRoute><ReportsDashboardPage /></AdminRoute></ModuleRoute>} />
+      <Route path="daily" element={<ModuleRoute module="reports"><ClinicalRoute><DailySummaryReportPage /></ClinicalRoute></ModuleRoute>} />
+      <Route path="queue" element={<ModuleRoute module="reports"><ClinicalRoute><QueuePerformanceReportPage /></ClinicalRoute></ModuleRoute>} />
       <Route path="patients" element={<ModuleRoute module="reports"><ClinicalRoute><PatientStatisticsReportPage /></ClinicalRoute></ModuleRoute>} />
       <Route path="visits" element={<ModuleRoute module="reports"><ClinicalRoute><VisitReportsPage /></ClinicalRoute></ModuleRoute>} />
       <Route path="diseases" element={<ModuleRoute module="reports"><ClinicalRoute><DiseaseStatisticsPage /></ClinicalRoute></ModuleRoute>} />
