@@ -39,3 +39,79 @@ export function hospitalTimeZone(): string {
 export function resetHospitalTimeZoneCache(): void {
   cached = undefined;
 }
+
+/** How far ahead of UTC `zone` is at a given instant, in milliseconds. */
+function zoneOffsetMs(instant: Date, zone: string): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: zone,
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).formatToParts(instant);
+
+  const at = (type: string) => Number(parts.find((p) => p.type === type)?.value);
+  const asUtc = Date.UTC(
+    at('year'),
+    at('month') - 1,
+    at('day'),
+    // Some environments render midnight as hour 24.
+    at('hour') % 24,
+    at('minute'),
+    at('second'),
+  );
+  // formatToParts resolves to whole seconds, so compare against the instant
+  // truncated the same way — otherwise the milliseconds of an end-of-day
+  // boundary leak into the offset and push it past midnight.
+  const wholeSeconds = Math.floor(instant.getTime() / 1000) * 1000;
+  return asUtc - wholeSeconds;
+}
+
+/**
+ * The instant at which a wall-clock time on `dateStr` occurs in `zone`.
+ *
+ * `new Date('2026-08-16')` is UTC midnight by specification, and setHours()
+ * then works in the *server's* zone — so a report window built that way is
+ * skewed by the offset, sweeping the small hours of the next local day into
+ * the range and dropping the same slice off the front.
+ */
+function wallClockToUtc(
+  dateStr: string,
+  h: number,
+  m: number,
+  s: number,
+  ms: number,
+  zone: string,
+): Date {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  if (!year || !month || !day) {
+    throw new Error(`Expected a YYYY-MM-DD date, got "${dateStr}"`);
+  }
+  const guess = Date.UTC(year, month - 1, day, h, m, s, ms);
+  // Resolve against the offset in force at the candidate instant, then settle
+  // once more so a boundary that lands inside a DST shift converges.
+  const firstPass = guess - zoneOffsetMs(new Date(guess), zone);
+  return new Date(guess - zoneOffsetMs(new Date(firstPass), zone));
+}
+
+/** First instant of `dateStr` as the hospital experiences it. */
+export function startOfDayUtc(dateStr: string, zone: string = hospitalTimeZone()): Date {
+  return wallClockToUtc(dateStr, 0, 0, 0, 0, zone);
+}
+
+/** Last instant of `dateStr` as the hospital experiences it. */
+export function endOfDayUtc(dateStr: string, zone: string = hospitalTimeZone()): Date {
+  return wallClockToUtc(dateStr, 23, 59, 59, 999, zone);
+}
+
+/** A given hour of `dateStr` in the hospital's zone — used for census snapshots. */
+export function hourOfDayUtc(
+  dateStr: string,
+  hour: number,
+  zone: string = hospitalTimeZone(),
+): Date {
+  return wallClockToUtc(dateStr, hour, 0, 0, 0, zone);
+}
