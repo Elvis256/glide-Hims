@@ -112,6 +112,7 @@ function createMockRepo(): Partial<Repository<any>> {
     find: jest.fn().mockResolvedValue([]) as any,
     count: jest.fn().mockResolvedValue(0) as any,
     update: jest.fn().mockResolvedValue(undefined) as any,
+    query: jest.fn().mockResolvedValue([]) as any,
     createQueryBuilder: jest.fn().mockReturnValue(qb) as any,
   };
 }
@@ -859,6 +860,106 @@ describe('IpdService', () => {
         totalBeds: 11,
         occupiedBeds: 4,
       });
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Bed-day invoicing after discharge must be recoverable, not fire-and-forget
+  // -----------------------------------------------------------------------
+  describe('generateDischargeInvoice', () => {
+    const BED_LINE = {
+      serviceCode: 'BED-G01',
+      description: 'General bed G01',
+      chargeType: 'bed',
+      quantity: 3,
+      unitPrice: 20000,
+      referenceType: 'admission',
+      referenceId: ADMISSION_ID,
+    };
+
+    /** Routes the two raw SQL statements the service issues. */
+    const wireQuery = (invoiceStatus?: string) => {
+      const updates: any[] = [];
+      (admissionRepo.query as jest.Mock).mockImplementation((sql: string, params: any[]) => {
+        if (/FROM invoices/i.test(sql)) {
+          return Promise.resolve(invoiceStatus ? [{ status: invoiceStatus }] : []);
+        }
+        updates.push(JSON.parse(params[0]));
+        return Promise.resolve(undefined);
+      });
+      return updates;
+    };
+
+    const discharged = (metadata: any = null) => ({
+      id: ADMISSION_ID,
+      admissionNumber: 'ADM202608160001',
+      status: AdmissionStatus.DISCHARGED,
+      patientId: PATIENT_ID,
+      encounterId: ENCOUNTER_ID,
+      metadata,
+    });
+
+    it('refuses an admission whose stay is still open', async () => {
+      (admissionRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...discharged(),
+        status: AdmissionStatus.ADMITTED,
+      });
+
+      await expect(
+        service.generateDischargeInvoice(ADMISSION_ID, USER_ID, TENANT_ID),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(billingService.createInvoice).not.toHaveBeenCalled();
+    });
+
+    it('returns the invoice already raised rather than billing the stay twice', async () => {
+      (admissionRepo.findOne as jest.Mock).mockResolvedValueOnce(
+        discharged({ inpatientInvoiceId: uuid('inv9') }),
+      );
+      wireQuery('pending');
+
+      const result = await service.generateDischargeInvoice(ADMISSION_ID, USER_ID, TENANT_ID);
+
+      expect(result).toBe(uuid('inv9'));
+      expect(billingService.createInvoice).not.toHaveBeenCalled();
+    });
+
+    it('raises a fresh invoice when the recorded one was cancelled', async () => {
+      (admissionRepo.findOne as jest.Mock).mockResolvedValueOnce(
+        discharged({ inpatientInvoiceId: uuid('inv9') }),
+      );
+      wireQuery('cancelled');
+      bedBoardService.computeBedDayCharges.mockResolvedValueOnce([BED_LINE]);
+
+      const result = await service.generateDischargeInvoice(ADMISSION_ID, USER_ID, TENANT_ID);
+
+      expect(billingService.createInvoice).toHaveBeenCalled();
+      expect(result).toBe(uuid('inv1'));
+    });
+
+    it('records the failure on the admission when invoicing throws', async () => {
+      (admissionRepo.findOne as jest.Mock).mockResolvedValueOnce(discharged());
+      const updates = wireQuery();
+      bedBoardService.computeBedDayCharges.mockResolvedValueOnce([BED_LINE]);
+      billingService.createInvoice.mockRejectedValueOnce(new Error('billing period locked'));
+
+      await expect(
+        service.generateDischargeInvoice(ADMISSION_ID, USER_ID, TENANT_ID),
+      ).rejects.toThrow('billing period locked');
+
+      expect(updates).toHaveLength(1);
+      expect(updates[0].inpatientBilling.status).toBe('failed');
+      expect(updates[0].inpatientBilling.error).toContain('billing period locked');
+    });
+
+    it('marks a stay with no chargeable line as settled, not as a failure', async () => {
+      (admissionRepo.findOne as jest.Mock).mockResolvedValueOnce(discharged());
+      const updates = wireQuery();
+      bedBoardService.computeBedDayCharges.mockResolvedValueOnce([]);
+
+      const result = await service.generateDischargeInvoice(ADMISSION_ID, USER_ID, TENANT_ID);
+
+      expect(result).toBeUndefined();
+      expect(updates[0].inpatientBilling.status).toBe('nothing_to_bill');
     });
   });
 
