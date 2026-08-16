@@ -23,7 +23,6 @@ import {
   EncounterType,
 } from '../../database/entities/encounter.entity';
 import { Patient } from '../../database/entities/patient.entity';
-import { PrescriptionItem } from '../../database/entities/prescription.entity';
 import {
   CreateWardDto,
   UpdateWardDto,
@@ -45,6 +44,7 @@ import { AuditLogService } from '../../common/interceptors/audit-log.service';
 import { VitalsService } from '../vitals/vitals.service';
 import { VitalSource } from '../../database/entities/vital.entity';
 import { requireTenantId } from '../../common/utils/tenant.util';
+import { hospitalTimeZone } from '../../common/utils/timezone.util';
 
 @Injectable()
 export class IpdService {
@@ -60,7 +60,6 @@ export class IpdService {
     @InjectRepository(BedTransfer) private transferRepo: Repository<BedTransfer>,
     @InjectRepository(Encounter) private encounterRepo: Repository<Encounter>,
     @InjectRepository(Patient) private patientRepo: Repository<Patient>,
-    @InjectRepository(PrescriptionItem) private prescriptionItemRepo: Repository<PrescriptionItem>,
     private dataSource: DataSource,
     @Inject(forwardRef(() => BillingService))
     private billingService: BillingService,
@@ -1072,6 +1071,80 @@ export class IpdService {
     return saved;
   }
 
+  /**
+   * Match a drug against a patient's documented allergies.
+   *
+   * patient.allergies is a free-text array a nurse types into, so entries read
+   * "Penicillin - rash" or "Allergic to penicillin" far more often than a bare
+   * "penicillin". Testing only whether the recorded allergy is a substring of
+   * the drug name misses every one of those — the entry is longer than the drug
+   * name, so it can never be contained in it — and the dose goes in unchallenged.
+   *
+   * Each recorded allergy is compared whole and word by word. A false match
+   * only asks the nurse for an override reason; a missed one gives the drug to
+   * someone allergic to it, so this deliberately leans towards matching.
+   *
+   * Returns the matching allergy entry, or null.
+   *
+   * NOTE: this is name matching, not drug-class knowledge. A penicillin allergy
+   * will not flag amoxicillin, which shares no substring with it. Catching that
+   * needs a drug-class map the catalogue does not carry yet.
+   */
+  private matchDocumentedAllergy(drugName: string, allergies: string[]): string | null {
+    const normalise = (value: unknown) =>
+      String(value ?? '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim();
+
+    // Words that describe a reaction rather than name a substance. Dropping
+    // them keeps "Penicillin - severe rash" from matching on "severe".
+    const REACTION_WORDS = new Set([
+      'allergic',
+      'allergy',
+      'allergies',
+      'reaction',
+      'severe',
+      'moderate',
+      'mild',
+      'rash',
+      'itching',
+      'hives',
+      'swelling',
+      'nausea',
+      'vomiting',
+      'anaphylaxis',
+      'unknown',
+      'none',
+      'nil',
+      'suspected',
+      'possible',
+    ]);
+
+    const drug = normalise(drugName);
+    if (!drug) return null;
+    const drugWords = drug.split(' ').filter((w) => w.length > 2);
+
+    for (const entry of allergies) {
+      const tag = normalise(entry);
+      if (!tag) continue;
+
+      // The recorded allergy appears verbatim in the drug name:
+      // "penicillin" against "Penicillin V".
+      if (tag.length > 2 && drug.includes(tag)) return String(entry);
+
+      // Otherwise compare the substance words of each side, so a note like
+      // "Penicillin - rash" still lines up with "Penicillin V".
+      const tagWords = tag.split(' ').filter((w) => w.length > 3 && !REACTION_WORDS.has(w));
+      const matched = tagWords.some((tw) =>
+        drugWords.some((dw) => dw.includes(tw) || tw.includes(dw)),
+      );
+      if (matched) return String(entry);
+    }
+
+    return null;
+  }
+
   async getMedicationSchedule(
     admissionId: string,
     date?: string,
@@ -1084,7 +1157,14 @@ export class IpdService {
     qb.andWhere('med.tenant_id = :tenantId', { tenantId: tid });
 
     if (date) {
-      qb.andWhere('DATE(med.scheduledTime) = :date', { date });
+      // Bucket by the ward's own day, not the server's. scheduled_time is
+      // timestamptz and Postgres runs on UTC, so a bare DATE() put every dose
+      // due between midnight and 03:00 in Kampala onto the previous day's
+      // chart — the night drug round simply was not on the sheet.
+      qb.andWhere('DATE(med.scheduledTime AT TIME ZONE :tz) = :date', {
+        tz: hospitalTimeZone(),
+        date,
+      });
     }
 
     return qb.orderBy('med.scheduledTime', 'ASC').getMany();
@@ -1119,13 +1199,7 @@ export class IpdService {
           relations: ['patient'],
         });
         const allergies = admission?.patient?.allergies || [];
-        const drug = med.drugName.toLowerCase();
-        const hit = allergies.find((a) => {
-          const tag = String(a || '')
-            .trim()
-            .toLowerCase();
-          return tag.length > 2 && drug.includes(tag);
-        });
+        const hit = this.matchDocumentedAllergy(med.drugName, allergies);
         if (hit && !dto.allergyOverrideReason) {
           throw new BadRequestException(
             `Patient has documented allergy to "${hit}". Provide allergyOverrideReason to proceed.`,
@@ -1135,24 +1209,35 @@ export class IpdService {
 
       const previousStatus = med.status;
       med.status = dto.status;
-      med.administeredById = userId;
-      med.administeredAt = new Date();
+      // administeredById/administeredAt mean "who gave this, and when". Setting
+      // them for a hold, refusal or miss makes the MAR read as though the drug
+      // went in — the chart then says both that it was refused and that a named
+      // nurse gave it at a stated time. Who recorded the refusal is still
+      // captured, by the audit log entry written below.
+      if (dto.status === MedicationStatus.ADMINISTERED) {
+        med.administeredById = userId;
+        med.administeredAt = new Date();
+      }
       if (dto.batchNumber) med.batchNumber = dto.batchNumber;
       if (dto.notes) med.notes = dto.notes;
       if (dto.reason) med.reason = dto.reason;
 
       const saved = await manager.save(med);
 
-      // C5: dose tracking — increment quantityDispensed on the linked Rx item
-      // so prescription remaining-count reflects what was actually given.
-      if (dto.status === MedicationStatus.ADMINISTERED && med.prescriptionItemId) {
-        await manager.increment(
-          PrescriptionItem,
-          { id: med.prescriptionItemId },
-          'quantityDispensed',
-          1,
-        );
-      }
+      // Administering a dose deliberately does NOT touch the prescription's
+      // quantityDispensed. That column counts UNITS the pharmacy has issued —
+      // prescriptions.service gates re-dispensing on
+      // `quantity - quantityDispensed` and calls the item fully dispensed once
+      // it is reached. Adding 1 per dose event wrote a different unit of
+      // measure into the same column: the pharmacy issues 20 tablets to the
+      // ward (quantityDispensed 20), the nurse gives 20 doses from that supply,
+      // and the column reaches 40 for a 20-unit prescription. Where pharmacy
+      // had issued only part of the course, the doses ate the remainder and
+      // the counter refused to release the rest with "Cannot dispense more
+      // than 0 units" — a patient's course stopped by their own drug round.
+      //
+      // Doses given are already recorded, one row per dose, on this very
+      // table: count medication_administrations with status ADMINISTERED.
 
       // C6: audit log (best-effort, never blocks the dose).
       this.auditLogService
