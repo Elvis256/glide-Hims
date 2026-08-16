@@ -544,30 +544,14 @@ export class IpdService {
     // AFTER the txn commits: BillingService + computeBedDayCharges use their
     // own connections — inside the txn they could not see the just-set
     // dischargeDate (wrong bed-day count) and a rollback would orphan the
-    // invoice. Failures are logged but don't undo the discharge (a clerk can
-    // re-run billing manually).
+    // invoice. A failure must not undo the discharge, but it must not vanish
+    // either: it is recorded on the admission so the ward can find it and
+    // retry via generateDischargeInvoice.
     let invoiceId: string | undefined;
     try {
-      const bedLines = await this.bedBoardService.computeBedDayCharges(saved.id, tenantId);
-      if (bedLines.length) {
-        const invoice = await this.billingService.createInvoice(
-          {
-            patientId: saved.patientId,
-            encounterId: saved.encounterId,
-            items: bedLines as any,
-          } as any,
-          userId,
-          tenantId,
-        );
-        invoiceId = invoice.id;
-        saved.metadata = {
-          ...(saved.metadata || {}),
-          inpatientInvoiceId: invoiceId,
-        };
-        await this.admissionRepo.save(saved);
-      }
+      invoiceId = await this.generateDischargeInvoice(saved.id, userId, tenantId);
     } catch (err: any) {
-      this.logger.warn(
+      this.logger.error(
         `Auto-bill on discharge failed for admission ${saved.admissionNumber}: ${err.message}`,
       );
     }
@@ -585,6 +569,137 @@ export class IpdService {
         relations: ['patient', 'ward', 'bed', 'encounter', 'attendingDoctor'],
       })) ?? saved
     );
+  }
+
+  /**
+   * Build (or rebuild) the bed-day invoice for a discharged admission.
+   *
+   * Discharge calls this straight after committing, and the ward can call it
+   * again through the API when that attempt failed. Returns the invoice id, or
+   * undefined when the stay produced no chargeable line at all (every bed on
+   * the stay unpriced, or the whole thing already covered by the first-night
+   * charge) — that is a legitimately zero bill, not a failure.
+   *
+   * Idempotent by design. A second call on an admission that already carries a
+   * live invoice returns that invoice instead of raising a second one, because
+   * computeBedDayCharges cannot tell its own previous output from the
+   * first-night charge — both are invoice_items with reference_type
+   * 'admission' and this admission's id — and so would happily price the whole
+   * stay again.
+   */
+  async generateDischargeInvoice(
+    admissionId: string,
+    userId: string,
+    tenantId?: string,
+  ): Promise<string | undefined> {
+    const tid = requireTenantId(tenantId);
+    const admission = await this.admissionRepo.findOne({
+      where: { id: admissionId, tenantId: tid },
+    });
+    if (!admission) throw new NotFoundException('Admission not found');
+    if (admission.status !== AdmissionStatus.DISCHARGED) {
+      throw new BadRequestException(
+        'Bed-day invoicing applies to discharged admissions; the stay is still open',
+      );
+    }
+
+    const existingId = admission.metadata?.inpatientInvoiceId;
+    if (existingId && (await this.invoiceStillStands(existingId, tid))) {
+      return existingId;
+    }
+
+    try {
+      const bedLines = await this.bedBoardService.computeBedDayCharges(admissionId, tenantId);
+      if (!bedLines.length) {
+        await this.recordBillingOutcome(admission, { status: 'nothing_to_bill' }, tid);
+        return undefined;
+      }
+
+      const invoice = await this.billingService.createInvoice(
+        {
+          patientId: admission.patientId,
+          encounterId: admission.encounterId,
+          items: bedLines as any,
+        } as any,
+        userId,
+        tenantId,
+      );
+
+      await this.recordBillingOutcome(
+        admission,
+        { status: 'invoiced', inpatientInvoiceId: invoice.id },
+        tid,
+      );
+      return invoice.id;
+    } catch (err: any) {
+      // Persist the failure before rethrowing. Without this the only trace is
+      // a log line, and a stay walks out of the ward unbilled with nothing in
+      // the system that knows it.
+      await this.recordBillingOutcome(
+        admission,
+        { status: 'failed', error: String(err?.message ?? err) },
+        tid,
+      ).catch(() => undefined);
+      throw err;
+    }
+  }
+
+  /** True when the recorded invoice still exists and still owes its money. */
+  private async invoiceStillStands(invoiceId: string, tid: string): Promise<boolean> {
+    const [row] = await this.admissionRepo.query(
+      `SELECT status FROM invoices WHERE id = $1 AND tenant_id = $2 LIMIT 1`,
+      [invoiceId, tid],
+    );
+    return Boolean(row) && !['cancelled', 'written_off'].includes(row.status);
+  }
+
+  /**
+   * Write the billing outcome onto the admission with a targeted jsonb merge.
+   * Saving the whole entity here would clobber anything the ward changed since
+   * discharge, and this runs outside the discharge transaction.
+   */
+  private async recordBillingOutcome(
+    admission: Admission,
+    outcome: { status: string; inpatientInvoiceId?: string; error?: string },
+    tid: string,
+  ): Promise<void> {
+    const patch: Record<string, any> = {
+      inpatientBilling: {
+        status: outcome.status,
+        at: new Date().toISOString(),
+        ...(outcome.error ? { error: outcome.error } : {}),
+      },
+    };
+    if (outcome.inpatientInvoiceId) patch.inpatientInvoiceId = outcome.inpatientInvoiceId;
+
+    await this.admissionRepo.query(
+      `UPDATE admissions
+          SET metadata = COALESCE(metadata, '{}'::jsonb) || $1::jsonb
+        WHERE id = $2 AND tenant_id = $3`,
+      [JSON.stringify(patch), admission.id, tid],
+    );
+  }
+
+  /**
+   * Discharged admissions whose bed-day invoice never got raised. This is the
+   * queue a billing clerk works: without it a failed auto-bill is invisible
+   * and the money is simply never collected.
+   */
+  async getUnbilledDischarges(tenantId?: string): Promise<Admission[]> {
+    const tid = requireTenantId(tenantId);
+    return this.admissionRepo
+      .createQueryBuilder('admission')
+      .leftJoinAndSelect('admission.patient', 'patient')
+      .leftJoinAndSelect('admission.ward', 'ward')
+      .where('admission.tenant_id = :tenantId', { tenantId: tid })
+      .andWhere('admission.status = :status', { status: AdmissionStatus.DISCHARGED })
+      .andWhere(`COALESCE(admission.metadata->>'inpatientInvoiceId', '') = ''`)
+      .andWhere(
+        `COALESCE(admission.metadata->'inpatientBilling'->>'status', '') <> 'nothing_to_bill'`,
+      )
+      .orderBy('admission.dischargeDate', 'DESC')
+      .take(200)
+      .getMany();
   }
 
   async transferBed(
