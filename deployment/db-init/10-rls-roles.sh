@@ -16,7 +16,19 @@ set -e
 : "${DB_RUNTIME_PASSWORD:?DB_RUNTIME_PASSWORD must be set for the RLS runtime role}"
 
 psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<SQL
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+-- uuid-ossp is best-effort. It needs a companion shared library that some
+-- Postgres builds omit, and with ON_ERROR_STOP a failure here would abort the
+-- script before the runtime role is created — losing role provisioning, this
+-- script's actual purpose, to a missing optional extension. The only function
+-- this project uses from it is uuid_generate_v4(), which the migration chain
+-- now provides for itself when the extension is unavailable.
+DO \$\$
+BEGIN
+  CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+EXCEPTION WHEN OTHERS THEN
+  RAISE NOTICE 'uuid-ossp unavailable (%); continuing, migrations supply uuid_generate_v4()', SQLERRM;
+END
+\$\$;
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 CREATE EXTENSION IF NOT EXISTS "pg_trgm";
 
