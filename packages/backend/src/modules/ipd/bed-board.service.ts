@@ -317,10 +317,32 @@ export class BedBoardService {
     }
     segments.push({ bed: curBed, ward: curWard, from: cursor, to: end });
 
-    return segments
-      .filter((s) => s.bed && s.to > s.from)
-      .map((s) => {
-        let days = Math.max(1, Math.ceil(this.hoursBetween(s.from, s.to) / 24));
+    const billable = segments.filter((s) => s.bed && s.to > s.from);
+
+    // Days are counted for the STAY and then split across the beds occupied,
+    // rather than rounded up per segment. Rounding each segment up made every
+    // transfer manufacture a billable day: admitted 08:00, moved to ICU at
+    // 14:00, moved back at 20:00, discharged 10:00 the next morning is 26
+    // hours, but billed as three full days — one of them at the ICU rate.
+    const segmentHours = billable.map((s) => Math.max(0, this.hoursBetween(s.from, s.to)));
+    const totalHours = segmentHours.reduce((sum, h) => sum + h, 0);
+    const totalDays = Math.max(1, Math.ceil(totalHours / 24));
+
+    // Apportion by time spent, largest-remainder so the parts sum to exactly
+    // totalDays and a stay costs the same whether or not the patient moved.
+    const exact = segmentHours.map((h) => (totalHours > 0 ? (h / totalHours) * totalDays : 0));
+    const dayPerSegment = exact.map(Math.floor);
+    const shortfall = totalDays - dayPerSegment.reduce((sum, d) => sum + d, 0);
+    const byRemainder = exact
+      .map((v, i) => ({ i, remainder: v - Math.floor(v) }))
+      .sort((a, b) => b.remainder - a.remainder);
+    for (let k = 0; k < shortfall && byRemainder.length > 0; k++) {
+      dayPerSegment[byRemainder[k % byRemainder.length].i] += 1;
+    }
+
+    return billable
+      .map((s, idx) => {
+        let days = dayPerSegment[idx];
         if (daysAlreadyBilled > 0) {
           const deduct = Math.min(days, daysAlreadyBilled);
           days -= deduct;
