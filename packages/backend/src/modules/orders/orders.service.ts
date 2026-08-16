@@ -179,7 +179,14 @@ export class OrdersService {
               unitPrice,
               chargeType,
               referenceType: 'order',
-              referenceId: savedOrder.id,
+              // invoice_items has a UNIQUE index on (reference_type,
+              // reference_id) and addBillableItem treats a repeat as a
+              // duplicate to skip. Every test on the order carried the bare
+              // order id, so a panel billed its first test and silently
+              // dropped the rest. The code makes each line distinct while
+              // still pointing back at the order, and keeps the value stable
+              // so a re-run is still recognised as the same line.
+              referenceId: `${savedOrder.id}#${testCode.code}`,
               serviceId: service?.id,
               labTestId,
             },
