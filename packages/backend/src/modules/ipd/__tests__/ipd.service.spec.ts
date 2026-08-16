@@ -382,9 +382,7 @@ describe('IpdService', () => {
       mgr.save.mockImplementation((entity: any) => Promise.resolve({ ...entity }));
 
       // post-txn reload returns the saved admission
-      (admissionRepo.findOne as jest.Mock).mockImplementation((opts: any) =>
-        Promise.resolve(null),
-      );
+      (admissionRepo.findOne as jest.Mock).mockImplementation((opts: any) => Promise.resolve(null));
 
       // bedBoardService returns no charge lines (simple case)
       bedBoardService.computeBedDayCharges.mockResolvedValue([]);
@@ -861,6 +859,58 @@ describe('IpdService', () => {
         totalBeds: 11,
         occupiedBeds: 4,
       });
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // updateBed must not destroy an active reservation
+  // -----------------------------------------------------------------------
+  describe('updateBed on a reserved bed', () => {
+    const reservationEnvelope = JSON.stringify({
+      reserved: {
+        until: '2026-08-16T18:00:00.000Z',
+        by: USER_ID,
+        reason: 'theatre list',
+      },
+    });
+
+    it('keeps the reservation when an unrelated field is edited', async () => {
+      (bedRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        id: BED_ID,
+        status: BedStatus.RESERVED,
+        notes: reservationEnvelope,
+        dailyRate: 20000,
+        tenantId: TENANT_ID,
+      });
+      (bedRepo.save as jest.Mock).mockImplementation((b) => Promise.resolve(b));
+
+      const result = await service.updateBed(BED_ID, { dailyRate: 25000 } as any, TENANT_ID);
+
+      expect(result.dailyRate).toBe(25000);
+      expect(JSON.parse(result.notes).reserved).toBeTruthy();
+    });
+
+    it('keeps the reservation when the notes themselves are edited', async () => {
+      // The reservation shares bed.notes with free-text ward notes, so a nurse
+      // annotating the bed would otherwise silently drop the hold — leaving it
+      // RESERVED with nothing to expire, i.e. a bed lost until freed by hand.
+      (bedRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        id: BED_ID,
+        status: BedStatus.RESERVED,
+        notes: reservationEnvelope,
+        tenantId: TENANT_ID,
+      });
+      (bedRepo.save as jest.Mock).mockImplementation((b) => Promise.resolve(b));
+
+      const result = await service.updateBed(
+        BED_ID,
+        { notes: 'side rail needs repair' } as any,
+        TENANT_ID,
+      );
+
+      const parsed = JSON.parse(result.notes);
+      expect(parsed.reserved).toBeTruthy();
+      expect(parsed.reserved.reason).toBe('theatre list');
     });
   });
 });
