@@ -1282,14 +1282,19 @@ export class IpdService {
       .andWhere('a.status = :status', { status: AdmissionStatus.ADMITTED })
       .getCount();
 
+    // "Today" is the ward's today. CURRENT_DATE is the server's, and Postgres
+    // runs on UTC: for the first three hours of every Kampala day the tile read
+    // yesterday's date, so admissions taken overnight were counted against the
+    // day before and the morning's figure started from the wrong number.
+    const tz = hospitalTimeZone();
     const todayAdmissions = await admissionQb
       .clone()
-      .andWhere('DATE(a.admissionDate) = CURRENT_DATE')
+      .andWhere('DATE(a.admissionDate AT TIME ZONE :tz) = DATE(NOW() AT TIME ZONE :tz)', { tz })
       .getCount();
 
     const todayDischarges = await admissionQb
       .clone()
-      .andWhere('DATE(a.dischargeDate) = CURRENT_DATE')
+      .andWhere('DATE(a.dischargeDate AT TIME ZONE :tz) = DATE(NOW() AT TIME ZONE :tz)', { tz })
       .andWhere('a.status = :status', { status: AdmissionStatus.DISCHARGED })
       .getCount();
 
