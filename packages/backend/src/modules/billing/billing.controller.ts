@@ -248,16 +248,16 @@ export class BillingController {
   @AuthWithPermissions('billing.read')
   @ApiOperation({ summary: 'Get daily revenue summary' })
   getDailyRevenue(@Query('date') date?: string, @Request() req?: any) {
-    let reportDate: Date;
-    if (date) {
-      reportDate = new Date(date);
-      if (Number.isNaN(reportDate.getTime())) {
-        throw new BadRequestException('date must be ISO format (YYYY-MM-DD)');
-      }
-    } else {
-      reportDate = new Date();
+    if (!date) {
+      return this.billingService.getDailyRevenue(new Date(), req?.user?.tenantId);
     }
-    return this.billingService.getDailyRevenue(reportDate, req?.user?.tenantId);
+    if (Number.isNaN(new Date(date).getTime())) {
+      throw new BadRequestException('date must be ISO format (YYYY-MM-DD)');
+    }
+    // Hand the calendar date over as written. Converting it here produces UTC
+    // midnight, which in a zone behind UTC is already the previous local day —
+    // the report would then cover a day the caller did not ask for.
+    return this.billingService.getDailyRevenue(date, req?.user?.tenantId);
   }
 
   @Get('revenue/dashboard')

@@ -107,6 +107,42 @@ export function endOfDayUtc(dateStr: string, zone: string = hospitalTimeZone()):
   return wallClockToUtc(dateStr, 23, 59, 59, 999, zone);
 }
 
+/** The calendar date an instant falls on where the hospital is, as YYYY-MM-DD. */
+export function localDateString(instant: Date, zone: string = hospitalTimeZone()): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: zone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(instant);
+  const at = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
+  return `${at('year')}-${at('month')}-${at('day')}`;
+}
+
+/**
+ * The instants bounding the hospital's day containing `value`.
+ *
+ * Accepts a bare YYYY-MM-DD (already a calendar date, used as-is) or an
+ * instant, whose *local* date is taken. Passing an instant through as a
+ * date string would use its UTC date, which after 21:00 local is tomorrow.
+ */
+export function dayBoundsUtc(
+  value: string | Date,
+  zone: string = hospitalTimeZone(),
+): { start: Date; end: Date } {
+  let dateStr: string;
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    dateStr = value;
+  } else {
+    const instant = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(instant.getTime())) {
+      throw new Error(`Not a usable date: "${String(value)}"`);
+    }
+    dateStr = localDateString(instant, zone);
+  }
+  return { start: startOfDayUtc(dateStr, zone), end: endOfDayUtc(dateStr, zone) };
+}
+
 /** A given hour of `dateStr` in the hospital's zone — used for census snapshots. */
 export function hourOfDayUtc(
   dateStr: string,

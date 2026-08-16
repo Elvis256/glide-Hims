@@ -4,6 +4,8 @@ import {
   startOfDayUtc,
   endOfDayUtc,
   hourOfDayUtc,
+  dayBoundsUtc,
+  localDateString,
 } from '../timezone.util';
 
 describe('hospitalTimeZone', () => {
@@ -75,5 +77,44 @@ describe('day boundaries in the hospital zone', () => {
 
   it('rejects a malformed date rather than silently returning an epoch', () => {
     expect(() => startOfDayUtc('16/08/2026')).toThrow(/YYYY-MM-DD/);
+  });
+});
+
+describe('dayBoundsUtc', () => {
+  beforeEach(() => {
+    resetHospitalTimeZoneCache();
+    delete process.env.HOSPITAL_TIMEZONE;
+  });
+
+  it('takes a bare date at face value', () => {
+    const { start, end } = dayBoundsUtc('2026-08-16');
+    expect(start.toISOString()).toBe('2026-08-15T21:00:00.000Z');
+    expect(end.toISOString()).toBe('2026-08-16T20:59:59.999Z');
+  });
+
+  it("uses an instant's local date, not its UTC date", () => {
+    // 22:30 UTC on the 16th is already 01:30 on the 17th in Kampala, so this
+    // payment belongs to the 17th's takings.
+    const { start, end } = dayBoundsUtc(new Date('2026-08-16T22:30:00Z'));
+    expect(localDateString(new Date('2026-08-16T22:30:00Z'))).toBe('2026-08-17');
+    expect(start.toISOString()).toBe('2026-08-16T21:00:00.000Z');
+    expect(end.toISOString()).toBe('2026-08-17T20:59:59.999Z');
+  });
+
+  it('brackets an instant it was derived from', () => {
+    const paidAt = new Date('2026-08-16T05:00:00Z'); // 08:00 in Kampala
+    const { start, end } = dayBoundsUtc(paidAt);
+    expect(paidAt >= start && paidAt <= end).toBe(true);
+  });
+
+  it('keeps takings from the first hours of the local day inside that day', () => {
+    // 00:30 on the 16th in Kampala — the case a UTC-midnight window drops.
+    const paidAt = new Date('2026-08-15T21:30:00Z');
+    const { start, end } = dayBoundsUtc('2026-08-16');
+    expect(paidAt >= start && paidAt <= end).toBe(true);
+  });
+
+  it('refuses an unusable value instead of bracketing the epoch', () => {
+    expect(() => dayBoundsUtc('not-a-date')).toThrow(/Not a usable date/);
   });
 });
