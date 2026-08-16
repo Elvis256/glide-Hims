@@ -25,6 +25,7 @@ import {
   Loader2,
   X,
   Pencil,
+  AlertTriangle,
 } from 'lucide-react';
 import { formatCurrency } from '../../lib/currency';
 import api, { getApiErrorMessage } from '../../services/api';
@@ -54,6 +55,11 @@ interface Admission {
   };
   attendingDoctor?: {
     fullName: string;
+  };
+  dischargeDate?: string;
+  metadata?: {
+    inpatientInvoiceId?: string;
+    inpatientBilling?: { status: string; at?: string; error?: string };
   };
 }
 
@@ -263,6 +269,37 @@ export default function InpatientBillingPage() {
     },
   });
 
+  /**
+   * Discharged stays whose bed-day invoice never got raised.
+   *
+   * The list above is scoped to status 'admitted', so a discharge whose
+   * auto-billing failed disappears from this page entirely — the patient is
+   * gone and nothing on screen says the stay was never billed. This is the
+   * queue that surfaces them.
+   */
+  const { data: unbilledDischarges = [] } = useQuery({
+    queryKey: ['unbilled-discharges'],
+    queryFn: async () => {
+      const res = await api.get('/ipd/unbilled-discharges');
+      return (res.data?.data || res.data || []) as Admission[];
+    },
+  });
+
+  const raiseInvoiceMutation = useMutation({
+    mutationFn: async (admissionId: string) => {
+      // Idempotent server-side: an admission already carrying a live invoice
+      // returns it rather than billing the stay a second time.
+      const res = await api.post(`/ipd/admissions/${admissionId}/generate-invoice`);
+      return (res.data?.data || res.data) as { invoiceId: string | null };
+    },
+    onSuccess: ({ invoiceId }) => {
+      queryClient.invalidateQueries({ queryKey: ['unbilled-discharges'] });
+      queryClient.invalidateQueries({ queryKey: ['patient-invoices'] });
+      toast.success(invoiceId ? 'Invoice raised' : 'Stay had nothing chargeable');
+    },
+    onError: (err) => toast.error(getApiErrorMessage(err, 'Could not raise the invoice')),
+  });
+
   // Fetch invoices for selected patient. The endpoint returns {data, total} —
   // treating it as a bare array crashed every useMemo below. Scoped to this
   // ADMISSION (invoices raised since admission) so totals don't drag in the
@@ -389,6 +426,52 @@ export default function InpatientBillingPage() {
           <span className="text-blue-700 font-medium">{admissions.length} Active Inpatients</span>
         </div>
       </div>
+
+      {/* Discharged stays that were never billed. Hidden entirely when the
+          queue is empty so it reads as an exception, not a standing panel. */}
+      {unbilledDischarges.length > 0 && (
+        <div className="mb-6 bg-amber-50 border border-amber-300 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <AlertTriangle className="w-5 h-5 text-amber-600" />
+            <h2 className="font-semibold text-amber-900">
+              {unbilledDischarges.length} discharged{' '}
+              {unbilledDischarges.length === 1 ? 'stay has' : 'stays have'} no bed-day invoice
+            </h2>
+          </div>
+          <div className="space-y-2 max-h-56 overflow-y-auto">
+            {unbilledDischarges.map((adm) => {
+              const failure = adm.metadata?.inpatientBilling;
+              return (
+                <div
+                  key={adm.id}
+                  className="flex items-center justify-between gap-4 bg-white border border-amber-200 rounded-lg px-3 py-2"
+                >
+                  <div className="min-w-0">
+                    <p className="font-medium text-gray-900 truncate">
+                      {adm.patient?.fullName || 'Unknown patient'}
+                      <span className="ml-2 text-sm text-gray-500">{adm.admissionNumber}</span>
+                    </p>
+                    <p className="text-sm text-gray-500 truncate">
+                      Discharged{' '}
+                      {adm.dischargeDate ? new Date(adm.dischargeDate).toLocaleDateString() : '—'}
+                      {failure?.status === 'failed' && (
+                        <span className="text-red-600"> · billing failed: {failure.error}</span>
+                      )}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => raiseInvoiceMutation.mutate(adm.id)}
+                    disabled={raiseInvoiceMutation.isPending}
+                    className="shrink-0 px-3 py-1.5 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50"
+                  >
+                    Raise invoice
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Main Content */}
       <div className="flex-1 flex gap-6 overflow-hidden">
