@@ -213,46 +213,39 @@ export class IpdService {
     // with free-text notes. Assigning dto.notes over it drops the hold while
     // leaving the bed RESERVED — nothing is left for the expiry sweep to parse,
     // so the bed stays held until someone releases it by hand.
-    const reservation = this.parseBedReservation(bed.notes);
+    const { reservation, note } = this.parseBedNotes(bed.notes);
     Object.assign(bed, dto);
-    if (reservation && dto.notes !== undefined && bed.status === BedStatus.RESERVED) {
-      bed.notes = JSON.stringify({ reserved: reservation, note: dto.notes });
+    if (reservation) {
+      if (bed.status === BedStatus.RESERVED) {
+        if (dto.notes !== undefined) {
+          bed.notes = JSON.stringify({ reserved: reservation, note: dto.notes });
+        }
+      } else {
+        // Left RESERVED by this edit: the hold is over, so the envelope goes
+        // with it, keeping any free text. Leaving it behind strands
+        // machine-readable JSON in a field the ward screen prints verbatim.
+        bed.notes = dto.notes !== undefined ? dto.notes : note;
+      }
     }
     return this.bedRepo.save(bed);
   }
 
-  private parseBedReservation(notes?: string): Record<string, unknown> | null {
-    if (!notes) return null;
+  /** Splits bed.notes into the reservation envelope and the free text beside it. */
+  private parseBedNotes(notes?: string): {
+    reservation: Record<string, unknown> | null;
+    note: string;
+  } {
+    if (!notes) return { reservation: null, note: '' };
     try {
-      return JSON.parse(notes)?.reserved ?? null;
+      const parsed = JSON.parse(notes);
+      return {
+        reservation: parsed?.reserved ?? null,
+        note: typeof parsed?.note === 'string' ? parsed.note : '',
+      };
     } catch {
-      return null;
+      // Plain free text, not an envelope.
+      return { reservation: null, note: notes };
     }
-  }
-
-  async markBedAvailable(id: string, tenantId?: string): Promise<Bed> {
-    const tid = requireTenantId(tenantId);
-    const bed = await this.bedRepo.findOne({
-      where: { id, tenantId: tid },
-      relations: ['ward'],
-    });
-    if (!bed) throw new NotFoundException('Bed not found');
-    if (bed.status !== BedStatus.CLEANING) {
-      throw new BadRequestException(
-        `Bed can only be marked available from 'cleaning' status, current status is '${bed.status}'`,
-      );
-    }
-
-    bed.status = BedStatus.AVAILABLE;
-    const saved = await this.bedRepo.save(bed);
-
-    // Update ward bed counts
-    if (bed.wardId) {
-      await this.updateWardBedCount(bed.wardId, tenantId);
-    }
-
-    this.logger.log(`Bed ${bed.bedNumber} marked as available after cleaning`);
-    return saved;
   }
 
   private async updateWardBedCount(wardId: string, tenantId?: string): Promise<void> {
@@ -304,7 +297,11 @@ export class IpdService {
 
       if (!bed) throw new NotFoundException('Bed not found');
       if (bed.status !== BedStatus.AVAILABLE) throw new BadRequestException('Bed is not available');
-      if (bed.wardId && bed.wardId !== dto.wardId) {
+      // A bed with no ward of its own used to skip this check and be admitted
+      // into whichever ward the caller named. The admission then claims a ward
+      // the bed is not in: it counts against that ward's occupancy, while the
+      // bed board — which reaches beds through their ward — never shows it.
+      if (bed.wardId !== dto.wardId) {
         throw new BadRequestException('Selected bed does not belong to the selected ward');
       }
 
@@ -740,7 +737,7 @@ export class IpdService {
       if (!newBed) throw new NotFoundException('New bed not found');
       if (newBed.status !== BedStatus.AVAILABLE)
         throw new BadRequestException('New bed is not available');
-      if (newBed.wardId && newBed.wardId !== dto.toWardId) {
+      if (newBed.wardId !== dto.toWardId) {
         throw new BadRequestException('Selected bed does not belong to the selected ward');
       }
 

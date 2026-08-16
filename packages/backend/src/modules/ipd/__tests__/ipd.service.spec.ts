@@ -531,56 +531,99 @@ describe('IpdService', () => {
         service.transferBed(ADMISSION_ID, dto as any, USER_ID, TENANT_ID),
       ).rejects.toThrow(BadRequestException);
     });
+
+    it('refuses a bed that belongs to no ward at all', async () => {
+      // A ward-less bed used to pass the consistency check and be transferred
+      // into whichever ward the caller named.
+      const { mgr, qbChain } = createMockManager();
+
+      qbChain.getOne
+        .mockResolvedValueOnce({
+          id: ADMISSION_ID,
+          status: AdmissionStatus.ADMITTED,
+          bedId: BED_ID,
+          wardId: WARD_ID,
+        })
+        .mockResolvedValueOnce({
+          id: BED_ID_2,
+          status: BedStatus.AVAILABLE,
+          wardId: null,
+        });
+
+      dataSource.transaction.mockImplementation((cb: any) => cb(mgr));
+
+      await expect(
+        service.transferBed(
+          ADMISSION_ID,
+          { toWardId: WARD_ID_2, toBedId: BED_ID_2, reason: TransferReason.CLINICAL } as any,
+          USER_ID,
+          TENANT_ID,
+        ),
+      ).rejects.toThrow(/does not belong to the selected ward/);
+    });
   });
 
   // -----------------------------------------------------------------------
-  // 8. Bed management — markBedAvailable
+  // 8. Bed management — freeing a bed goes through updateBed, which is what
+  //    the ward screen's "Mark as Available" button actually calls.
   // -----------------------------------------------------------------------
-  describe('markBedAvailable', () => {
-    it('should mark a CLEANING bed as AVAILABLE and update ward counts', async () => {
-      const bed = {
+  describe('updateBed status transitions', () => {
+    it('frees a bed that has finished cleaning', async () => {
+      (bedRepo.findOne as jest.Mock).mockResolvedValueOnce({
         id: BED_ID,
         bedNumber: 'A01',
         status: BedStatus.CLEANING,
         wardId: WARD_ID,
         tenantId: TENANT_ID,
-      };
-
-      (bedRepo.findOne as jest.Mock).mockResolvedValueOnce(bed);
+      });
       (bedRepo.save as jest.Mock).mockImplementation((b: any) => Promise.resolve({ ...b }));
-      (bedRepo.count as jest.Mock)
-        .mockResolvedValueOnce(10) // totalBeds
-        .mockResolvedValueOnce(3); // occupiedBeds
 
-      const result = await service.markBedAvailable(BED_ID, TENANT_ID);
+      const result = await service.updateBed(
+        BED_ID,
+        { status: BedStatus.AVAILABLE } as any,
+        TENANT_ID,
+      );
 
       expect(result.status).toBe(BedStatus.AVAILABLE);
-      expect(wardRepo.update).toHaveBeenCalledWith(WARD_ID, {
-        totalBeds: 10,
-        occupiedBeds: 3,
-      });
     });
 
-    it('should throw BadRequestException when bed is not in CLEANING status', async () => {
+    it('frees a bed coming back from maintenance', async () => {
+      (bedRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        id: BED_ID,
+        status: BedStatus.MAINTENANCE,
+        wardId: WARD_ID,
+        tenantId: TENANT_ID,
+      });
+      (bedRepo.save as jest.Mock).mockImplementation((b: any) => Promise.resolve({ ...b }));
+
+      const result = await service.updateBed(
+        BED_ID,
+        { status: BedStatus.AVAILABLE } as any,
+        TENANT_ID,
+      );
+
+      expect(result.status).toBe(BedStatus.AVAILABLE);
+    });
+
+    it('refuses to flip occupancy directly, which only admission and discharge may set', async () => {
       (bedRepo.findOne as jest.Mock).mockResolvedValue({
         id: BED_ID,
         status: BedStatus.OCCUPIED,
         wardId: WARD_ID,
+        tenantId: TENANT_ID,
       });
 
-      await expect(service.markBedAvailable(BED_ID, TENANT_ID)).rejects.toThrow(
-        BadRequestException,
-      );
-
-      await expect(service.markBedAvailable(BED_ID, TENANT_ID)).rejects.toThrow(/cleaning/);
+      await expect(
+        service.updateBed(BED_ID, { status: BedStatus.AVAILABLE } as any, TENANT_ID),
+      ).rejects.toThrow(BadRequestException);
     });
 
-    it('should throw NotFoundException when bed does not exist', async () => {
+    it('throws NotFoundException when the bed does not exist', async () => {
       (bedRepo.findOne as jest.Mock).mockResolvedValueOnce(null);
 
-      await expect(service.markBedAvailable(uuid('nope'), TENANT_ID)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(
+        service.updateBed(uuid('nope'), { status: BedStatus.AVAILABLE } as any, TENANT_ID),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 
@@ -989,6 +1032,27 @@ describe('IpdService', () => {
 
       expect(result.dailyRate).toBe(25000);
       expect(JSON.parse(result.notes).reserved).toBeTruthy();
+    });
+
+    it('drops the envelope when the edit takes the bed out of RESERVED', async () => {
+      // The ward screen prints bed.notes verbatim, so a leftover envelope
+      // shows the nurse raw JSON where the bed's note should be.
+      (bedRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        id: BED_ID,
+        status: BedStatus.RESERVED,
+        notes: JSON.stringify({ reserved: { until: 'x', by: USER_ID }, note: 'window side' }),
+        tenantId: TENANT_ID,
+      });
+      (bedRepo.save as jest.Mock).mockImplementation((b) => Promise.resolve(b));
+
+      const result = await service.updateBed(
+        BED_ID,
+        { status: BedStatus.AVAILABLE } as any,
+        TENANT_ID,
+      );
+
+      expect(result.notes).toBe('window side');
+      expect(result.notes).not.toContain('reserved');
     });
 
     it('keeps the reservation when the notes themselves are edited', async () => {
