@@ -40,6 +40,26 @@ export function resetHospitalTimeZoneCache(): void {
   cached = undefined;
 }
 
+/** IANA zone names are letters, digits, underscore, plus, minus and slashes. */
+const IANA_NAME = /^[A-Za-z0-9_+-]+(?:\/[A-Za-z0-9_+-]+)*$/;
+
+/**
+ * The hospital zone, checked to be safe to embed in SQL.
+ *
+ * Some period boundaries are far clearer written as
+ * `date_trunc('month', NOW() AT TIME ZONE z) AT TIME ZONE z` than assembled in
+ * JavaScript, and a placeholder cannot be used in every position. The value is
+ * config, never user input, but it is asserted to be a plain zone name so the
+ * safety of embedding it does not rest on that alone.
+ */
+export function sqlSafeTimeZone(): string {
+  const zone = hospitalTimeZone();
+  if (!IANA_NAME.test(zone)) {
+    throw new Error(`Refusing to use "${zone}" in SQL: not a plain IANA timezone name`);
+  }
+  return zone;
+}
+
 /** How far ahead of UTC `zone` is at a given instant, in milliseconds. */
 function zoneOffsetMs(instant: Date, zone: string): number {
   const parts = new Intl.DateTimeFormat('en-US', {
