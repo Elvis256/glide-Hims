@@ -15,6 +15,7 @@ import { LabTest } from '../../database/entities/lab-test.entity';
 import { LabSample } from '../../database/entities/lab-sample.entity';
 import { LabResult, ResultStatus } from '../../database/entities/lab-result.entity';
 import { CreateOrderDto, UpdateOrderStatusDto } from './dto/orders.dto';
+import { StateMachine } from '../../common/fsm/state-machine';
 import { BillingService } from '../billing/billing.service';
 import {
   ImagingOrder,
@@ -399,6 +400,15 @@ export class OrdersService {
     });
   }
 
+  // Order status FSM. COMPLETED and CANCELLED are terminal: an order that has
+  // been finished or called off is not put back into a queue, it is reordered.
+  private static readonly statusFsm = new StateMachine<OrderStatus>({
+    [OrderStatus.PENDING]: [OrderStatus.IN_PROGRESS, OrderStatus.COMPLETED, OrderStatus.CANCELLED],
+    [OrderStatus.IN_PROGRESS]: [OrderStatus.COMPLETED, OrderStatus.CANCELLED],
+    [OrderStatus.COMPLETED]: [],
+    [OrderStatus.CANCELLED]: [],
+  });
+
   async updateStatus(
     id: string,
     dto: UpdateOrderStatusDto,
@@ -411,9 +421,20 @@ export class OrdersService {
     const updateData: Partial<Order> = {};
 
     if (dto.status) {
+      // This path used to accept any status at all, while completeOrder and
+      // cancelOrder each enforced their own rules — so it was the way round
+      // all of them: a cancelled order could be marked completed, a completed
+      // one pushed back to pending, and an order whose samples were already in
+      // the lab cancelled without the check that forbids exactly that.
+      OrdersService.statusFsm.validate(order.status as OrderStatus, dto.status);
+
       // Guard: lab orders cannot be completed without released results
       if (dto.status === OrderStatus.COMPLETED && order.orderType === OrderType.LAB) {
         await this.assertLabResultsReleased(id, tenantId);
+      }
+
+      if (dto.status === OrderStatus.CANCELLED) {
+        await this.assertNoSamplesCollected(id, tenantId);
       }
 
       updateData.status = dto.status;
@@ -464,6 +485,21 @@ export class OrdersService {
     return this.orderRepository.save(order);
   }
 
+  /**
+   * Once a sample is in the lab, cancelling the order leaves the specimen with
+   * nothing to belong to. The lab has to dispose of it and say so.
+   */
+  private async assertNoSamplesCollected(orderId: string, tenantId?: string): Promise<void> {
+    const collectedSamples = await this.labSampleRepository.count({
+      where: { orderId, tenantId: requireTenantId(tenantId) },
+    });
+    if (collectedSamples > 0) {
+      throw new BadRequestException(
+        'Cannot cancel order: samples have already been collected. Request lab to handle.',
+      );
+    }
+  }
+
   async completeOrder(
     id: string,
     resultData: any,
@@ -475,6 +511,10 @@ export class OrdersService {
     if (order.status === OrderStatus.COMPLETED) {
       throw new BadRequestException('Order is already completed');
     }
+    // A cancelled order was refused here only by accident: a cancelled LAB
+    // order has no samples, so the results check below rejected it. Radiology
+    // and procedure orders skip that check and were completed after cancelling.
+    OrdersService.statusFsm.validate(order.status as OrderStatus, OrderStatus.COMPLETED);
 
     // Guard: lab orders cannot be completed without released results
     if (order.orderType === OrderType.LAB) {
@@ -526,16 +566,11 @@ export class OrdersService {
     if (order.status === OrderStatus.COMPLETED) {
       throw new BadRequestException('Cannot cancel completed order');
     }
+    OrdersService.statusFsm.validate(order.status as OrderStatus, OrderStatus.CANCELLED);
 
-    // Prevent cancellation if samples have been collected
-    const collectedSamples = await this.labSampleRepository.count({
-      where: { orderId: id },
-    });
-    if (collectedSamples > 0) {
-      throw new BadRequestException(
-        'Cannot cancel order: samples have already been collected. Request lab to handle.',
-      );
-    }
+    // Prevent cancellation if samples have been collected. The count was not
+    // scoped to the tenant here, leaving it to row-level security alone.
+    await this.assertNoSamplesCollected(id, tenantId);
 
     const oldStatus = order.status;
     order.status = OrderStatus.CANCELLED;
