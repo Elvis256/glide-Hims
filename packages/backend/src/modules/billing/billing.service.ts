@@ -35,6 +35,7 @@ import { InsurancePolicy, PolicyStatus } from '../../database/entities/insurance
 import { MembershipScheme, PatientMembership } from '../../database/entities/membership.entity';
 import { multiply, add, subtract, divide, roundCurrency } from '../../common/utils/currency';
 import { requireTenantId } from '../../common/utils/tenant.util';
+import { dayBoundsUtc } from '../../common/utils/timezone.util';
 
 @Injectable()
 export class BillingService {
@@ -149,7 +150,6 @@ export class BillingService {
         throw new BadRequestException('Due date cannot be in the past');
       }
     }
-
 
     // Insurance pre-authorization enforcement
     if (dto.insurancePolicyId) {
@@ -1307,16 +1307,20 @@ export class BillingService {
       qb.andWhere('invoice.tenant_id = :tenantId', { tenantId });
     }
 
+    // Day edges in the hospital's zone. new Date('2026-08-16') is UTC midnight
+    // and setHours() then works in the server's zone, so the window ran 03:00
+    // to 03:00 in Kampala: the first three hours of a day's takings fell out of
+    // that day and the next day's early payments were counted into it.
     if (params.startDate) {
-      const startDate = new Date(params.startDate);
-      startDate.setHours(0, 0, 0, 0);
-      qb.andWhere('payment.paid_at >= :startDate', { startDate });
+      qb.andWhere('payment.paid_at >= :startDate', {
+        startDate: dayBoundsUtc(params.startDate).start,
+      });
     }
 
     if (params.endDate) {
-      const endDate = new Date(params.endDate);
-      endDate.setHours(23, 59, 59, 999);
-      qb.andWhere('payment.paid_at <= :endDate', { endDate });
+      qb.andWhere('payment.paid_at <= :endDate', {
+        endDate: dayBoundsUtc(params.endDate).end,
+      });
     }
 
     if (params.method) {
@@ -1698,7 +1702,7 @@ export class BillingService {
   }
 
   async getDailyRevenue(
-    date: Date = new Date(),
+    date: Date | string = new Date(),
     tenantId?: string,
   ): Promise<{
     totalCollected: number;
@@ -1711,10 +1715,10 @@ export class BillingService {
     paymentCount: number;
     byMethod: Record<string, number>;
   }> {
-    const startOfDay = new Date(date);
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(date);
-    endOfDay.setHours(23, 59, 59, 999);
+    // The day's takings, bounded by the hospital's day. On the server clock
+    // this ran 03:00 to 03:00 local, so the cash counted at close excluded the
+    // first three hours of the day and included three hours of the next.
+    const { start: startOfDay, end: endOfDay } = dayBoundsUtc(date);
 
     const qb = this.paymentRepository
       .createQueryBuilder('payment')
@@ -2564,9 +2568,11 @@ export class BillingService {
         periodDays = 30;
     }
 
-    const startDate = new Date(now);
-    startDate.setDate(startDate.getDate() - periodDays);
-    startDate.setHours(0, 0, 0, 0);
+    const periodAnchor = new Date(now);
+    periodAnchor.setDate(periodAnchor.getDate() - periodDays);
+    // Start at the hospital's midnight, so the comparison window covers whole
+    // local days rather than starting at 03:00 local.
+    const startDate = dayBoundsUtc(periodAnchor).start;
 
     const previousStart = new Date(startDate);
     previousStart.setDate(previousStart.getDate() - periodDays);
@@ -2722,10 +2728,9 @@ export class BillingService {
     for (let i = 6; i >= 0; i--) {
       const day = new Date(now);
       day.setDate(day.getDate() - i);
-      const dayStart = new Date(day);
-      dayStart.setHours(0, 0, 0, 0);
-      const dayEnd = new Date(day);
-      dayEnd.setHours(23, 59, 59, 999);
+      // Each bucket is a hospital day, so a payment taken at 01:00 local counts
+      // on the day the ward and the cashier call it.
+      const { start: dayStart, end: dayEnd } = dayBoundsUtc(day);
 
       const dayPayments = currentPayments.filter((p) => {
         const paidAt = new Date(p.paidAt);
