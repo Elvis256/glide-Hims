@@ -2364,8 +2364,12 @@ export class BillingService {
         }),
       );
 
-      // Recalculate invoice totals
-      await this.recalculateInvoice(invoice.id, tenantId);
+      // Recalculate invoice totals on THIS transaction's manager. The
+      // standalone recalculateInvoice opens a transaction of its own and takes
+      // pessimistic_write on the invoice — the row this transaction is already
+      // holding — so calling it here deadlocked against ourselves on every
+      // billable item, and the request never returned.
+      await this.recalculateInvoiceInTxn(manager, invoice.id, tenantId);
 
       // P1: Audit log for billable item additions
       this.auditLogService
