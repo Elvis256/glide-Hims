@@ -6,6 +6,10 @@ import { Bed, BedStatus } from '../../database/entities/bed.entity';
 import { Admission, AdmissionStatus } from '../../database/entities/admission.entity';
 import { BedTransfer } from '../../database/entities/bed-transfer.entity';
 import { requireTenantId } from '../../common/utils/tenant.util';
+import { startOfDayUtc, endOfDayUtc, hourOfDayUtc } from '../../common/utils/timezone.util';
+
+/** A census sweeps every admission per day in memory; keep the window sane. */
+const MAX_CENSUS_DAYS = 366;
 
 /**
  * Bed-board, census, and short-term reservations.
@@ -116,9 +120,21 @@ export class BedBoardService {
    */
   async getCensus(facilityId: string, dateFrom: string, dateTo: string, tenantId?: string) {
     const tid = requireTenantId(tenantId);
-    const start = new Date(dateFrom);
-    const end = new Date(dateTo);
-    end.setHours(23, 59, 59, 999);
+    // Window edges in the hospital's own day, not the server's. new Date('…')
+    // on a bare date is UTC midnight and setHours() then works in the server
+    // zone, which slid the whole window by the offset — a discharge at 01:00
+    // Kampala counted against the previous day's census.
+    const start = startOfDayUtc(dateFrom);
+    const end = endOfDayUtc(dateTo);
+    if (end < start) {
+      throw new BadRequestException('dateTo cannot be before dateFrom');
+    }
+    const dayCount = Math.round((end.getTime() - start.getTime()) / 86400000);
+    if (dayCount > MAX_CENSUS_DAYS) {
+      throw new BadRequestException(
+        `Census window is limited to ${MAX_CENSUS_DAYS} days; asked for ${dayCount}`,
+      );
+    }
 
     const wards = await this.wardRepo.find({
       where: {
@@ -126,6 +142,24 @@ export class BedBoardService {
         tenantId: tid,
       },
     });
+    // Admissions carry a wardId, so the facility is expressed through its
+    // wards. Without this the counts below were tenant-wide while totalBeds
+    // was facility-scoped: every other facility's inpatients divided by this
+    // facility's beds, which reports occupancy above 100%.
+    const wardIds = wards.map((w) => w.id);
+    if (!wardIds.length) {
+      return {
+        window: { from: dateFrom, to: dateTo },
+        totalBeds: 0,
+        wardCount: 0,
+        discharges: 0,
+        alosDays: 0,
+        avgDailyCensus: 0,
+        avgOccupancyPct: 0,
+        bedTurnover: 0,
+        daily: [],
+      };
+    }
     const totalBeds = await this.bedRepo.count({
       where: {
         ward: { facilityId, tenantId: tid } as any,
@@ -142,6 +176,7 @@ export class BedBoardService {
           AdmissionStatus.ABSCONDED,
         ]),
         dischargeDate: Between(start, end),
+        wardId: In(wardIds),
         tenantId: tid,
       },
       select: ['id', 'admissionDate', 'dischargeDate', 'wardId'],
@@ -161,11 +196,13 @@ export class BedBoardService {
         {
           admissionDate: Between(new Date(0), end) as any,
           dischargeDate: IsNull() as any,
+          wardId: In(wardIds),
           tenantId: tid,
         },
         {
           admissionDate: Between(new Date(0), end) as any,
           dischargeDate: Between(start, new Date('9999-12-31')) as any,
+          wardId: In(wardIds),
           tenantId: tid,
         },
       ],
@@ -173,16 +210,17 @@ export class BedBoardService {
     });
 
     const days: { date: string; occupied: number; occupancyPct: number }[] = [];
-    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-      const midnight = new Date(d);
-      midnight.setHours(12, 0, 0, 0); // mid-day census standard
+    for (const date of this.calendarDays(dateFrom, dateTo)) {
+      // Midday census, taken at midday where the ward is — the previous
+      // reading was midday on the server clock, 3pm in Kampala.
+      const censusAt = hourOfDayUtc(date, 12);
       const occupied = overlapping.filter(
         (a) =>
-          new Date(a.admissionDate) <= midnight &&
-          (!a.dischargeDate || new Date(a.dischargeDate) >= midnight),
+          new Date(a.admissionDate) <= censusAt &&
+          (!a.dischargeDate || new Date(a.dischargeDate) >= censusAt),
       ).length;
       days.push({
-        date: midnight.toISOString().slice(0, 10),
+        date,
         occupied,
         occupancyPct: totalBeds ? Math.round((occupied / totalBeds) * 1000) / 10 : 0,
       });
@@ -191,7 +229,9 @@ export class BedBoardService {
     const avgDaily = days.length ? days.reduce((a, d) => a + d.occupied, 0) / days.length : 0;
 
     return {
-      window: { from: start.toISOString().slice(0, 10), to: end.toISOString().slice(0, 10) },
+      // Echo the days that were asked for. Deriving these from the UTC
+      // instants reported the day before the window actually started.
+      window: { from: dateFrom, to: dateTo },
       totalBeds,
       wardCount: wards.length,
       discharges: discharges.length,
@@ -406,6 +446,26 @@ export class BedBoardService {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * The calendar dates from `from` to `to` inclusive, as YYYY-MM-DD.
+   *
+   * Pure label arithmetic — a calendar date means the same thing in any zone,
+   * so this stays clear of the offset entirely. Each label is turned into an
+   * instant separately, in the hospital's zone, where it is used.
+   */
+  private calendarDays(from: string, to: string): string[] {
+    const [fy, fm, fd] = from.split('-').map(Number);
+    const [ty, tm, td] = to.split('-').map(Number);
+    const cursor = new Date(Date.UTC(fy, fm - 1, fd));
+    const last = Date.UTC(ty, tm - 1, td);
+    const out: string[] = [];
+    while (cursor.getTime() <= last) {
+      out.push(cursor.toISOString().slice(0, 10));
+      cursor.setUTCDate(cursor.getUTCDate() + 1);
+    }
+    return out;
   }
 
   private hoursBetween(a: Date | string, b: Date | string): number {
