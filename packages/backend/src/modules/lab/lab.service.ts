@@ -7,7 +7,16 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, Like, DataSource, EntityManager, ILike, In, DeepPartial } from 'typeorm';
+import {
+  Repository,
+  Between,
+  Like,
+  DataSource,
+  EntityManager,
+  ILike,
+  In,
+  DeepPartial,
+} from 'typeorm';
 import { LabTest, LabTestStatus } from '../../database/entities/lab-test.entity';
 import { LabSample, SampleStatus } from '../../database/entities/lab-sample.entity';
 import { LabResult, ResultStatus, AbnormalFlag } from '../../database/entities/lab-result.entity';
@@ -33,6 +42,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { EncountersService } from '../encounters/encounters.service';
 import { CriticalResultsService } from '../critical-results/critical-results.service';
 import { requireTenantId } from '../../common/utils/tenant.util';
+import { sqlSafeTimeZone } from '../../common/utils/timezone.util';
 
 @Injectable()
 export class LabService {
@@ -1411,7 +1421,9 @@ export class LabService {
       .createQueryBuilder('s')
       .where('s.facilityId = :facilityId', { facilityId })
       .andWhere('s.status = :status', { status: SampleStatus.COMPLETED })
-      .andWhere('DATE(s.completedTime) = CURRENT_DATE');
+      .andWhere(
+        `DATE(s.completedTime AT TIME ZONE '${sqlSafeTimeZone()}') = DATE(NOW() AT TIME ZONE '${sqlSafeTimeZone()}')`,
+      );
     completedTodayQb.andWhere('s.tenant_id = :tenantId', { tenantId: tid });
     const completedToday = await completedTodayQb.getCount();
 
@@ -1433,10 +1445,14 @@ export class LabService {
 
     // Validate days parameter to prevent injection and ensure reasonable bounds
     const safeDays = Math.min(Math.max(Math.floor(days), 1), 365);
+    const tz = sqlSafeTimeZone();
 
     const qb = this.sampleRepo
       .createQueryBuilder('s')
-      .select('DATE(s.collectionTime)', 'date')
+      // Group by the lab's own day. DATE() resolves in the session timezone,
+      // which is UTC, so samples collected before 03:00 in Kampala were
+      // grouped onto the previous day's turnaround figure.
+      .select(`DATE(s.collectionTime AT TIME ZONE '${tz}')`, 'date')
       .addSelect('AVG(EXTRACT(EPOCH FROM (s.completedTime - s.collectionTime)) / 60)', 'avgMinutes')
       .addSelect('COUNT(*)', 'count')
       .where('s.facilityId = :facilityId', { facilityId })
@@ -1447,7 +1463,10 @@ export class LabService {
 
     qb.andWhere('s.tenant_id = :tenantId', { tenantId: tid });
 
-    const results = await qb.groupBy('DATE(s.collectionTime)').orderBy('date', 'DESC').getRawMany();
+    const results = await qb
+      .groupBy(`DATE(s.collectionTime AT TIME ZONE '${tz}')`)
+      .orderBy('date', 'DESC')
+      .getRawMany();
 
     return results;
   }
