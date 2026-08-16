@@ -381,6 +381,16 @@ export class BedBoardService {
         bed.notes = '';
         expiredBeds.push(bed);
         this.logger.log(`Reservation expired on bed ${bed.bedNumber}`);
+      } else if (!r) {
+        // RESERVED with no readable hold: the envelope was overwritten at some
+        // point, so there is no expiry to reach and the bed would sit held for
+        // good. Release it rather than lose a bed to a lost timer.
+        bed.status = BedStatus.AVAILABLE;
+        bed.notes = '';
+        expiredBeds.push(bed);
+        this.logger.warn(
+          `Bed ${bed.bedNumber} was RESERVED with no readable reservation; releasing it`,
+        );
       }
     }
     if (expiredBeds.length > 0) {

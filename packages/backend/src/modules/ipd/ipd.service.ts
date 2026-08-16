@@ -209,8 +209,25 @@ export class IpdService {
         );
       }
     }
+    // A reservation lives in bed.notes as a JSON envelope, sharing the column
+    // with free-text notes. Assigning dto.notes over it drops the hold while
+    // leaving the bed RESERVED — nothing is left for the expiry sweep to parse,
+    // so the bed stays held until someone releases it by hand.
+    const reservation = this.parseBedReservation(bed.notes);
     Object.assign(bed, dto);
+    if (reservation && dto.notes !== undefined && bed.status === BedStatus.RESERVED) {
+      bed.notes = JSON.stringify({ reserved: reservation, note: dto.notes });
+    }
     return this.bedRepo.save(bed);
+  }
+
+  private parseBedReservation(notes?: string): Record<string, unknown> | null {
+    if (!notes) return null;
+    try {
+      return JSON.parse(notes)?.reserved ?? null;
+    } catch {
+      return null;
+    }
   }
 
   async markBedAvailable(id: string, tenantId?: string): Promise<Bed> {
@@ -288,9 +305,7 @@ export class IpdService {
       if (!bed) throw new NotFoundException('Bed not found');
       if (bed.status !== BedStatus.AVAILABLE) throw new BadRequestException('Bed is not available');
       if (bed.wardId && bed.wardId !== dto.wardId) {
-        throw new BadRequestException(
-          'Selected bed does not belong to the selected ward',
-        );
+        throw new BadRequestException('Selected bed does not belong to the selected ward');
       }
 
       // Generate admission number: MAX+1 under a tenant+day advisory lock
