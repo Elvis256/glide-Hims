@@ -19,7 +19,6 @@ import {
   EncounterType,
 } from '../../../database/entities/encounter.entity';
 import { Patient } from '../../../database/entities/patient.entity';
-import { PrescriptionItem } from '../../../database/entities/prescription.entity';
 import { BillingService } from '../../billing/billing.service';
 import { BedBoardService } from '../bed-board.service';
 import { AuditLogService } from '../../../common/interceptors/audit-log.service';
@@ -130,7 +129,6 @@ describe('IpdService', () => {
   let transferRepo: ReturnType<typeof createMockRepo>;
   let encounterRepo: ReturnType<typeof createMockRepo>;
   let patientRepo: ReturnType<typeof createMockRepo>;
-  let prescriptionItemRepo: ReturnType<typeof createMockRepo>;
   let dataSource: { transaction: jest.Mock };
   let billingService: Record<string, jest.Mock>;
   let bedBoardService: Record<string, jest.Mock>;
@@ -146,7 +144,6 @@ describe('IpdService', () => {
     transferRepo = createMockRepo();
     encounterRepo = createMockRepo();
     patientRepo = createMockRepo();
-    prescriptionItemRepo = createMockRepo();
 
     dataSource = {
       transaction: jest.fn(),
@@ -183,7 +180,6 @@ describe('IpdService', () => {
         { provide: getRepositoryToken(BedTransfer), useValue: transferRepo },
         { provide: getRepositoryToken(Encounter), useValue: encounterRepo },
         { provide: getRepositoryToken(Patient), useValue: patientRepo },
-        { provide: getRepositoryToken(PrescriptionItem), useValue: prescriptionItemRepo },
         { provide: DataSource, useValue: dataSource },
         { provide: BillingService, useValue: billingService },
         { provide: BedBoardService, useValue: bedBoardService },
@@ -689,8 +685,66 @@ describe('IpdService', () => {
   // -----------------------------------------------------------------------
   // 10. administerMedication — happy path
   // -----------------------------------------------------------------------
+  describe('getMedicationSchedule', () => {
+    it("buckets the day in the ward's timezone, not the server's UTC", async () => {
+      // A dose due 01:00 in Kampala is 22:00 UTC the day before, so a bare
+      // DATE() drops the whole night round off the day's chart.
+      const qb = (medAdminRepo.createQueryBuilder as jest.Mock)();
+      (qb.getMany as jest.Mock).mockResolvedValueOnce([]);
+
+      await service.getMedicationSchedule(ADMISSION_ID, '2026-08-16', TENANT_ID);
+
+      const dateCall = (qb.andWhere as jest.Mock).mock.calls.find((c: any[]) =>
+        String(c[0]).includes('scheduledTime'),
+      );
+      expect(dateCall).toBeDefined();
+      expect(dateCall[0]).toContain('AT TIME ZONE');
+      expect(dateCall[1]).toMatchObject({ tz: 'Africa/Kampala', date: '2026-08-16' });
+    });
+
+    it('does not filter by day when no date is asked for', async () => {
+      const qb = (medAdminRepo.createQueryBuilder as jest.Mock)();
+      (qb.andWhere as jest.Mock).mockClear();
+      (qb.getMany as jest.Mock).mockResolvedValueOnce([]);
+
+      await service.getMedicationSchedule(ADMISSION_ID, undefined, TENANT_ID);
+
+      const dateCall = (qb.andWhere as jest.Mock).mock.calls.find((c: any[]) =>
+        String(c[0]).includes('scheduledTime'),
+      );
+      expect(dateCall).toBeUndefined();
+    });
+  });
+
   describe('administerMedication', () => {
-    it('should administer medication, increment Rx dispensed count, and log audit', async () => {
+    it('leaves the pharmacy dispensing ledger alone when a dose is given', async () => {
+      // quantityDispensed counts UNITS the pharmacy issued, and re-dispensing
+      // is gated on quantity - quantityDispensed. Counting dose events into it
+      // exhausts the prescription and blocks the rest of the course.
+      const { mgr } = createMockManager();
+      mgr.findOne
+        .mockResolvedValueOnce({
+          id: MED_ID,
+          status: MedicationStatus.SCHEDULED,
+          admissionId: ADMISSION_ID,
+          drugName: 'Amoxicillin',
+          prescriptionItemId: RX_ITEM_ID,
+        })
+        .mockResolvedValueOnce({ id: ADMISSION_ID, patient: { allergies: [] } });
+      mgr.save.mockImplementation((entity: any) => Promise.resolve({ ...entity }));
+      dataSource.transaction.mockImplementation((cb: any) => cb(mgr));
+
+      await service.administerMedication(
+        MED_ID,
+        { status: MedicationStatus.ADMINISTERED } as any,
+        USER_ID,
+        TENANT_ID,
+      );
+
+      expect(mgr.increment).not.toHaveBeenCalled();
+    });
+
+    it('should administer medication and log audit', async () => {
       const { mgr } = createMockManager();
 
       const med = {
@@ -724,15 +778,8 @@ describe('IpdService', () => {
 
       expect(result.status).toBe(MedicationStatus.ADMINISTERED);
       expect(result.administeredById).toBe(USER_ID);
+      expect(result.administeredAt).toBeInstanceOf(Date);
       expect(result.batchNumber).toBe('BATCH-001');
-
-      // Rx item dispensed count incremented
-      expect(mgr.increment).toHaveBeenCalledWith(
-        PrescriptionItem,
-        { id: RX_ITEM_ID },
-        'quantityDispensed',
-        1,
-      );
 
       // Audit log fired
       expect(auditLogService.log).toHaveBeenCalledWith(
@@ -742,6 +789,108 @@ describe('IpdService', () => {
           entityId: expect.any(String),
         }),
       );
+    });
+
+    it('does not stamp a giver and a time on a dose that was refused', async () => {
+      // administeredAt/administeredById mean "who gave it, and when". Filling
+      // them in for a refusal makes the MAR read as though the drug went in.
+      const { mgr } = createMockManager();
+      mgr.findOne.mockResolvedValueOnce({
+        id: MED_ID,
+        status: MedicationStatus.SCHEDULED,
+        admissionId: ADMISSION_ID,
+        drugName: 'Amoxicillin',
+      });
+      mgr.save.mockImplementation((entity: any) => Promise.resolve({ ...entity }));
+      dataSource.transaction.mockImplementation((cb: any) => cb(mgr));
+
+      const result = await service.administerMedication(
+        MED_ID,
+        { status: MedicationStatus.REFUSED, reason: 'Patient declined' } as any,
+        USER_ID,
+        TENANT_ID,
+      );
+
+      expect(result.status).toBe(MedicationStatus.REFUSED);
+      expect(result.administeredAt).toBeFalsy();
+      expect(result.administeredById).toBeFalsy();
+    });
+
+    it('does not count a refused dose against the prescription', async () => {
+      const { mgr } = createMockManager();
+      mgr.findOne.mockResolvedValueOnce({
+        id: MED_ID,
+        status: MedicationStatus.SCHEDULED,
+        admissionId: ADMISSION_ID,
+        drugName: 'Amoxicillin',
+        prescriptionItemId: RX_ITEM_ID,
+      });
+      mgr.save.mockImplementation((entity: any) => Promise.resolve({ ...entity }));
+      dataSource.transaction.mockImplementation((cb: any) => cb(mgr));
+
+      await service.administerMedication(
+        MED_ID,
+        { status: MedicationStatus.REFUSED } as any,
+        USER_ID,
+        TENANT_ID,
+      );
+
+      expect(mgr.increment).not.toHaveBeenCalled();
+    });
+
+    it('catches an allergy recorded as free text, not just a bare drug name', async () => {
+      // Real allergy lists read "Penicillin - rash", not "penicillin". Matching
+      // only when the recorded allergy is a substring of the drug name misses
+      // every one of those, and the dose goes in unchallenged.
+      const { mgr } = createMockManager();
+      mgr.findOne
+        .mockResolvedValueOnce({
+          id: MED_ID,
+          status: MedicationStatus.SCHEDULED,
+          admissionId: ADMISSION_ID,
+          drugName: 'Penicillin V',
+        })
+        .mockResolvedValueOnce({
+          id: ADMISSION_ID,
+          patient: { allergies: ['Penicillin - rash'] },
+        });
+      mgr.save.mockImplementation((entity: any) => Promise.resolve({ ...entity }));
+      dataSource.transaction.mockImplementation((cb: any) => cb(mgr));
+
+      await expect(
+        service.administerMedication(
+          MED_ID,
+          { status: MedicationStatus.ADMINISTERED } as any,
+          USER_ID,
+          TENANT_ID,
+        ),
+      ).rejects.toThrow(/documented allergy/);
+    });
+
+    it('does not flag a drug the patient is not allergic to', async () => {
+      const { mgr } = createMockManager();
+      mgr.findOne
+        .mockResolvedValueOnce({
+          id: MED_ID,
+          status: MedicationStatus.SCHEDULED,
+          admissionId: ADMISSION_ID,
+          drugName: 'Paracetamol',
+        })
+        .mockResolvedValueOnce({
+          id: ADMISSION_ID,
+          patient: { allergies: ['Penicillin - rash', 'Dust'] },
+        });
+      mgr.save.mockImplementation((entity: any) => Promise.resolve({ ...entity }));
+      dataSource.transaction.mockImplementation((cb: any) => cb(mgr));
+
+      const result = await service.administerMedication(
+        MED_ID,
+        { status: MedicationStatus.ADMINISTERED } as any,
+        USER_ID,
+        TENANT_ID,
+      );
+
+      expect(result.status).toBe(MedicationStatus.ADMINISTERED);
     });
 
     it('should throw BadRequestException when dose was already administered', async () => {

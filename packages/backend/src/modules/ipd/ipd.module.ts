@@ -11,7 +11,6 @@ import { MedicationAdministration } from '../../database/entities/medication-adm
 import { BedTransfer } from '../../database/entities/bed-transfer.entity';
 import { Encounter } from '../../database/entities/encounter.entity';
 import { Patient } from '../../database/entities/patient.entity';
-import { PrescriptionItem } from '../../database/entities/prescription.entity';
 import { BillingModule } from '../billing/billing.module';
 import { AuditModule } from '../../common/interceptors/audit.module';
 import { VitalsModule } from '../vitals/vitals.module';
@@ -27,7 +26,6 @@ import { VitalsModule } from '../vitals/vitals.module';
       BedTransfer,
       Encounter,
       Patient,
-      PrescriptionItem,
     ]),
     forwardRef(() => BillingModule),
     AuditModule,
