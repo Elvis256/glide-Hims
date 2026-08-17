@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useDialogA11y } from '../hooks/useDialogA11y';
 import { Fingerprint, Loader2, CheckCircle, XCircle, AlertTriangle, RefreshCw } from 'lucide-react';
 import { secugenService, type DeviceInfo, type CaptureResult, type FingerIndex } from '../services/secugen';
 import { biometricsService } from '../services/biometrics';
@@ -28,6 +29,12 @@ const FINGER_NAMES: Record<FingerIndex, string> = {
 type ScanStatus = 'idle' | 'checking' | 'ready' | 'scanning' | 'success' | 'failed' | 'no-device';
 
 export default function FingerprintScanner({ userId, mode, onSuccess, onCancel, userName }: FingerprintScannerProps) {
+  // This component is mounted only while the modal is showing.
+  const dialogRef = useDialogA11y<HTMLDivElement>({
+    open: true,
+    onClose: onCancel,
+  });
+
   const [deviceInfo, setDeviceInfo] = useState<DeviceInfo | null>(null);
   const [status, setStatus] = useState<ScanStatus>('checking');
   const [error, setError] = useState<string | null>(null);
@@ -163,7 +170,12 @@ export default function FingerprintScanner({ userId, mode, onSuccess, onCancel, 
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+      role="dialog"
+      aria-modal="true"
+      ref={dialogRef}
+    >
       <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4 overflow-hidden">
         {/* Header */}
         <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-4">

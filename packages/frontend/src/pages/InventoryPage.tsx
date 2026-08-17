@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { useDialogA11y } from '../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Package,
@@ -532,6 +533,12 @@ function ReceiveStockModal({
   onSuccess: () => void;
   facilityId: string;
 }) {
+  // This component is mounted only while the modal is showing.
+  const dialogRef = useDialogA11y<HTMLDivElement>({
+    open: true,
+    onClose,
+  });
+
   const [formData, setFormData] = useState({
     itemId: '',
     quantity: 0,
@@ -581,7 +588,12 @@ function ReceiveStockModal({
   const selectedItem = items.find((i) => i.id === formData.itemId);
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+      role="dialog"
+      aria-modal="true"
+      ref={dialogRef}
+    >
       <div className="bg-white rounded-xl w-full max-w-md">
         <div className="flex items-center justify-between p-4 border-b">
           <h2 className="text-lg font-semibold">Receive Stock</h2>

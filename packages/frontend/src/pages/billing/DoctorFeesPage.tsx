@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -294,12 +295,23 @@ function DoctorPickerModal({
   onCancel: () => void;
   onPick: (d: DoctorLite) => void;
 }) {
+  // This component is mounted only while the modal is showing.
+  const dialogRef = useDialogA11y<HTMLDivElement>({
+    open: true,
+    onClose: onCancel,
+  });
+
   const [q, setQ] = useState('');
   const filtered = doctors.filter((d) =>
     `${d.firstName} ${d.lastName} ${d.email ?? ''}`.toLowerCase().includes(q.toLowerCase()),
   );
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+    <div
+      className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
+      role="dialog"
+      aria-modal="true"
+      ref={dialogRef}
+    >
       <div className="bg-white rounded-lg w-full max-w-lg max-h-[80vh] flex flex-col">
         <div className="flex justify-between items-center p-4 border-b">
           <h2 className="font-semibold">Select doctor</h2>

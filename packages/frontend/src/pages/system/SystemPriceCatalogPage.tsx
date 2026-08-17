@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { Plus, Pencil, Trash2, Loader2, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '../../services/api';
@@ -135,6 +136,12 @@ export default function SystemPriceCatalogPage() {
 }
 
 function CatalogModal({ item, onSave, onClose }: { item: CatalogItem | null; onSave: (d: any) => void; onClose: () => void }) {
+  // This component is mounted only while the modal is showing.
+  const dialogRef = useDialogA11y<HTMLDivElement>({
+    open: true,
+    onClose,
+  });
+
   const [form, setForm] = useState({
     code: item?.code ?? '',
     name: item?.name ?? '',
@@ -153,7 +160,12 @@ function CatalogModal({ item, onSave, onClose }: { item: CatalogItem | null; onS
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+      role="dialog"
+      aria-modal="true"
+      ref={dialogRef}
+    >
       <div className="bg-white rounded-lg p-6 w-full max-w-md space-y-4">
         <h2 className="text-lg font-bold">{item ? 'Edit Catalog Item' : 'New Catalog Item'}</h2>
         <div className="space-y-3">

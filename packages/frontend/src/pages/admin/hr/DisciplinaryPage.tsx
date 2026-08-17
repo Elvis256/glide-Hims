@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import hrService from '../../../services/hr';
 import { useAuthStore } from '../../../store/auth';
@@ -935,8 +936,19 @@ function ModalBackdrop({
   children: React.ReactNode;
   onClose: () => void;
 }) {
+  // This component is mounted only while the modal is showing.
+  const dialogRef = useDialogA11y<HTMLDivElement>({
+    open: true,
+    onClose,
+  });
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      role="dialog"
+      aria-modal="true"
+      ref={dialogRef}
+    >
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       <div className="relative z-10 mx-4 w-full max-w-2xl">{children}</div>
     </div>

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useDialogA11y } from '../hooks/useDialogA11y';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -572,6 +573,12 @@ export default function WardManagementPage() {
 
 // Ward Creation Modal
 function WardModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
+  // This component is mounted only while the modal is showing.
+  const dialogRef = useDialogA11y<HTMLDivElement>({
+    open: true,
+    onClose,
+  });
+
   const [formData, setFormData] = useState({
     name: '',
     code: '',
@@ -602,7 +609,12 @@ function WardModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () 
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      role="dialog"
+      aria-modal="true"
+      ref={dialogRef}
+    >
       <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
         <h2 className="mb-4 text-lg font-semibold">Create Ward</h2>
         <form onSubmit={handleSubmit} className="space-y-4">

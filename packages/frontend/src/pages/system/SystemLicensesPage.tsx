@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { KeyRound, Loader2, Plus, RefreshCw, Ban, CalendarPlus, ShieldCheck, AlertCircle, Pencil, Pause, Play, Copy, Check, RotateCw } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '../../services/api';
@@ -472,6 +473,12 @@ function CreateLicenseModal({
   onClose: () => void;
   onCreated: () => void;
 }) {
+  // This component is mounted only while the modal is showing.
+  const dialogRef = useDialogA11y<HTMLDivElement>({
+    open: true,
+    onClose,
+  });
+
   const [tenantId, setTenantId] = useState('');
   const [organizationName, setOrganizationName] = useState('');
   const [email, setEmail] = useState('');
@@ -519,7 +526,12 @@ function CreateLicenseModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+    <div
+      className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      ref={dialogRef}
+    >
       <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] flex flex-col">
         <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">

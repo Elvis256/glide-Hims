@@ -5,6 +5,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import ConfirmDialog from './ConfirmDialog';
+import { useDialogA11y } from '../hooks/useDialogA11y';
 
 afterEach(cleanup);
 
@@ -111,5 +112,33 @@ describe('ConfirmDialog', () => {
   it('renders nothing when closed', () => {
     render(<ConfirmDialog {...base} open={false} />);
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+});
+
+/**
+ * The trap must never swallow Tab for a dialog that is not on screen. A caller
+ * that reports open while its ref points at nothing would otherwise break
+ * keyboard navigation across the whole page.
+ */
+describe('useDialogA11y when the container is missing', () => {
+  function Detached({ open }: { open: boolean }) {
+    useDialogA11y<HTMLDivElement>({ open, onClose: () => {} });
+    return (
+      <>
+        <button>first</button>
+        <button>second</button>
+      </>
+    );
+  }
+
+  it('leaves Tab alone when the ref was never attached', async () => {
+    render(<Detached open />);
+    const first = screen.getByRole('button', { name: 'first' });
+    const second = screen.getByRole('button', { name: 'second' });
+
+    first.focus();
+    await userEvent.tab();
+
+    expect(document.activeElement).toBe(second);
   });
 });

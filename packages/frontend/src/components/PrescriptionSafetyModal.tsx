@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useDialogA11y } from '../hooks/useDialogA11y';
 import { AlertTriangle, X, ShieldAlert, Pill } from 'lucide-react';
 import type { SafetyAlert } from '../services/prescriptions';
 import { toast } from 'sonner';
@@ -43,6 +44,12 @@ export default function PrescriptionSafetyModal({
   onOverride,
   submitting,
 }: Props) {
+  // This component is mounted only while the modal is showing.
+  const dialogRef = useDialogA11y<HTMLDivElement>({
+    open: true,
+    onClose: onCancel,
+  });
+
   const [reason, setReason] = useState('');
   const [acknowledged, setAcknowledged] = useState(false);
 
@@ -55,7 +62,12 @@ export default function PrescriptionSafetyModal({
   const canOverride = acknowledged && reason.trim().length >= 10;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      role="dialog"
+      aria-modal="true"
+      ref={dialogRef}
+    >
       <div className="w-full max-w-2xl rounded-lg bg-white shadow-2xl flex flex-col max-h-[90vh]">
         {/* Header */}
         <div className="flex items-start justify-between gap-4 border-b border-red-200 bg-red-50 px-6 py-4 rounded-t-lg">
