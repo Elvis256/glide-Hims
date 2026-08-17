@@ -1,4 +1,5 @@
 import { usePermissions } from '../../../components/PermissionGate';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useState, useMemo, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -62,6 +63,21 @@ export default function FavoriteRxPage() {
   const [editingTemplate, setEditingTemplate] = useState<PrescriptionTemplate | null>(null);
   const [appliedTemplate, setAppliedTemplate] = useState<string | null>(null);
   const [newTemplate, setNewTemplate] = useState({ name: '', category: categories[1], commonUse: '' });
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showAddModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showAddModal,
+    onClose: () => setShowAddModal(false),
+  });
+  const showEditModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showEditModal,
+    onClose: () => setShowEditModal(false),
+  });
+  const showDeleteConfirmDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showDeleteConfirm,
+    onClose: () => setShowDeleteConfirm(null),
+  });
 
   const { data: templates = [], isLoading } = useQuery({
     queryKey: QUERY_KEY,
@@ -337,7 +353,12 @@ export default function FavoriteRxPage() {
 
       {/* Add Template Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showAddModalDialogRef}
+        >
           <div className="bg-white rounded-lg w-full max-w-lg m-4 max-h-[80vh] overflow-y-auto">
             <div className="flex items-center justify-between p-4 border-b sticky top-0 bg-white">
               <h2 className="text-lg font-semibold">Add New Template</h2>
@@ -406,7 +427,12 @@ export default function FavoriteRxPage() {
 
       {/* Edit Template Modal */}
       {showEditModal && editingTemplate && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showEditModalDialogRef}
+        >
           <div className="bg-white rounded-lg w-full max-w-lg m-4 max-h-[80vh] overflow-y-auto">
             <div className="flex items-center justify-between p-4 border-b sticky top-0 bg-white">
               <h2 className="text-lg font-semibold">Edit Template</h2>
@@ -483,7 +509,12 @@ export default function FavoriteRxPage() {
 
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showDeleteConfirmDialogRef}
+        >
           <div className="bg-white rounded-lg w-full max-w-sm m-4">
             <div className="p-4 border-b">
               <h2 className="text-lg font-semibold">Delete Template</h2>

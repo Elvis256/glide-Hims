@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -119,6 +120,13 @@ export default function InpatientBillingPage() {
   });
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editingPrice, setEditingPrice] = useState<number>(0);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showPaymentModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showPaymentModal,
+    onClose: () => setShowPaymentModal(false),
+  });
   const queryClient = useQueryClient();
 
   // Payment mutation
@@ -863,7 +871,12 @@ export default function InpatientBillingPage() {
 
       {/* Payment Modal */}
       {showPaymentModal && selectedAdmission && currentInvoice && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showPaymentModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
             <div className="p-6 border-b border-gray-200">
               <div className="flex items-center justify-between">

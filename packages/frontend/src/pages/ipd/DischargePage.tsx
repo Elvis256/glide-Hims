@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   LogOut,
@@ -96,6 +97,13 @@ export default function DischargePage() {
   const [showDischargeModal, setShowDischargeModal] = useState(false);
   const [view, setView] = useState<'queue' | 'planning'>('queue');
   const [acceptUnpaid, setAcceptUnpaid] = useState(false);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showDischargeModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showDischargeModal,
+    onClose: () => setShowDischargeModal(false),
+  });
   const [dischargeForm, setDischargeForm] = useState({
     dischargeSummary: '',
     dischargeDiagnosis: '',
@@ -619,7 +627,12 @@ export default function DischargePage() {
 
       {/* Discharge Modal */}
       {showDischargeModal && selectedAdmission && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showDischargeModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-auto">
             <div className="p-6 border-b border-gray-200">
               <h2 className="text-xl font-bold text-gray-900">Discharge Patient</h2>

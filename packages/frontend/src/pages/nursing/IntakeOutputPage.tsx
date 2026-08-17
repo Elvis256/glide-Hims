@@ -1,4 +1,5 @@
 import React from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -180,6 +181,17 @@ export default function IntakeOutputPage() {
   const [showQuickActions, setShowQuickActions] = useState(false);
   const [quickActionAmount, setQuickActionAmount] = useState<number>(0);
   const [selectedQuickAction, setSelectedQuickAction] = useState<typeof quickActions[0] | null>(null);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showTargetModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showTargetModal,
+    onClose: () => setShowTargetModal(false),
+  });
+  const selectedQuickActionDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!selectedQuickAction,
+    onClose: () => setSelectedQuickAction(null),
+  });
   
   // Fluid targets
   const [fluidTarget, setFluidTarget] = useState<FluidTarget>({
@@ -1394,7 +1406,12 @@ export default function IntakeOutputPage() {
 
       {/* Target Modal */}
       {showTargetModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showTargetModalDialogRef}
+        >
           <div className="bg-white rounded-xl p-6 w-full max-w-md">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900">Set Fluid Targets</h3>
@@ -1458,7 +1475,12 @@ export default function IntakeOutputPage() {
 
       {/* Quick Action Amount Modal */}
       {selectedQuickAction && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={selectedQuickActionDialogRef}
+        >
           <div className="bg-white rounded-xl p-6 w-full max-w-sm">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">{selectedQuickAction.label}</h3>
             <p className="text-sm text-gray-600 mb-4">Enter the amount:</p>

@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { toast } from 'sonner';
 import {
   Search,
@@ -651,6 +652,25 @@ export default function SOAPNotesPage() {
   // Clinical Alerts
   const [clinicalAlerts, setClinicalAlerts] = useState<ClinicalAlert[]>([]);
   const [diagnosisSearchQuery, setDiagnosisSearchQuery] = useState('');
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showTemplateModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showTemplateModal,
+    onClose: () => setShowTemplateModal(false),
+  });
+  const showHistoryModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showHistoryModal,
+    onClose: () => setShowHistoryModal(false),
+  });
+  const showSignModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showSignModal,
+    onClose: () => setShowSignModal(false),
+  });
+  const showDiagnosisSearchDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showDiagnosisSearch,
+    onClose: () => setShowDiagnosisSearch(false),
+  });
   
   // Debounce search
   useEffect(() => {
@@ -1867,7 +1887,12 @@ export default function SOAPNotesPage() {
 
       {/* Template Modal */}
       {showTemplateModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showTemplateModalDialogRef}
+        >
           <div className="bg-white rounded-xl w-full max-w-2xl max-h-[80vh] overflow-hidden">
             <div className="flex items-center justify-between p-4 border-b">
               <h2 className="text-lg font-semibold">SOAP Templates</h2>
@@ -1935,7 +1960,12 @@ export default function SOAPNotesPage() {
 
       {/* History Modal */}
       {showHistoryModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showHistoryModalDialogRef}
+        >
           <div className="bg-white rounded-xl w-full max-w-2xl max-h-[80vh] overflow-hidden">
             <div className="flex items-center justify-between p-4 border-b">
               <h2 className="text-lg font-semibold">Previous SOAP Notes</h2>
@@ -1991,7 +2021,12 @@ export default function SOAPNotesPage() {
 
       {/* Sign & Lock Modal */}
       {showSignModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showSignModalDialogRef}
+        >
           <div className="bg-white rounded-xl w-full max-w-md">
             <div className="flex items-center justify-between p-4 border-b">
               <h2 className="text-lg font-semibold">Sign-off Options</h2>
@@ -2063,7 +2098,12 @@ export default function SOAPNotesPage() {
 
       {/* Diagnosis Search Modal */}
       {showDiagnosisSearch && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showDiagnosisSearchDialogRef}
+        >
           <div className="bg-white rounded-xl w-full max-w-lg max-h-[70vh] overflow-hidden">
             <div className="flex items-center justify-between p-4 border-b">
               <h2 className="text-lg font-semibold">Search ICD-10 Diagnoses</h2>

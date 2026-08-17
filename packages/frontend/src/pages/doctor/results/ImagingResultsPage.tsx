@@ -1,4 +1,5 @@
 import { usePermissions } from '../../../components/PermissionGate';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -151,6 +152,13 @@ export default function ImagingResultsPage() {
   const [patientDropdownOpen, setPatientDropdownOpen] = useState(false);
   const [clinicalComment, setClinicalComment] = useState('');
   const [acknowledgedStudies, setAcknowledgedStudies] = useState<Set<string>>(new Set());
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showReportModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showReportModal,
+    onClose: () => setShowReportModal(false),
+  });
   const facilityId = useFacilityId();
 
   // Fetch patients
@@ -430,7 +438,12 @@ export default function ImagingResultsPage() {
 
       {/* Report Modal */}
       {showReportModal && selectedStudy && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={showReportModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col">
             {/* Modal Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b">
