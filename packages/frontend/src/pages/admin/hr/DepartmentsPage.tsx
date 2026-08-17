@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useId } from 'react';
 import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -42,6 +42,7 @@ interface Department {
 }
 
 export default function DepartmentsPage() {
+  const fid = useId();
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedDepts, setExpandedDepts] = useState<Set<string>>(new Set());
   const [showAddModal, setShowAddModal] = useState(false);
@@ -500,8 +501,8 @@ export default function DepartmentsPage() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Code *</label>
-                  <input 
+                  <label htmlFor={`${fid}-code`} className="block text-sm font-medium text-gray-700 mb-1">Code *</label>
+                  <input id={`${fid}-code`} 
                     type="text" 
                     className="w-full border rounded-lg px-3 py-2" 
                     placeholder="DEPT"
@@ -510,16 +511,16 @@ export default function DepartmentsPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Department Head</label>
-                  <select className="w-full border rounded-lg px-3 py-2">
+                  <label htmlFor={`${fid}-department-head`} className="block text-sm font-medium text-gray-700 mb-1">Department Head</label>
+                  <select id={`${fid}-department-head`} className="w-full border rounded-lg px-3 py-2">
                     <option>Select Head</option>
                   </select>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Building</label>
-                  <input 
+                  <label htmlFor={`${fid}-building`} className="block text-sm font-medium text-gray-700 mb-1">Building</label>
+                  <input id={`${fid}-building`} 
                     type="text" 
                     className="w-full border rounded-lg px-3 py-2" 
                     placeholder="Building name"
@@ -528,8 +529,8 @@ export default function DepartmentsPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
-                  <input 
+                  <label htmlFor={`${fid}-location`} className="block text-sm font-medium text-gray-700 mb-1">Location</label>
+                  <input id={`${fid}-location`} 
                     type="text" 
                     className="w-full border rounded-lg px-3 py-2" 
                     placeholder="Wing A, Floor 1"
@@ -576,8 +577,8 @@ export default function DepartmentsPage() {
             )}
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Department Name *</label>
-                <input 
+                <label htmlFor={`${fid}-department-name`} className="block text-sm font-medium text-gray-700 mb-1">Department Name *</label>
+                <input id={`${fid}-department-name`} 
                   type="text" 
                   className="w-full border rounded-lg px-3 py-2" 
                   placeholder="Enter department name"
@@ -587,8 +588,8 @@ export default function DepartmentsPage() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Code *</label>
-                  <input 
+                  <label htmlFor={`${fid}-code-2`} className="block text-sm font-medium text-gray-700 mb-1">Code *</label>
+                  <input id={`${fid}-code-2`} 
                     type="text" 
                     className="w-full border rounded-lg px-3 py-2" 
                     placeholder="DEPT"
@@ -597,16 +598,16 @@ export default function DepartmentsPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Department Head</label>
-                  <select className="w-full border rounded-lg px-3 py-2">
+                  <label htmlFor={`${fid}-department-head-2`} className="block text-sm font-medium text-gray-700 mb-1">Department Head</label>
+                  <select id={`${fid}-department-head-2`} className="w-full border rounded-lg px-3 py-2">
                     <option>Select Head</option>
                   </select>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Building</label>
-                  <input 
+                  <label htmlFor={`${fid}-building-2`} className="block text-sm font-medium text-gray-700 mb-1">Building</label>
+                  <input id={`${fid}-building-2`} 
                     type="text" 
                     className="w-full border rounded-lg px-3 py-2" 
                     placeholder="Building name"
@@ -615,8 +616,8 @@ export default function DepartmentsPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
-                  <input 
+                  <label htmlFor={`${fid}-location-2`} className="block text-sm font-medium text-gray-700 mb-1">Location</label>
+                  <input id={`${fid}-location-2`} 
                     type="text" 
                     className="w-full border rounded-lg px-3 py-2" 
                     placeholder="Wing A, Floor 1"
@@ -627,8 +628,8 @@ export default function DepartmentsPage() {
               </div>
               {/* Parent Department Selector */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Parent Department</label>
-                <select 
+                <label htmlFor={`${fid}-parent-department`} className="block text-sm font-medium text-gray-700 mb-1">Parent Department</label>
+                <select id={`${fid}-parent-department`} 
                   className="w-full border rounded-lg px-3 py-2"
                   value={newDept.parentId}
                   onChange={(e) => setNewDept({ ...newDept, parentId: e.target.value })}

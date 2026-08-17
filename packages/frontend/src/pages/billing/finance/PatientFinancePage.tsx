@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useId } from 'react';
 import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -76,6 +76,7 @@ const tabConfig: Record<TabType, { label: string; icon: React.ElementType }> = {
 };
 
 export default function PatientFinancePage() {
+  const fid = useId();
   const queryClient = useQueryClient();
   const facilityId = useFacilityId();
 
@@ -538,16 +539,16 @@ export default function PatientFinancePage() {
               >
                 <div className="p-6 space-y-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Patient ID</label>
-                    <input type="text" name="patientId" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Enter patient ID" />
+                    <label htmlFor={`${fid}-patient-id`} className="block text-sm font-medium text-gray-700 mb-1">Patient ID</label>
+                    <input id={`${fid}-patient-id`} type="text" name="patientId" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Enter patient ID" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
-                    <input type="number" name="amount" required min="0" step="0.01" className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="0.00" />
+                    <label htmlFor={`${fid}-amount`} className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
+                    <input id={`${fid}-amount`} type="number" name="amount" required min="0" step="0.01" className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="0.00" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Reason</label>
-                    <textarea name="reason" required rows={3} className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Reason for credit note" />
+                    <label htmlFor={`${fid}-reason`} className="block text-sm font-medium text-gray-700 mb-1">Reason</label>
+                    <textarea id={`${fid}-reason`} name="reason" required rows={3} className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Reason for credit note" />
                   </div>
                 </div>
                 <div className="flex items-center justify-end gap-3 px-6 py-4 border-t bg-gray-50 rounded-b-xl">
@@ -578,17 +579,17 @@ export default function PatientFinancePage() {
               >
                 <div className="p-6 space-y-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Patient ID</label>
-                    <input type="text" name="patientId" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Enter patient ID" />
+                    <label htmlFor={`${fid}-patient-id-2`} className="block text-sm font-medium text-gray-700 mb-1">Patient ID</label>
+                    <input id={`${fid}-patient-id-2`} type="text" name="patientId" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Enter patient ID" />
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
-                      <input type="number" name="amount" required min="0" step="0.01" className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="0.00" />
+                      <label htmlFor={`${fid}-amount-2`} className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
+                      <input id={`${fid}-amount-2`} type="number" name="amount" required min="0" step="0.01" className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="0.00" />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Payment Method</label>
-                      <select name="method" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                      <label htmlFor={`${fid}-payment-method`} className="block text-sm font-medium text-gray-700 mb-1">Payment Method</label>
+                      <select id={`${fid}-payment-method`} name="method" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                         <option value="cash">Cash</option>
                         <option value="card">Card</option>
                         <option value="bank_transfer">Bank Transfer</option>
@@ -597,8 +598,8 @@ export default function PatientFinancePage() {
                     </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Reference</label>
-                    <input type="text" name="reference" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Payment reference" />
+                    <label htmlFor={`${fid}-reference`} className="block text-sm font-medium text-gray-700 mb-1">Reference</label>
+                    <input id={`${fid}-reference`} type="text" name="reference" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Payment reference" />
                   </div>
                 </div>
                 <div className="flex items-center justify-end gap-3 px-6 py-4 border-t bg-gray-50 rounded-b-xl">
@@ -629,21 +630,21 @@ export default function PatientFinancePage() {
                 <div className="p-6 space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Patient ID</label>
-                      <input type="text" name="patientId" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Patient ID" />
+                      <label htmlFor={`${fid}-patient-id-3`} className="block text-sm font-medium text-gray-700 mb-1">Patient ID</label>
+                      <input id={`${fid}-patient-id-3`} type="text" name="patientId" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Patient ID" />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Invoice ID</label>
-                      <input type="text" name="invoiceId" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Invoice ID" />
+                      <label htmlFor={`${fid}-invoice-id`} className="block text-sm font-medium text-gray-700 mb-1">Invoice ID</label>
+                      <input id={`${fid}-invoice-id`} type="text" name="invoiceId" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Invoice ID" />
                     </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Amount to Waive</label>
-                    <input type="number" name="waivedAmount" required min="0" step="0.01" className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="0.00" />
+                    <label htmlFor={`${fid}-amount-to-waive`} className="block text-sm font-medium text-gray-700 mb-1">Amount to Waive</label>
+                    <input id={`${fid}-amount-to-waive`} type="number" name="waivedAmount" required min="0" step="0.01" className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="0.00" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Reason</label>
-                    <textarea name="reason" required rows={3} className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Reason for waiver request" />
+                    <label htmlFor={`${fid}-reason-2`} className="block text-sm font-medium text-gray-700 mb-1">Reason</label>
+                    <textarea id={`${fid}-reason-2`} name="reason" required rows={3} className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Reason for waiver request" />
                   </div>
                 </div>
                 <div className="flex items-center justify-end gap-3 px-6 py-4 border-t bg-gray-50 rounded-b-xl">

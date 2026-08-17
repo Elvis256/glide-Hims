@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useId } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -168,6 +168,7 @@ function formatDateTime(dateStr?: string): string {
 }
 
 export default function AdministerMedsPage() {
+  const fid = useId();
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
@@ -1050,10 +1051,10 @@ export default function AdministerMedsPage() {
               <div className="space-y-4">
                 {/* Actual Dose */}
                 <div>
-                  <label className="text-sm font-medium text-gray-700 mb-1 block">
+                  <label htmlFor={`${fid}-dose-given`} className="text-sm font-medium text-gray-700 mb-1 block">
                     Dose Given
                   </label>
-                  <input
+                  <input id={`${fid}-dose-given`}
                     type="text"
                     value={actualDose}
                     onChange={(e) => setActualDose(e.target.value)}
@@ -1070,10 +1071,10 @@ export default function AdministerMedsPage() {
                 {/* Injection Site (for IM/SC/IV) */}
                 {isInjection && (
                   <div>
-                    <label className="text-sm font-medium text-gray-700 mb-1 block">
+                    <label htmlFor={`${fid}-injection-site`} className="text-sm font-medium text-gray-700 mb-1 block">
                       Injection Site *
                     </label>
-                    <select
+                    <select id={`${fid}-injection-site`}
                       value={injectionSite}
                       onChange={(e) => setInjectionSite(e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
@@ -1088,10 +1089,10 @@ export default function AdministerMedsPage() {
 
                 {/* Patient Reaction */}
                 <div>
-                  <label className="text-sm font-medium text-gray-700 mb-1 block">
+                  <label htmlFor={`${fid}-patient-response`} className="text-sm font-medium text-gray-700 mb-1 block">
                     Patient Response
                   </label>
-                  <select
+                  <select id={`${fid}-patient-response`}
                     value={patientReaction}
                     onChange={(e) => setPatientReaction(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
@@ -1107,10 +1108,10 @@ export default function AdministerMedsPage() {
                 {/* Witnessed By (for controlled substances) */}
                 {medication.isControlled && (
                   <div>
-                    <label className="text-sm font-medium text-gray-700 mb-1 block">
+                    <label htmlFor={`${fid}-witnessed-by`} className="text-sm font-medium text-gray-700 mb-1 block">
                       Witnessed By *
                     </label>
-                    <input
+                    <input id={`${fid}-witnessed-by`}
                       type="text"
                       value={witnessedBy}
                       onChange={(e) => setWitnessedBy(e.target.value)}
@@ -1125,10 +1126,10 @@ export default function AdministerMedsPage() {
 
                 {/* Notes */}
                 <div>
-                  <label className="text-sm font-medium text-gray-700 mb-1 block">
+                  <label htmlFor={`${fid}-notes`} className="text-sm font-medium text-gray-700 mb-1 block">
                     Notes
                   </label>
-                  <textarea
+                  <textarea id={`${fid}-notes`}
                     rows={2}
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
@@ -1146,10 +1147,10 @@ export default function AdministerMedsPage() {
               <h3 className="font-semibold text-gray-900 mb-4">Reason for Hold</h3>
               <div className="space-y-4">
                 <div>
-                  <label className="text-sm font-medium text-gray-700 mb-1 block">
+                  <label htmlFor={`${fid}-select-reason`} className="text-sm font-medium text-gray-700 mb-1 block">
                     Select Reason *
                   </label>
-                  <select
+                  <select id={`${fid}-select-reason`}
                     value={holdReason}
                     onChange={(e) => setHoldReason(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
@@ -1163,10 +1164,10 @@ export default function AdministerMedsPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-gray-700 mb-1 block">
+                  <label htmlFor={`${fid}-additional-notes`} className="text-sm font-medium text-gray-700 mb-1 block">
                     Additional Notes
                   </label>
-                  <textarea
+                  <textarea id={`${fid}-additional-notes`}
                     rows={2}
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
@@ -1184,10 +1185,10 @@ export default function AdministerMedsPage() {
               <h3 className="font-semibold text-gray-900 mb-4">Reason for Refusal</h3>
               <div className="space-y-4">
                 <div>
-                  <label className="text-sm font-medium text-gray-700 mb-1 block">
+                  <label htmlFor={`${fid}-select-reason-2`} className="text-sm font-medium text-gray-700 mb-1 block">
                     Select Reason *
                   </label>
-                  <select
+                  <select id={`${fid}-select-reason-2`}
                     value={refuseReason}
                     onChange={(e) => setRefuseReason(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
@@ -1201,10 +1202,10 @@ export default function AdministerMedsPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-gray-700 mb-1 block">
+                  <label htmlFor={`${fid}-additional-notes-2`} className="text-sm font-medium text-gray-700 mb-1 block">
                     Additional Notes
                   </label>
-                  <textarea
+                  <textarea id={`${fid}-additional-notes-2`}
                     rows={2}
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
@@ -1226,10 +1227,10 @@ export default function AdministerMedsPage() {
                 </p>
               </div>
               <div>
-                <label className="text-sm font-medium text-gray-700 mb-1 block">
+                <label htmlFor={`${fid}-additional-notes-3`} className="text-sm font-medium text-gray-700 mb-1 block">
                   Additional Notes
                 </label>
-                <textarea
+                <textarea id={`${fid}-additional-notes-3`}
                   rows={2}
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
