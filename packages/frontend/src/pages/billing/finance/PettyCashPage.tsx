@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { formatCurrency } from '../../../lib/currency';
@@ -55,6 +56,22 @@ export default function PettyCashPage() {
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [activeFundId, setActiveFundId] = useState<string | null>(null);
   const [statementFundId, setStatementFundId] = useState<string | null>(null);
+
+  // The Record Expense modal is written out twice — once inside the statement
+  // view and once for the list — and kept apart by statementFundId, so only one
+  // is ever on screen. Each needs its own ref; both close the same way.
+  const createFundDialogRef = useDialogA11y<HTMLDivElement>({
+    open: showCreateModal,
+    onClose: () => setShowCreateModal(false),
+  });
+  const expenseFromStatementDialogRef = useDialogA11y<HTMLDivElement>({
+    open: showExpenseModal && !!activeFundId && !!statementFundId,
+    onClose: () => setShowExpenseModal(false),
+  });
+  const expenseFromListDialogRef = useDialogA11y<HTMLDivElement>({
+    open: showExpenseModal && !!activeFundId && !statementFundId,
+    onClose: () => setShowExpenseModal(false),
+  });
 
   const { data: funds = [], isLoading } = useQuery<PettyCashFund[]>({
     queryKey: ['petty-cash-funds', facilityId],
@@ -206,7 +223,12 @@ export default function PettyCashPage() {
 
         {/* Expense Modal */}
         {showExpenseModal && activeFundId && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={expenseFromStatementDialogRef}
+        >
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
               <div className="flex items-center justify-between px-6 py-4 border-b">
                 <h2 className="text-lg font-bold text-gray-900">Record Expense</h2>
@@ -407,7 +429,12 @@ export default function PettyCashPage() {
 
       {/* Create Fund Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={createFundDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <h2 className="text-lg font-bold text-gray-900">Create Petty Cash Fund</h2>
@@ -457,7 +484,12 @@ export default function PettyCashPage() {
 
       {/* Expense Modal (from list view) */}
       {showExpenseModal && activeFundId && !statementFundId && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={expenseFromListDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <h2 className="text-lg font-bold text-gray-900">Record Expense</h2>
