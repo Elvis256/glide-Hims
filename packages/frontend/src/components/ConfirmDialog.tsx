@@ -1,4 +1,5 @@
 import { useState, useCallback, createContext, useContext, useRef, useEffect } from 'react';
+import { useDialogA11y } from '../hooks/useDialogA11y';
 import { AlertTriangle, Loader2, X } from 'lucide-react';
 
 /* ------------------------------------------------------------------ */
@@ -87,25 +88,48 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
 
   const v = state ? variantStyles[state.variant || 'danger'] : variantStyles.danger;
 
+  // Open focus on Cancel, never on the destructive action. The confirm button
+  // carried autoFocus, so a stray Enter — the key someone has just been
+  // pressing to submit the form behind — went straight through the "are you
+  // sure" and did the thing it was asking about.
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!state,
+    onClose: handleCancel,
+    initialFocus: cancelRef,
+  });
+
   return (
     <ConfirmContext.Provider value={{ confirm }}>
       {children}
       {state && (
-        <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
+        <div
+          className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="confirm-dialog-title"
+          aria-describedby="confirm-dialog-message"
+          ref={dialogRef}
+        >
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md animate-in fade-in zoom-in-95 duration-150">
             <div className="p-6">
               <div className="flex items-start gap-4">
                 <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${v.icon}`}>
-                  <AlertTriangle className="w-5 h-5" />
+                  <AlertTriangle className="w-5 h-5" aria-hidden="true" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h3 className="text-lg font-semibold text-gray-900">{state.title}</h3>
-                  <p className="mt-2 text-sm text-gray-600">{state.message}</p>
+                  <h3 id="confirm-dialog-title" className="text-lg font-semibold text-gray-900">
+                    {state.title}
+                  </h3>
+                  <p id="confirm-dialog-message" className="mt-2 text-sm text-gray-600">
+                    {state.message}
+                  </p>
                 </div>
               </div>
             </div>
             <div className="flex justify-end gap-3 px-6 py-4 bg-gray-50 rounded-b-xl">
               <button
+                ref={cancelRef}
                 onClick={handleCancel}
                 className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-300"
               >
@@ -113,7 +137,6 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
               </button>
               <button
                 onClick={handleConfirm}
-                autoFocus
                 className={`px-4 py-2 text-sm font-medium text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 ${v.button}`}
               >
                 {state.confirmLabel || 'Confirm'}
@@ -153,6 +176,15 @@ export default function ConfirmDialog({
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  // Escape cancels — but not while the action is running, where cancelling
+  // would only hide a request that is still on its way to the server.
+  const dialogRef = useDialogA11y<HTMLDivElement>({
+    open,
+    onClose: loading ? undefined : onCancel,
+    initialFocus: cancelRef,
+  });
+
   if (!open) return null;
 
   const styles = {
@@ -173,21 +205,33 @@ export default function ConfirmDialog({
   const v = styles[variant];
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
+    <div
+      className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="confirm-title"
+      aria-describedby="confirm-message"
+      ref={dialogRef}
+    >
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
         <div className="p-6">
           <div className="flex items-start gap-4">
             <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${v.icon}`}>
-              <AlertTriangle className="w-5 h-5" />
+              <AlertTriangle className="w-5 h-5" aria-hidden="true" />
             </div>
             <div className="flex-1 min-w-0">
-              <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
-              <p className="mt-2 text-sm text-gray-600">{message}</p>
+              <h3 id="confirm-title" className="text-lg font-semibold text-gray-900">
+                {title}
+              </h3>
+              <p id="confirm-message" className="mt-2 text-sm text-gray-600">
+                {message}
+              </p>
             </div>
           </div>
         </div>
         <div className="flex justify-end gap-3 px-6 py-4 bg-gray-50 rounded-b-xl">
           <button
+            ref={cancelRef}
             onClick={onCancel}
             disabled={loading}
             className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
