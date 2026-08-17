@@ -215,7 +215,9 @@ export class PrescriptionsService {
         // DTO, which carries none, and cascade inserts do not go through
         // TenantSubscriber. Without it the rows insert with tenant_id NULL and
         // prescription_items' RLS policy rejects the whole prescription.
-        items: dto.items.map((item) => manager.create(PrescriptionItem, { ...item, tenantId: tid })),
+        items: dto.items.map((item) =>
+          manager.create(PrescriptionItem, { ...item, tenantId: tid }),
+        ),
         tenantId: tid,
       });
 
@@ -469,6 +471,25 @@ export class PrescriptionsService {
     }));
   }
 
+  /**
+   * Dispense a single item.
+   *
+   * This is a thin wrapper over dispenseBatch rather than a second
+   * implementation. It used to be its own path and was materially weaker than
+   * the batch one: no transaction, so the dispensation record and the item's
+   * quantityDispensed were two separate writes that could diverge; no lock, so
+   * two pharmacists dispensing the same item both read the same
+   * quantityDispensed and the second overwrote the first, under-recording what
+   * left the shelf; no prescription status check, so a CANCELLED prescription
+   * could still be dispensed; and — the costly one — **no stock movement at
+   * all**. Drugs went out of the door while StockBalance and StockLedger were
+   * untouched, so on-hand quantities drifted upwards for ever and reorder
+   * levels never tripped.
+   *
+   * dispenseBatch already does all of this correctly, inside one transaction.
+   * The batch item DTO is field-for-field identical to this one, so the whole
+   * duplicate is gone in favour of delegating.
+   */
   async dispenseItem(
     dto: DispenseItemDto,
     userId: string,
@@ -477,118 +498,38 @@ export class PrescriptionsService {
     const tid = requireTenantId(tenantId);
     const item = await this.itemRepository.findOne({
       where: { id: dto.prescriptionItemId, tenantId: tid },
-      relations: ['prescription', 'prescription.encounter'],
     });
 
     if (!item) {
       throw new NotFoundException('Prescription item not found');
     }
 
-    const remainingQty = item.quantity - item.quantityDispensed;
-    if (dto.quantity > remainingQty) {
-      throw new BadRequestException(`Cannot dispense more than ${remainingQty} units`);
-    }
-
-    // ─── Medication-safety check at dispense time ───────────────────────
-    const inv = await this.inventoryRepo.findOne({
-      where: [
-        { code: item.drugCode, tenantId: tid },
-        { name: ILike(`%${item.drugName}%`), tenantId: tid },
-      ],
-    });
-    if (inv) {
-      const patientId: string | undefined = item.prescription?.encounter?.patientId;
-      const safety = await this.medicationSafety.runSafetyChecks({
-        patientId,
-        drugIds: [inv.id],
-        lines: [
+    await this.dispenseBatch(
+      {
+        prescriptionId: item.prescriptionId,
+        items: [
           {
-            drugId: inv.id,
-            drugCode: item.drugCode,
-            drugName: item.drugName,
-            dose: item.dose,
-            frequency: item.frequency,
+            prescriptionItemId: dto.prescriptionItemId,
+            quantity: dto.quantity,
+            batchNumber: dto.batchNumber,
+            expiryDate: dto.expiryDate,
+            unitPrice: dto.unitPrice,
           },
         ],
-        tenantId,
-      });
-      if (safety.blocked) {
-        const summary =
-          safety.blockingAlerts.length > 0
-            ? safety.blockingAlerts
-                .map((a) => `${a.kind.toUpperCase()} (${a.severity}): ${a.description}`)
-                .join('; ')
-            : `Safety check degraded: ${safety.degradedReasons.join('; ')}`;
-        throw new BadRequestException(
-          `MEDICATION SAFETY BLOCK: ${summary}. Cannot dispense ${item.drugName}. Override at pharmacy POS required.`,
-        );
-      }
-    }
-    // ─── End medication-safety check ────────────────────────────────────
+      } as DispenseBatchDto,
+      userId,
+      tenantId,
+    );
 
-    // Server-derived price ONLY: never trust client-supplied unitPrice.
-    let resolvedPrice = 0;
-    if (inv) {
-      resolvedPrice =
-        Number(inv.retailPrice) ||
-        Number(inv.sellingPrice) ||
-        Number(inv.unitCost) ||
-        0;
-    }
-    if (resolvedPrice <= 0) {
-      this.logger.warn(
-        `dispenseItem price fallback to 0 for ${item.drugName} — no inventory price available`,
-      );
-    }
-
-    // Create dispensation record
-    const dispensation = this.dispensationRepository.create({
-      prescriptionId: item.prescriptionId,
-      prescriptionItemId: item.id,
-      quantity: dto.quantity,
-      batchNumber: dto.batchNumber,
-      expiryDate: dto.expiryDate,
-      unitPrice: resolvedPrice,
-      totalPrice: resolvedPrice * dto.quantity,
-      dispensedById: userId,
-      tenantId: tid,
+    // The endpoint has always answered with the dispensation it created, so
+    // hand back the row the batch run just wrote for this item.
+    const dispensation = await this.dispensationRepository.findOne({
+      where: { prescriptionItemId: dto.prescriptionItemId, tenantId: tid },
+      order: { createdAt: 'DESC' },
     });
-
-    await this.dispensationRepository.save(dispensation);
-
-    // Update prescription item
-    item.quantityDispensed += dto.quantity;
-    if (item.quantityDispensed >= item.quantity) {
-      item.isDispensed = true;
+    if (!dispensation) {
+      throw new NotFoundException('Dispensation record not found after dispensing');
     }
-    await this.itemRepository.save(item);
-
-    // Activate medication for cross-encounter tracking
-    try {
-      const encounter = item.prescription?.encounter;
-      await this.activeMedService.activateFromDispensation({
-        patientId: encounter?.patientId || '',
-        encounterId: item.prescription?.encounterId || '',
-        prescriptionId: item.prescriptionId,
-        prescriptionItemId: item.id,
-        drugId: inv?.id,
-        drugCode: item.drugCode,
-        drugName: item.drugName,
-        genericName: inv?.genericName,
-        dose: item.dose,
-        frequency: item.frequency,
-        route: (item as any).route,
-        duration: item.duration,
-        facilityId: encounter?.facilityId || '',
-        tenantId,
-      });
-    } catch (err: any) {
-      this.logger.warn(`Failed to activate medication record: ${err?.message}`);
-    }
-
-    // Update prescription status
-    await this.updatePrescriptionStatus(item.prescriptionId, tenantId);
-
     return dispensation;
   }
 
