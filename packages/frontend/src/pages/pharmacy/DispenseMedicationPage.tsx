@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -143,6 +144,13 @@ export default function DispenseMedicationPage() {
   const [batchPickerItemId, setBatchPickerItemId] = useState<string | null>(null);
   const [batchPickerBatches, setBatchPickerBatches] = useState<BatchStock[]>([]);
   const [batchLoading, setBatchLoading] = useState(false);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const batchPickerItemIdDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!batchPickerItemId,
+    onClose: () => setBatchPickerItemId(null),
+  });
   const facilityId = useFacilityId();
 
   // Fetch pending prescriptions
@@ -1328,7 +1336,12 @@ export default function DispenseMedicationPage() {
 
       {/* Batch Picker Modal */}
       {batchPickerItemId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          role="dialog"
+          aria-modal="true"
+          ref={batchPickerItemIdDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4">
             <div className="flex items-center justify-between p-4 border-b">
               <h3 className="text-lg font-semibold text-gray-900">Select Batch</h3>

@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Search,
@@ -128,6 +129,13 @@ export default function InpatientMedsPage() {
   // itemId → quantity to issue
   const [issueItems, setIssueItems] = useState<Record<string, number>>({});
   const [issueSearch, setIssueSearch] = useState('');
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showIssueModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showIssueModal,
+    onClose: () => setShowIssueModal(false),
+  });
 
   // Fetch wards from IPD API
   const { data: wardsData } = useQuery({
@@ -781,7 +789,12 @@ export default function InpatientMedsPage() {
 
       {/* Issue to Ward Modal */}
       {showIssueModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showIssueModalDialogRef}
+        >
           <div className="bg-white rounded-lg shadow-xl w-[600px] max-h-[90vh] overflow-y-auto">
             <div className="p-4 border-b flex items-center justify-between">
               <h3 className="font-semibold text-gray-900 flex items-center gap-2">

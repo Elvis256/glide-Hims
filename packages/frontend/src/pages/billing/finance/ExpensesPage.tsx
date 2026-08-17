@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import api from '../../../services/api';
@@ -141,6 +142,17 @@ export default function ExpensesPage() {
 
   // Local expenses state (managed client-side)
   const [localExpenses, setLocalExpenses] = useState<Expense[]>([]);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const viewingExpenseDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!viewingExpense,
+    onClose: () => setViewingExpense(null),
+  });
+  const showCreateModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showCreateModal,
+    onClose: () => setShowCreateModal(false),
+  });
 
   // Expense form state
   const [expenseForm, setExpenseForm] = useState({
@@ -595,7 +607,12 @@ export default function ExpensesPage() {
 
       {/* View Expense Modal */}
       {viewingExpense && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={viewingExpenseDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <h2 className="text-lg font-bold text-gray-900">Expense Details</h2>
@@ -691,7 +708,12 @@ export default function ExpensesPage() {
 
       {/* Create Expense Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showCreateModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <h2 className="text-lg font-bold text-gray-900">Record New Expense</h2>

@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -60,6 +61,17 @@ export default function ReturnsPage() {
   const [showNewModal, setShowNewModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState<ReturnItem | null>(null);
   const [itemSearch, setItemSearch] = useState('');
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showNewModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showNewModal,
+    onClose: () => setShowNewModal(false),
+  });
+  const showDetailModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showDetailModal,
+    onClose: () => setShowDetailModal(null),
+  });
   const [newReturn, setNewReturn] = useState({
     itemId: '',
     itemName: '',
@@ -455,7 +467,12 @@ export default function ReturnsPage() {
 
       {/* New Return Modal */}
       {showNewModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showNewModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4">
             <div className="flex items-center justify-between p-4 border-b">
               <h3 className="text-lg font-semibold">Process New Return</h3>
@@ -591,7 +608,12 @@ export default function ReturnsPage() {
 
       {/* Detail Modal */}
       {showDetailModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showDetailModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4">
             <div className="flex items-center justify-between p-4 border-b">
               <h3 className="text-lg font-semibold">Return Details</h3>

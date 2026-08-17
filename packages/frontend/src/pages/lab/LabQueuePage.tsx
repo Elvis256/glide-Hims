@@ -1,4 +1,5 @@
 import { usePermissions } from '../../components/PermissionGate';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import AccessDenied from '../../components/AccessDenied';
 import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -92,6 +93,21 @@ export default function LabQueuePage() {
   const [showReturnDoctorModal, setShowReturnDoctorModal] = useState(false);
   const [returnDoctorReason, setReturnDoctorReason] = useState('');
   const [returnDoctorOrderId, setReturnDoctorOrderId] = useState<string | null>(null);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showViewModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showViewModal,
+    onClose: () => setShowViewModal(false),
+  });
+  const showCollectModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showCollectModal,
+    onClose: () => setShowCollectModal(false),
+  });
+  const showReturnDoctorModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showReturnDoctorModal,
+    onClose: () => setShowReturnDoctorModal(false),
+  });
   // Fetch lab technologists from providers API
   const { data: allProviders } = useQuery({
     queryKey: ['providers', facilityId],
@@ -916,7 +932,12 @@ export default function LabQueuePage() {
 
       {/* View Order Modal */}
       {showViewModal && selectedOrder && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={showViewModalDialogRef}
+        >
           <div className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-auto">
             <div className="p-6 border-b flex items-center justify-between sticky top-0 bg-white">
               <div>
@@ -1071,7 +1092,12 @@ export default function LabQueuePage() {
 
       {/* Sample Collection Modal */}
       {showCollectModal && collectingOrder && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={showCollectModalDialogRef}
+        >
           <div className="bg-white rounded-xl w-full max-w-lg">
             <div className="p-6 border-b flex items-center justify-between">
               <div>
@@ -1176,7 +1202,12 @@ export default function LabQueuePage() {
 
       {/* Return to Doctor Modal */}
       {showReturnDoctorModal && returnDoctorOrderId && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={showReturnDoctorModalDialogRef}
+        >
           <div className="bg-white rounded-xl w-full max-w-lg">
             <div className="p-6 border-b flex items-center justify-between">
               <div className="flex items-center gap-3">

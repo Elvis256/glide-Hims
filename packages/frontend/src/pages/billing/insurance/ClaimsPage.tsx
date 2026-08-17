@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useFacilityId } from '../../../lib/facility';
@@ -98,6 +99,17 @@ export default function ClaimsPage() {
   const [patientSearch, setPatientSearch] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [selectedPolicy, setSelectedPolicy] = useState<InsurancePolicy | null>(null);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showNewClaimModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showNewClaimModal,
+    onClose: () => setShowNewClaimModal(false),
+  });
+  const showDetailsModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showDetailsModal,
+    onClose: () => setShowDetailsModal(false),
+  });
 
   // Reactive hook: getFacilityId() read once at mount raced the async profile
   // load, so on hard refresh the claims query fired with no facility → [].
@@ -727,7 +739,12 @@ export default function ClaimsPage() {
 
       {/* New Claim Modal */}
       {showNewClaimModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showNewClaimModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4">
             <div className="flex items-center justify-between p-4 border-b">
               <h2 className="font-semibold text-lg">Submit New Claim</h2>
@@ -872,7 +889,12 @@ export default function ClaimsPage() {
 
       {/* Claim Details Modal */}
       {showDetailsModal && selectedClaim && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showDetailsModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl mx-4 max-h-[80vh] flex flex-col">
             <div className="flex items-center justify-between p-4 border-b flex-shrink-0">
               <div className="flex items-center gap-3">

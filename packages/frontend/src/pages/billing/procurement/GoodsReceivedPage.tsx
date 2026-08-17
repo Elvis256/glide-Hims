@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useFacilityId } from '../../../lib/facility';
@@ -960,6 +961,13 @@ function CreateDebitNoteAction({
   const [submitting, setSubmitting] = useState(false);
   const [reasonDetails, setReasonDetails] = useState('');
 
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const openDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!open,
+    onClose: () => setOpen(false),
+  });
+
   const loadPreview = async () => {
     setLoading(true);
     try {
@@ -1010,7 +1018,12 @@ function CreateDebitNoteAction({
         Create Debit Note for Rejected Items
       </button>
       {open && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div
+          className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={openDialogRef}
+        >
           <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[85vh] overflow-y-auto">
             <div className="px-5 py-3 border-b flex items-center justify-between">
               <h3 className="font-semibold text-gray-900">Debit Note from GRN {grnNumber}</h3>

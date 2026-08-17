@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   FileCheck,
@@ -66,6 +67,21 @@ export default function InvoiceMatchingPage() {
   const [createInvoiceDate, setCreateInvoiceDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [createDueDate, setCreateDueDate] = useState('');
   const [createInvoiceAmount, setCreateInvoiceAmount] = useState<number>(0);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showApproveModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showApproveModal,
+    onClose: () => setShowApproveModal(false),
+  });
+  const showFlagModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showFlagModal,
+    onClose: () => setShowFlagModal(false),
+  });
+  const showCreateModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showCreateModal,
+    onClose: () => setShowCreateModal(false),
+  });
   const [createItemLines, setCreateItemLines] = useState<
     Array<{ itemId: string; itemName: string; poQty: number; poPrice: number; grnQty: number; invoiceQty: number; invoicePrice: number }>
   >([]);
@@ -705,7 +721,12 @@ export default function InvoiceMatchingPage() {
 
       {/* Approve Modal */}
       {showApproveModal && selectedMatch && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showApproveModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
             <div className="px-6 py-4 border-b">
               <h2 className="text-lg font-semibold">Approve Invoice for Payment</h2>
@@ -769,7 +790,12 @@ export default function InvoiceMatchingPage() {
 
       {/* Flag Modal */}
       {showFlagModal && selectedMatch && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showFlagModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
             <div className="px-6 py-4 border-b">
               <h2 className="text-lg font-semibold">Flag Invoice for Follow-up</h2>
@@ -809,7 +835,12 @@ export default function InvoiceMatchingPage() {
 
       {/* Create Invoice Match Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={showCreateModalDialogRef}
+        >
           <div className="bg-white rounded-lg w-full max-w-4xl max-h-[90vh] flex flex-col">
             <div className="px-6 py-4 border-b flex items-center justify-between">
               <div>

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { formatCurrency } from '../../../lib/currency';
@@ -70,6 +71,21 @@ export default function DonorFundsPage() {
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [activeFundId, setActiveFundId] = useState<string | null>(null);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showCreateModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showCreateModal,
+    onClose: () => setShowCreateModal(false),
+  });
+  const showExpenseModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showExpenseModal,
+    onClose: () => setShowExpenseModal(false),
+  });
+  const showTransferModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showTransferModal,
+    onClose: () => setShowTransferModal(false),
+  });
 
   const { data: funds = [], isLoading } = useQuery<DonorFund[]>({
     queryKey: ['donor-funds', facilityId],
@@ -350,7 +366,12 @@ export default function DonorFundsPage() {
 
       {/* Create Fund Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showCreateModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <h2 className="text-lg font-bold text-gray-900">Create Donor Fund</h2>
@@ -407,7 +428,12 @@ export default function DonorFundsPage() {
 
       {/* Record Expense Modal */}
       {showExpenseModal && activeFundId && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showExpenseModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <h2 className="text-lg font-bold text-gray-900">Record Expense Against Fund</h2>
@@ -457,7 +483,12 @@ export default function DonorFundsPage() {
 
       {/* Inter-Facility Transfer Modal */}
       {showTransferModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showTransferModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <h2 className="text-lg font-bold text-gray-900">New Inter-Facility Transfer</h2>

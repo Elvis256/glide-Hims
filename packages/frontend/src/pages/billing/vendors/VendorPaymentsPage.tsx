@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../../../services/api';
 import { formatCurrency } from '../../../lib/currency';
@@ -117,6 +118,17 @@ export default function VendorPaymentsPage() {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
   const [viewingReceipt, setViewingReceipt] = useState<Payment | null>(null);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showPaymentModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showPaymentModal,
+    onClose: () => setShowPaymentModal(false),
+  });
+  const viewingReceiptDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!viewingReceipt,
+    onClose: () => setViewingReceipt(null),
+  });
 
   const [paymentFormData, setPaymentFormData] = useState({
     method: 'bank_transfer' as PaymentMethod,
@@ -611,7 +623,12 @@ export default function VendorPaymentsPage() {
 
       {/* Process Payment Modal */}
       {showPaymentModal && selectedPayment && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showPaymentModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <div>
@@ -704,7 +721,12 @@ export default function VendorPaymentsPage() {
 
       {/* Receipt Modal */}
       {viewingReceipt && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={viewingReceiptDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <div>
