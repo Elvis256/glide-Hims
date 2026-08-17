@@ -1,4 +1,4 @@
-import { useState, useMemo, Component } from 'react';
+import { useState, useMemo, Component, useId } from 'react';
 import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import type { ErrorInfo, ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -81,6 +81,7 @@ const statusConfig: Record<string, { color: string; icon: typeof CheckCircle }> 
 };
 
 function StaffDirectoryPageContent() {
+  const fid = useId();
   console.log('[StaffDirectory] Component rendering...');
   
   const location = useLocation();
@@ -977,8 +978,8 @@ function StaffDirectoryPageContent() {
                 <h3 className="font-semibold text-gray-700">Account Information</h3>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
-                <input 
+                <label htmlFor={`${fid}-full-name`} className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
+                <input id={`${fid}-full-name`} 
                   type="text" 
                   className="w-full border rounded-lg px-3 py-2" 
                   placeholder="Full name"
@@ -987,8 +988,8 @@ function StaffDirectoryPageContent() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
-                <input 
+                <label htmlFor={`${fid}-email`} className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
+                <input id={`${fid}-email`} 
                   type="email" 
                   className="w-full border rounded-lg px-3 py-2" 
                   placeholder="email@hospital.com"
@@ -997,8 +998,8 @@ function StaffDirectoryPageContent() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
-                <input 
+                <label htmlFor={`${fid}-username`} className="block text-sm font-medium text-gray-700 mb-1">Username</label>
+                <input id={`${fid}-username`} 
                   type="text" 
                   className="w-full border rounded-lg px-3 py-2" 
                   placeholder="Auto-generated from email if empty"
@@ -1007,8 +1008,8 @@ function StaffDirectoryPageContent() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-                <input 
+                <label htmlFor={`${fid}-password`} className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                <input id={`${fid}-password`} 
                   type="password" 
                   className="w-full border rounded-lg px-3 py-2" 
                   placeholder="Auto-generated if empty"
@@ -1017,8 +1018,8 @@ function StaffDirectoryPageContent() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-                <input 
+                <label htmlFor={`${fid}-phone`} className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                <input id={`${fid}-phone`} 
                   type="tel" 
                   className="w-full border rounded-lg px-3 py-2" 
                   placeholder="+256-700-000000"
@@ -1027,8 +1028,8 @@ function StaffDirectoryPageContent() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
-                <select 
+                <label htmlFor={`${fid}-role`} className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+                <select id={`${fid}-role`} 
                   className="w-full border rounded-lg px-3 py-2"
                   value={newStaff.roleId}
                   onChange={(e) => setNewStaff({ ...newStaff, roleId: e.target.value })}
@@ -1045,8 +1046,8 @@ function StaffDirectoryPageContent() {
                 <h3 className="font-semibold text-gray-700">Employment Details</h3>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
-                <select 
+                <label htmlFor={`${fid}-department`} className="block text-sm font-medium text-gray-700 mb-1">Department</label>
+                <select id={`${fid}-department`} 
                   className="w-full border rounded-lg px-3 py-2"
                   value={newStaff.departmentId}
                   onChange={(e) => setNewStaff({ ...newStaff, departmentId: e.target.value })}
@@ -1071,8 +1072,8 @@ function StaffDirectoryPageContent() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Staff Category</label>
-                <select 
+                <label htmlFor={`${fid}-staff-category`} className="block text-sm font-medium text-gray-700 mb-1">Staff Category</label>
+                <select id={`${fid}-staff-category`} 
                   className="w-full border rounded-lg px-3 py-2"
                   value={newStaff.staffCategory}
                   onChange={(e) => setNewStaff({ ...newStaff, staffCategory: e.target.value })}
@@ -1094,8 +1095,8 @@ function StaffDirectoryPageContent() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Employment Type</label>
-                <select 
+                <label htmlFor={`${fid}-employment-type`} className="block text-sm font-medium text-gray-700 mb-1">Employment Type</label>
+                <select id={`${fid}-employment-type`} 
                   className="w-full border rounded-lg px-3 py-2"
                   value={newStaff.employmentType}
                   onChange={(e) => setNewStaff({ ...newStaff, employmentType: e.target.value })}
@@ -1108,8 +1109,8 @@ function StaffDirectoryPageContent() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Gender</label>
-                <select 
+                <label htmlFor={`${fid}-gender`} className="block text-sm font-medium text-gray-700 mb-1">Gender</label>
+                <select id={`${fid}-gender`} 
                   className="w-full border rounded-lg px-3 py-2"
                   value={newStaff.gender}
                   onChange={(e) => setNewStaff({ ...newStaff, gender: e.target.value as 'male' | 'female' | 'other' })}
@@ -1120,8 +1121,8 @@ function StaffDirectoryPageContent() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Date of Birth</label>
-                <input 
+                <label htmlFor={`${fid}-date-of-birth`} className="block text-sm font-medium text-gray-700 mb-1">Date of Birth</label>
+                <input id={`${fid}-date-of-birth`} 
                   type="date" 
                   className="w-full border rounded-lg px-3 py-2"
                   value={newStaff.dateOfBirth}
@@ -1129,8 +1130,8 @@ function StaffDirectoryPageContent() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Basic Salary</label>
-                <input 
+                <label htmlFor={`${fid}-basic-salary`} className="block text-sm font-medium text-gray-700 mb-1">Basic Salary</label>
+                <input id={`${fid}-basic-salary`} 
                   type="number" 
                   className="w-full border rounded-lg px-3 py-2" 
                   placeholder="0"
@@ -1295,8 +1296,8 @@ function StaffDirectoryPageContent() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
-                <select 
+                <label htmlFor={`${fid}-department-2`} className="block text-sm font-medium text-gray-700 mb-1">Department</label>
+                <select id={`${fid}-department-2`} 
                   className="w-full border rounded-lg px-3 py-2"
                   value={editForm.departmentId}
                   onChange={(e) => setEditForm({ ...editForm, departmentId: e.target.value })}
@@ -1308,8 +1309,8 @@ function StaffDirectoryPageContent() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Staff Category</label>
-                <select 
+                <label htmlFor={`${fid}-staff-category-2`} className="block text-sm font-medium text-gray-700 mb-1">Staff Category</label>
+                <select id={`${fid}-staff-category-2`} 
                   className="w-full border rounded-lg px-3 py-2"
                   value={editForm.staffCategory}
                   onChange={(e) => setEditForm({ ...editForm, staffCategory: e.target.value })}
@@ -1324,8 +1325,8 @@ function StaffDirectoryPageContent() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Employment Type</label>
-                <select 
+                <label htmlFor={`${fid}-employment-type-2`} className="block text-sm font-medium text-gray-700 mb-1">Employment Type</label>
+                <select id={`${fid}-employment-type-2`} 
                   className="w-full border rounded-lg px-3 py-2"
                   value={editForm.employmentType}
                   onChange={(e) => setEditForm({ ...editForm, employmentType: e.target.value })}
@@ -1338,8 +1339,8 @@ function StaffDirectoryPageContent() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Gender</label>
-                <select 
+                <label htmlFor={`${fid}-gender-2`} className="block text-sm font-medium text-gray-700 mb-1">Gender</label>
+                <select id={`${fid}-gender-2`} 
                   className="w-full border rounded-lg px-3 py-2"
                   value={editForm.gender}
                   onChange={(e) => setEditForm({ ...editForm, gender: e.target.value })}
@@ -1351,8 +1352,8 @@ function StaffDirectoryPageContent() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Date of Birth</label>
-                <input 
+                <label htmlFor={`${fid}-date-of-birth-2`} className="block text-sm font-medium text-gray-700 mb-1">Date of Birth</label>
+                <input id={`${fid}-date-of-birth-2`} 
                   type="date" 
                   className="w-full border rounded-lg px-3 py-2"
                   value={editForm.dateOfBirth}
@@ -1360,8 +1361,8 @@ function StaffDirectoryPageContent() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Hire Date</label>
-                <input 
+                <label htmlFor={`${fid}-hire-date`} className="block text-sm font-medium text-gray-700 mb-1">Hire Date</label>
+                <input id={`${fid}-hire-date`} 
                   type="date" 
                   className="w-full border rounded-lg px-3 py-2"
                   value={editForm.hireDate}
@@ -1369,8 +1370,8 @@ function StaffDirectoryPageContent() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Basic Salary (UGX)</label>
-                <input 
+                <label htmlFor={`${fid}-basic-salary-ugx`} className="block text-sm font-medium text-gray-700 mb-1">Basic Salary (UGX)</label>
+                <input id={`${fid}-basic-salary-ugx`} 
                   type="number" 
                   className="w-full border rounded-lg px-3 py-2"
                   value={editForm.basicSalary}
@@ -1465,8 +1466,8 @@ function StaffDirectoryPageContent() {
               <h3 className="font-medium text-gray-700 mb-3">Upload New Document</h3>
               <div className="grid grid-cols-2 gap-3 mb-3">
                 <div>
-                  <label className="block text-sm text-gray-600 mb-1">Document Type</label>
-                  <select 
+                  <label htmlFor={`${fid}-document-type`} className="block text-sm text-gray-600 mb-1">Document Type</label>
+                  <select id={`${fid}-document-type`} 
                     value={uploadForm.documentType}
                     onChange={(e) => setUploadForm({ ...uploadForm, documentType: e.target.value })}
                     className="w-full border rounded-lg px-3 py-2 text-sm"
@@ -1482,8 +1483,8 @@ function StaffDirectoryPageContent() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-600 mb-1">Document Name</label>
-                  <input 
+                  <label htmlFor={`${fid}-document-name`} className="block text-sm text-gray-600 mb-1">Document Name</label>
+                  <input id={`${fid}-document-name`} 
                     type="text"
                     placeholder="e.g., National ID Copy"
                     value={uploadForm.documentName}
@@ -1492,8 +1493,8 @@ function StaffDirectoryPageContent() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-600 mb-1">License/Cert Number</label>
-                  <input 
+                  <label htmlFor={`${fid}-license-cert-number`} className="block text-sm text-gray-600 mb-1">License/Cert Number</label>
+                  <input id={`${fid}-license-cert-number`} 
                     type="text"
                     placeholder="Optional"
                     value={uploadForm.licenseNumber}
@@ -1502,8 +1503,8 @@ function StaffDirectoryPageContent() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-600 mb-1">Expiry Date</label>
-                  <input 
+                  <label htmlFor={`${fid}-expiry-date`} className="block text-sm text-gray-600 mb-1">Expiry Date</label>
+                  <input id={`${fid}-expiry-date`} 
                     type="date"
                     value={uploadForm.expiryDate}
                     onChange={(e) => setUploadForm({ ...uploadForm, expiryDate: e.target.value })}

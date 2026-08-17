@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useId } from 'react';
 import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -14,6 +14,7 @@ interface Props {
 }
 
 export default function AncRegisterModal({ onClose, onRegistered }: Props) {
+  const fid = useId();
   // This component is mounted only while the modal is showing.
   const dialogRef = useDialogA11y<HTMLDivElement>({
     open: true,
@@ -140,36 +141,36 @@ export default function AncRegisterModal({ onClose, onRegistered }: Props) {
 
           <div className="grid grid-cols-3 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">LMP Date *</label>
-              <input type="date" value={form.lmpDate} onChange={set('lmpDate')} className="w-full px-3 py-2 border rounded-lg" />
+              <label htmlFor={`${fid}-lmp-date`} className="block text-sm font-medium text-gray-700 mb-1">LMP Date *</label>
+              <input id={`${fid}-lmp-date`} type="date" value={form.lmpDate} onChange={set('lmpDate')} className="w-full px-3 py-2 border rounded-lg" />
               {edd && <p className="text-xs text-pink-600 mt-1">EDD: {edd}</p>}
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Gravida *</label>
-              <input type="number" min="1" value={form.gravida} onChange={set('gravida')} className="w-full px-3 py-2 border rounded-lg" />
+              <label htmlFor={`${fid}-gravida`} className="block text-sm font-medium text-gray-700 mb-1">Gravida *</label>
+              <input id={`${fid}-gravida`} type="number" min="1" value={form.gravida} onChange={set('gravida')} className="w-full px-3 py-2 border rounded-lg" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Para *</label>
-              <input type="number" min="0" value={form.para} onChange={set('para')} className="w-full px-3 py-2 border rounded-lg" />
+              <label htmlFor={`${fid}-para`} className="block text-sm font-medium text-gray-700 mb-1">Para *</label>
+              <input id={`${fid}-para`} type="number" min="0" value={form.para} onChange={set('para')} className="w-full px-3 py-2 border rounded-lg" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Living Children</label>
-              <input type="number" min="0" value={form.livingChildren} onChange={set('livingChildren')} className="w-full px-3 py-2 border rounded-lg" />
+              <label htmlFor={`${fid}-living-children`} className="block text-sm font-medium text-gray-700 mb-1">Living Children</label>
+              <input id={`${fid}-living-children`} type="number" min="0" value={form.livingChildren} onChange={set('livingChildren')} className="w-full px-3 py-2 border rounded-lg" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Abortions</label>
-              <input type="number" min="0" value={form.abortions} onChange={set('abortions')} className="w-full px-3 py-2 border rounded-lg" />
+              <label htmlFor={`${fid}-abortions`} className="block text-sm font-medium text-gray-700 mb-1">Abortions</label>
+              <input id={`${fid}-abortions`} type="number" min="0" value={form.abortions} onChange={set('abortions')} className="w-full px-3 py-2 border rounded-lg" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Blood Group</label>
-              <select value={form.bloodGroup} onChange={set('bloodGroup')} className="w-full px-3 py-2 border rounded-lg">
+              <label htmlFor={`${fid}-blood-group`} className="block text-sm font-medium text-gray-700 mb-1">Blood Group</label>
+              <select id={`${fid}-blood-group`} value={form.bloodGroup} onChange={set('bloodGroup')} className="w-full px-3 py-2 border rounded-lg">
                 <option value="">Unknown</option>
                 {['A', 'B', 'AB', 'O'].map((g) => <option key={g} value={g}>{g}</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Rhesus</label>
-              <select value={form.rhPositive} onChange={set('rhPositive')} className="w-full px-3 py-2 border rounded-lg">
+              <label htmlFor={`${fid}-rhesus`} className="block text-sm font-medium text-gray-700 mb-1">Rhesus</label>
+              <select id={`${fid}-rhesus`} value={form.rhPositive} onChange={set('rhPositive')} className="w-full px-3 py-2 border rounded-lg">
                 <option value="unknown">Unknown</option>
                 <option value="yes">Positive</option>
                 <option value="no">Negative</option>
@@ -201,27 +202,27 @@ export default function AncRegisterModal({ onClose, onRegistered }: Props) {
 
           {form.riskLevel !== 'low' && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Risk Factors</label>
-              <textarea value={form.riskFactors} onChange={set('riskFactors')} rows={2} className="w-full px-3 py-2 border rounded-lg" placeholder="e.g. previous C/S, hypertension, age > 35..." />
+              <label htmlFor={`${fid}-risk-factors`} className="block text-sm font-medium text-gray-700 mb-1">Risk Factors</label>
+              <textarea id={`${fid}-risk-factors`} value={form.riskFactors} onChange={set('riskFactors')} rows={2} className="w-full px-3 py-2 border rounded-lg" placeholder="e.g. previous C/S, hypertension, age > 35..." />
             </div>
           )}
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Medical History</label>
-              <textarea value={form.medicalHistory} onChange={set('medicalHistory')} rows={2} className="w-full px-3 py-2 border rounded-lg" />
+              <label htmlFor={`${fid}-medical-history`} className="block text-sm font-medium text-gray-700 mb-1">Medical History</label>
+              <textarea id={`${fid}-medical-history`} value={form.medicalHistory} onChange={set('medicalHistory')} rows={2} className="w-full px-3 py-2 border rounded-lg" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Allergies</label>
-              <textarea value={form.allergies} onChange={set('allergies')} rows={2} className="w-full px-3 py-2 border rounded-lg" />
+              <label htmlFor={`${fid}-allergies`} className="block text-sm font-medium text-gray-700 mb-1">Allergies</label>
+              <textarea id={`${fid}-allergies`} value={form.allergies} onChange={set('allergies')} rows={2} className="w-full px-3 py-2 border rounded-lg" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Partner / Next of Kin</label>
-              <input value={form.partnerName} onChange={set('partnerName')} className="w-full px-3 py-2 border rounded-lg" />
+              <label htmlFor={`${fid}-partner-next-of-kin`} className="block text-sm font-medium text-gray-700 mb-1">Partner / Next of Kin</label>
+              <input id={`${fid}-partner-next-of-kin`} value={form.partnerName} onChange={set('partnerName')} className="w-full px-3 py-2 border rounded-lg" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Partner Phone</label>
-              <input value={form.partnerPhone} onChange={set('partnerPhone')} className="w-full px-3 py-2 border rounded-lg" />
+              <label htmlFor={`${fid}-partner-phone`} className="block text-sm font-medium text-gray-700 mb-1">Partner Phone</label>
+              <input id={`${fid}-partner-phone`} value={form.partnerPhone} onChange={set('partnerPhone')} className="w-full px-3 py-2 border rounded-lg" />
             </div>
           </div>
         </div>

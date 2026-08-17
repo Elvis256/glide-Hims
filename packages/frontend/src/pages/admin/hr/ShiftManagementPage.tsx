@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useId } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { hrService } from '../../../services';
 import { useFacilityId } from '../../../lib/facility';
@@ -66,6 +66,7 @@ const statusConfig = {
 };
 
 export default function ShiftManagementPage() {
+  const fid = useId();
   const queryClient = useQueryClient();
   const facilityId = useFacilityId();
   const [activeTab, setActiveTab] = useState<'shifts' | 'assignments' | 'rotation'>('shifts');
@@ -673,8 +674,8 @@ export default function ShiftManagementPage() {
             </div>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Shift Name</label>
-                <input
+                <label htmlFor={`${fid}-shift-name`} className="block text-sm font-medium text-gray-700 mb-1">Shift Name</label>
+                <input id={`${fid}-shift-name`}
                   type="text"
                   value={shiftForm.name}
                   onChange={(e) => setShiftForm((prev) => ({ ...prev, name: e.target.value }))}
@@ -684,8 +685,8 @@ export default function ShiftManagementPage() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Code</label>
-                  <input
+                  <label htmlFor={`${fid}-code`} className="block text-sm font-medium text-gray-700 mb-1">Code</label>
+                  <input id={`${fid}-code`}
                     type="text"
                     value={shiftForm.code}
                     onChange={(e) => setShiftForm((prev) => ({ ...prev, code: e.target.value }))}
@@ -694,8 +695,8 @@ export default function ShiftManagementPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
-                  <select
+                  <label htmlFor={`${fid}-type`} className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+                  <select id={`${fid}-type`}
                     value={shiftForm.type}
                     onChange={(e) => setShiftForm((prev) => ({ ...prev, type: e.target.value as Shift['type'] }))}
                     className="w-full border rounded-lg px-3 py-2"
@@ -708,8 +709,8 @@ export default function ShiftManagementPage() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Start Time</label>
-                  <input
+                  <label htmlFor={`${fid}-start-time`} className="block text-sm font-medium text-gray-700 mb-1">Start Time</label>
+                  <input id={`${fid}-start-time`}
                     type="time"
                     value={shiftForm.startTime}
                     onChange={(e) => setShiftForm((prev) => ({ ...prev, startTime: e.target.value }))}
@@ -717,8 +718,8 @@ export default function ShiftManagementPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">End Time</label>
-                  <input
+                  <label htmlFor={`${fid}-end-time`} className="block text-sm font-medium text-gray-700 mb-1">End Time</label>
+                  <input id={`${fid}-end-time`}
                     type="time"
                     value={shiftForm.endTime}
                     onChange={(e) => setShiftForm((prev) => ({ ...prev, endTime: e.target.value }))}
@@ -727,8 +728,8 @@ export default function ShiftManagementPage() {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                <select
+                <label htmlFor={`${fid}-status`} className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                <select id={`${fid}-status`}
                   value={shiftForm.status}
                   onChange={(e) => setShiftForm((prev) => ({ ...prev, status: e.target.value as Shift['status'] }))}
                   className="w-full border rounded-lg px-3 py-2"
@@ -802,8 +803,8 @@ export default function ShiftManagementPage() {
             </div>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Staff Name</label>
-                <input
+                <label htmlFor={`${fid}-staff-name`} className="block text-sm font-medium text-gray-700 mb-1">Staff Name</label>
+                <input id={`${fid}-staff-name`}
                   type="text"
                   value={assignmentForm.staffName}
                   onChange={(e) => setAssignmentForm((prev) => ({ ...prev, staffName: e.target.value }))}
@@ -812,8 +813,8 @@ export default function ShiftManagementPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Employee ID</label>
-                <input
+                <label htmlFor={`${fid}-employee-id`} className="block text-sm font-medium text-gray-700 mb-1">Employee ID</label>
+                <input id={`${fid}-employee-id`}
                   type="text"
                   value={assignmentForm.staffId}
                   onChange={(e) => setAssignmentForm((prev) => ({ ...prev, staffId: e.target.value }))}
@@ -823,8 +824,8 @@ export default function ShiftManagementPage() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
-                  <select
+                  <label htmlFor={`${fid}-department`} className="block text-sm font-medium text-gray-700 mb-1">Department</label>
+                  <select id={`${fid}-department`}
                     value={assignmentForm.department}
                     onChange={(e) => setAssignmentForm((prev) => ({ ...prev, department: e.target.value }))}
                     className="w-full border rounded-lg px-3 py-2"
@@ -836,8 +837,8 @@ export default function ShiftManagementPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Shift</label>
-                  <select
+                  <label htmlFor={`${fid}-shift`} className="block text-sm font-medium text-gray-700 mb-1">Shift</label>
+                  <select id={`${fid}-shift`}
                     value={assignmentForm.shift}
                     onChange={(e) => setAssignmentForm((prev) => ({ ...prev, shift: e.target.value }))}
                     className="w-full border rounded-lg px-3 py-2"
@@ -851,8 +852,8 @@ export default function ShiftManagementPage() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
-                  <input
+                  <label htmlFor={`${fid}-date`} className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+                  <input id={`${fid}-date`}
                     type="date"
                     value={assignmentForm.date}
                     onChange={(e) => setAssignmentForm((prev) => ({ ...prev, date: e.target.value }))}
@@ -860,8 +861,8 @@ export default function ShiftManagementPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                  <select
+                  <label htmlFor={`${fid}-status-2`} className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                  <select id={`${fid}-status-2`}
                     value={assignmentForm.status}
                     onChange={(e) => setAssignmentForm((prev) => ({ ...prev, status: e.target.value as StaffAssignment['status'] }))}
                     className="w-full border rounded-lg px-3 py-2"

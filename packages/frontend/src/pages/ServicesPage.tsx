@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useId } from 'react';
 import { useDialogA11y } from '../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../services/api';
@@ -52,6 +52,7 @@ const tierColors: Record<string, string> = {
 };
 
 export default function ServicesPage() {
+  const fid = useId();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [showCategoryModal, setShowCategoryModal] = useState(false);
@@ -421,8 +422,8 @@ export default function ServicesPage() {
               </div>
               <form onSubmit={handleCategorySubmit} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Name</label>
-                  <input
+                  <label htmlFor={`${fid}-name`} className="block text-sm font-medium text-gray-700">Name</label>
+                  <input id={`${fid}-name`}
                     type="text"
                     name="name"
                     defaultValue={editingCategory?.name}
@@ -431,8 +432,8 @@ export default function ServicesPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Code</label>
-                  <input
+                  <label htmlFor={`${fid}-code`} className="block text-sm font-medium text-gray-700">Code</label>
+                  <input id={`${fid}-code`}
                     type="text"
                     name="code"
                     defaultValue={editingCategory?.code}
@@ -441,8 +442,8 @@ export default function ServicesPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Description</label>
-                  <textarea
+                  <label htmlFor={`${fid}-description`} className="block text-sm font-medium text-gray-700">Description</label>
+                  <textarea id={`${fid}-description`}
                     name="description"
                     defaultValue={editingCategory?.description}
                     rows={2}
@@ -502,8 +503,8 @@ export default function ServicesPage() {
               </div>
               <form onSubmit={handleServiceSubmit} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Name</label>
-                  <input
+                  <label htmlFor={`${fid}-name-2`} className="block text-sm font-medium text-gray-700">Name</label>
+                  <input id={`${fid}-name-2`}
                     type="text"
                     name="name"
                     defaultValue={editingService?.name}
@@ -512,8 +513,8 @@ export default function ServicesPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Code</label>
-                  <input
+                  <label htmlFor={`${fid}-code-2`} className="block text-sm font-medium text-gray-700">Code</label>
+                  <input id={`${fid}-code-2`}
                     type="text"
                     name="code"
                     defaultValue={editingService?.code}
@@ -522,8 +523,8 @@ export default function ServicesPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Category</label>
-                  <select
+                  <label htmlFor={`${fid}-category`} className="block text-sm font-medium text-gray-700">Category</label>
+                  <select id={`${fid}-category`}
                     name="categoryId"
                     defaultValue={editingService?.categoryId}
                     required
@@ -537,8 +538,8 @@ export default function ServicesPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Tier</label>
-                    <select
+                    <label htmlFor={`${fid}-tier`} className="block text-sm font-medium text-gray-700">Tier</label>
+                    <select id={`${fid}-tier`}
                       name="tier"
                       defaultValue={editingService?.tier || 'standard'}
                       className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
@@ -550,8 +551,8 @@ export default function ServicesPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Duration (min)</label>
-                    <input
+                    <label htmlFor={`${fid}-duration-min`} className="block text-sm font-medium text-gray-700">Duration (min)</label>
+                    <input id={`${fid}-duration-min`}
                       type="number"
                       name="duration"
                       defaultValue={editingService?.duration}
@@ -561,8 +562,8 @@ export default function ServicesPage() {
                   </div>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Description</label>
-                  <textarea
+                  <label htmlFor={`${fid}-description-2`} className="block text-sm font-medium text-gray-700">Description</label>
+                  <textarea id={`${fid}-description-2`}
                     name="description"
                     defaultValue={editingService?.description}
                     rows={2}
@@ -620,8 +621,8 @@ export default function ServicesPage() {
               </div>
               <form onSubmit={handlePackageSubmit} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Name</label>
-                  <input
+                  <label htmlFor={`${fid}-name-3`} className="block text-sm font-medium text-gray-700">Name</label>
+                  <input id={`${fid}-name-3`}
                     type="text"
                     name="name"
                     required
@@ -629,8 +630,8 @@ export default function ServicesPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Code</label>
-                  <input
+                  <label htmlFor={`${fid}-code-3`} className="block text-sm font-medium text-gray-700">Code</label>
+                  <input id={`${fid}-code-3`}
                     type="text"
                     name="code"
                     required
@@ -638,8 +639,8 @@ export default function ServicesPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Description</label>
-                  <textarea
+                  <label htmlFor={`${fid}-description-3`} className="block text-sm font-medium text-gray-700">Description</label>
+                  <textarea id={`${fid}-description-3`}
                     name="description"
                     rows={2}
                     className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
@@ -647,8 +648,8 @@ export default function ServicesPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Base Price (UGX)</label>
-                    <input
+                    <label htmlFor={`${fid}-base-price-ugx`} className="block text-sm font-medium text-gray-700">Base Price (UGX)</label>
+                    <input id={`${fid}-base-price-ugx`}
                       type="number"
                       name="basePrice"
                       required
@@ -657,8 +658,8 @@ export default function ServicesPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Discounted Price</label>
-                    <input
+                    <label htmlFor={`${fid}-discounted-price`} className="block text-sm font-medium text-gray-700">Discounted Price</label>
+                    <input id={`${fid}-discounted-price`}
                       type="number"
                       name="discountedPrice"
                       required

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useId } from 'react';
 import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -48,6 +48,7 @@ interface PettyCashTransaction {
 const categories = ['supplies', 'transport', 'meals', 'cleaning', 'stationery', 'repairs', 'other'];
 
 export default function PettyCashPage() {
+  const fid = useId();
   const queryClient = useQueryClient();
   const facilityId = useFacilityId();
 
@@ -255,12 +256,12 @@ export default function PettyCashPage() {
                 <div className="p-6 space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
-                      <input type="number" name="amount" required min="0" step="0.01" className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="0.00" />
+                      <label htmlFor={`${fid}-amount`} className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
+                      <input id={`${fid}-amount`} type="number" name="amount" required min="0" step="0.01" className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="0.00" />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
-                      <select name="category" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                      <label htmlFor={`${fid}-category`} className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                      <select id={`${fid}-category`} name="category" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                         <option value="">Select...</option>
                         {categories.map((c) => (
                           <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>
@@ -269,17 +270,17 @@ export default function PettyCashPage() {
                     </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                    <input type="text" name="description" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="What was purchased" />
+                    <label htmlFor={`${fid}-description`} className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                    <input id={`${fid}-description`} type="text" name="description" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="What was purchased" />
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Receipt Number</label>
-                      <input type="text" name="receiptNumber" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="RCT-001" />
+                      <label htmlFor={`${fid}-receipt-number`} className="block text-sm font-medium text-gray-700 mb-1">Receipt Number</label>
+                      <input id={`${fid}-receipt-number`} type="text" name="receiptNumber" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="RCT-001" />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Paid To</label>
-                      <input type="text" name="paidTo" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Vendor/person name" />
+                      <label htmlFor={`${fid}-paid-to`} className="block text-sm font-medium text-gray-700 mb-1">Paid To</label>
+                      <input id={`${fid}-paid-to`} type="text" name="paidTo" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Vendor/person name" />
                     </div>
                   </div>
                 </div>
@@ -456,17 +457,17 @@ export default function PettyCashPage() {
             >
               <div className="p-6 space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Fund Name</label>
-                  <input type="text" name="name" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g., Main Office Petty Cash" />
+                  <label htmlFor={`${fid}-fund-name`} className="block text-sm font-medium text-gray-700 mb-1">Fund Name</label>
+                  <input id={`${fid}-fund-name`} type="text" name="name" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g., Main Office Petty Cash" />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Imprest Amount</label>
-                    <input type="number" name="imprestAmount" required min="0" step="0.01" className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="0.00" />
+                    <label htmlFor={`${fid}-imprest-amount`} className="block text-sm font-medium text-gray-700 mb-1">Imprest Amount</label>
+                    <input id={`${fid}-imprest-amount`} type="number" name="imprestAmount" required min="0" step="0.01" className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="0.00" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Custodian ID</label>
-                    <input type="text" name="custodianId" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="UUID of custodian" />
+                    <label htmlFor={`${fid}-custodian-id`} className="block text-sm font-medium text-gray-700 mb-1">Custodian ID</label>
+                    <input id={`${fid}-custodian-id`} type="text" name="custodianId" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="UUID of custodian" />
                   </div>
                 </div>
               </div>
@@ -516,12 +517,12 @@ export default function PettyCashPage() {
               <div className="p-6 space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
-                    <input type="number" name="amount" required min="0" step="0.01" className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="0.00" />
+                    <label htmlFor={`${fid}-amount-2`} className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
+                    <input id={`${fid}-amount-2`} type="number" name="amount" required min="0" step="0.01" className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="0.00" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
-                    <select name="category" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <label htmlFor={`${fid}-category-2`} className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                    <select id={`${fid}-category-2`} name="category" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                       <option value="">Select...</option>
                       {categories.map((c) => (
                         <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>
@@ -530,17 +531,17 @@ export default function PettyCashPage() {
                   </div>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                  <input type="text" name="description" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="What was purchased" />
+                  <label htmlFor={`${fid}-description-2`} className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                  <input id={`${fid}-description-2`} type="text" name="description" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="What was purchased" />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Receipt Number</label>
-                    <input type="text" name="receiptNumber" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="RCT-001" />
+                    <label htmlFor={`${fid}-receipt-number-2`} className="block text-sm font-medium text-gray-700 mb-1">Receipt Number</label>
+                    <input id={`${fid}-receipt-number-2`} type="text" name="receiptNumber" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="RCT-001" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Paid To</label>
-                    <input type="text" name="paidTo" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Vendor/person" />
+                    <label htmlFor={`${fid}-paid-to-2`} className="block text-sm font-medium text-gray-700 mb-1">Paid To</label>
+                    <input id={`${fid}-paid-to-2`} type="text" name="paidTo" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Vendor/person" />
                   </div>
                 </div>
               </div>

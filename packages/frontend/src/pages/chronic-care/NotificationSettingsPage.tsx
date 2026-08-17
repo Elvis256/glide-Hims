@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useId } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Settings,
@@ -24,6 +24,7 @@ const providers: { value: NotificationProvider; label: string; description: stri
 ];
 
 export default function NotificationSettingsPage() {
+  const fid = useId();
   const facilityId = useFacilityId();
   const queryClient = useQueryClient();
   
@@ -197,8 +198,8 @@ export default function NotificationSettingsPage() {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">SMTP Host</label>
-              <input
+              <label htmlFor={`${fid}-smtp-host`} className="block text-sm font-medium text-gray-700 mb-1">SMTP Host</label>
+              <input id={`${fid}-smtp-host`}
                 type="text"
                 value={emailConfig.smtpHost || ''}
                 onChange={(e) => setEmailConfig({ ...emailConfig, smtpHost: e.target.value })}
@@ -207,8 +208,8 @@ export default function NotificationSettingsPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">SMTP Port</label>
-              <input
+              <label htmlFor={`${fid}-smtp-port`} className="block text-sm font-medium text-gray-700 mb-1">SMTP Port</label>
+              <input id={`${fid}-smtp-port`}
                 type="number"
                 value={emailConfig.smtpPort || 587}
                 onChange={(e) => setEmailConfig({ ...emailConfig, smtpPort: parseInt(e.target.value) })}
@@ -217,8 +218,8 @@ export default function NotificationSettingsPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">SMTP Username</label>
-              <input
+              <label htmlFor={`${fid}-smtp-username`} className="block text-sm font-medium text-gray-700 mb-1">SMTP Username</label>
+              <input id={`${fid}-smtp-username`}
                 type="text"
                 value={emailConfig.smtpUser || ''}
                 onChange={(e) => setEmailConfig({ ...emailConfig, smtpUser: e.target.value })}
@@ -227,8 +228,8 @@ export default function NotificationSettingsPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">SMTP Password</label>
-              <input
+              <label htmlFor={`${fid}-smtp-password`} className="block text-sm font-medium text-gray-700 mb-1">SMTP Password</label>
+              <input id={`${fid}-smtp-password`}
                 type="password"
                 value={emailConfig.smtpPassword || ''}
                 onChange={(e) => setEmailConfig({ ...emailConfig, smtpPassword: e.target.value })}
@@ -237,8 +238,8 @@ export default function NotificationSettingsPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">From Email</label>
-              <input
+              <label htmlFor={`${fid}-from-email`} className="block text-sm font-medium text-gray-700 mb-1">From Email</label>
+              <input id={`${fid}-from-email`}
                 type="email"
                 value={emailConfig.fromEmail || ''}
                 onChange={(e) => setEmailConfig({ ...emailConfig, fromEmail: e.target.value })}
@@ -247,8 +248,8 @@ export default function NotificationSettingsPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">From Name</label>
-              <input
+              <label htmlFor={`${fid}-from-name`} className="block text-sm font-medium text-gray-700 mb-1">From Name</label>
+              <input id={`${fid}-from-name`}
                 type="text"
                 value={emailConfig.fromName || ''}
                 onChange={(e) => setEmailConfig({ ...emailConfig, fromName: e.target.value })}
@@ -356,8 +357,8 @@ export default function NotificationSettingsPage() {
             {smsConfig.provider === 'africas_talking' && (
               <>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
-                  <input
+                  <label htmlFor={`${fid}-username`} className="block text-sm font-medium text-gray-700 mb-1">Username</label>
+                  <input id={`${fid}-username`}
                     type="text"
                     value={smsConfig.smsUsername || ''}
                     onChange={(e) => setSmsConfig({ ...smsConfig, smsUsername: e.target.value })}
@@ -366,8 +367,8 @@ export default function NotificationSettingsPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">API Key</label>
-                  <input
+                  <label htmlFor={`${fid}-api-key`} className="block text-sm font-medium text-gray-700 mb-1">API Key</label>
+                  <input id={`${fid}-api-key`}
                     type="password"
                     value={smsConfig.smsApiKey || ''}
                     onChange={(e) => setSmsConfig({ ...smsConfig, smsApiKey: e.target.value })}
@@ -381,8 +382,8 @@ export default function NotificationSettingsPage() {
             {smsConfig.provider === 'twilio' && (
               <>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Account SID</label>
-                  <input
+                  <label htmlFor={`${fid}-account-sid`} className="block text-sm font-medium text-gray-700 mb-1">Account SID</label>
+                  <input id={`${fid}-account-sid`}
                     type="text"
                     value={smsConfig.smsUsername || ''}
                     onChange={(e) => setSmsConfig({ ...smsConfig, smsUsername: e.target.value })}
@@ -391,8 +392,8 @@ export default function NotificationSettingsPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Auth Token</label>
-                  <input
+                  <label htmlFor={`${fid}-auth-token`} className="block text-sm font-medium text-gray-700 mb-1">Auth Token</label>
+                  <input id={`${fid}-auth-token`}
                     type="password"
                     value={smsConfig.smsApiKey || ''}
                     onChange={(e) => setSmsConfig({ ...smsConfig, smsApiKey: e.target.value })}
@@ -406,8 +407,8 @@ export default function NotificationSettingsPage() {
             {smsConfig.provider === 'custom' && (
               <>
                 <div className="col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">API URL</label>
-                  <input
+                  <label htmlFor={`${fid}-api-url`} className="block text-sm font-medium text-gray-700 mb-1">API URL</label>
+                  <input id={`${fid}-api-url`}
                     type="url"
                     value={smsConfig.smsApiUrl || ''}
                     onChange={(e) => setSmsConfig({ ...smsConfig, smsApiUrl: e.target.value })}
@@ -416,8 +417,8 @@ export default function NotificationSettingsPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">API Key</label>
-                  <input
+                  <label htmlFor={`${fid}-api-key-2`} className="block text-sm font-medium text-gray-700 mb-1">API Key</label>
+                  <input id={`${fid}-api-key-2`}
                     type="password"
                     value={smsConfig.smsApiKey || ''}
                     onChange={(e) => setSmsConfig({ ...smsConfig, smsApiKey: e.target.value })}
@@ -426,8 +427,8 @@ export default function NotificationSettingsPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">API Secret (optional)</label>
-                  <input
+                  <label htmlFor={`${fid}-api-secret-optional`} className="block text-sm font-medium text-gray-700 mb-1">API Secret (optional)</label>
+                  <input id={`${fid}-api-secret-optional`}
                     type="password"
                     value={smsConfig.smsApiSecret || ''}
                     onChange={(e) => setSmsConfig({ ...smsConfig, smsApiSecret: e.target.value })}
@@ -439,8 +440,8 @@ export default function NotificationSettingsPage() {
             )}
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Sender ID</label>
-              <input
+              <label htmlFor={`${fid}-sender-id`} className="block text-sm font-medium text-gray-700 mb-1">Sender ID</label>
+              <input id={`${fid}-sender-id`}
                 type="text"
                 value={smsConfig.smsSenderId || ''}
                 onChange={(e) => setSmsConfig({ ...smsConfig, smsSenderId: e.target.value })}

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useId } from 'react';
 import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -76,6 +76,7 @@ interface ProviderFormData {
 }
 
 export default function ProvidersPage() {
+  const fid = useId();
   const queryClient = useQueryClient();
   const facilityId = useFacilityId();
   
@@ -674,8 +675,8 @@ export default function ProvidersPage() {
                           });
                         }} className="p-4 space-y-4">
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Service</label>
-                            <select
+                            <label htmlFor={`${fid}-service`} className="block text-sm font-medium text-gray-700 mb-1">Service</label>
+                            <select id={`${fid}-service`}
                               value={priceForm.serviceId}
                               onChange={e => setPriceForm(f => ({ ...f, serviceId: e.target.value }))}
                               className="input w-full"
@@ -687,8 +688,8 @@ export default function ProvidersPage() {
                             </select>
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Agreed Price (UGX) *</label>
-                            <input
+                            <label htmlFor={`${fid}-agreed-price-ugx`} className="block text-sm font-medium text-gray-700 mb-1">Agreed Price (UGX) *</label>
+                            <input id={`${fid}-agreed-price-ugx`}
                               type="number"
                               required
                               min="0"
@@ -700,8 +701,8 @@ export default function ProvidersPage() {
                             />
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Effective From</label>
-                            <input
+                            <label htmlFor={`${fid}-effective-from`} className="block text-sm font-medium text-gray-700 mb-1">Effective From</label>
+                            <input id={`${fid}-effective-from`}
                               type="date"
                               value={priceForm.effectiveFrom}
                               onChange={e => setPriceForm(f => ({ ...f, effectiveFrom: e.target.value }))}
@@ -709,8 +710,8 @@ export default function ProvidersPage() {
                             />
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-                            <textarea
+                            <label htmlFor={`${fid}-notes`} className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                            <textarea id={`${fid}-notes`}
                               value={priceForm.notes}
                               onChange={e => setPriceForm(f => ({ ...f, notes: e.target.value }))}
                               className="input w-full"
@@ -820,8 +821,8 @@ export default function ProvidersPage() {
             <div className="p-4 space-y-4 overflow-y-auto flex-1">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Provider Name *</label>
-                  <input
+                  <label htmlFor={`${fid}-provider-name`} className="block text-sm font-medium text-gray-700 mb-1">Provider Name *</label>
+                  <input id={`${fid}-provider-name`}
                     type="text"
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
@@ -830,8 +831,8 @@ export default function ProvidersPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Provider Code *</label>
-                  <input
+                  <label htmlFor={`${fid}-provider-code`} className="block text-sm font-medium text-gray-700 mb-1">Provider Code *</label>
+                  <input id={`${fid}-provider-code`}
                     type="text"
                     value={formData.code}
                     onChange={(e) => setFormData({ ...formData, code: e.target.value })}
@@ -841,8 +842,8 @@ export default function ProvidersPage() {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Type *</label>
-                <select
+                <label htmlFor={`${fid}-type`} className="block text-sm font-medium text-gray-700 mb-1">Type *</label>
+                <select id={`${fid}-type`}
                   value={formData.type}
                   onChange={(e) => setFormData({ ...formData, type: e.target.value as 'nhis' | 'private' | 'corporate' | 'government' })}
                   className="input"
@@ -854,8 +855,8 @@ export default function ProvidersPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Contact Person</label>
-                <input
+                <label htmlFor={`${fid}-contact-person`} className="block text-sm font-medium text-gray-700 mb-1">Contact Person</label>
+                <input id={`${fid}-contact-person`}
                   type="text"
                   value={formData.contactPerson}
                   onChange={(e) => setFormData({ ...formData, contactPerson: e.target.value })}
@@ -864,8 +865,8 @@ export default function ProvidersPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
-                <input
+                <label htmlFor={`${fid}-email`} className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
+                <input id={`${fid}-email`}
                   type="email"
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
@@ -874,8 +875,8 @@ export default function ProvidersPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Phone *</label>
-                <input
+                <label htmlFor={`${fid}-phone`} className="block text-sm font-medium text-gray-700 mb-1">Phone *</label>
+                <input id={`${fid}-phone`}
                   type="tel"
                   value={formData.phone}
                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
@@ -884,8 +885,8 @@ export default function ProvidersPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
-                <textarea
+                <label htmlFor={`${fid}-address`} className="block text-sm font-medium text-gray-700 mb-1">Address</label>
+                <textarea id={`${fid}-address`}
                   value={formData.address}
                   onChange={(e) => setFormData({ ...formData, address: e.target.value })}
                   placeholder="Enter address..."
@@ -894,8 +895,8 @@ export default function ProvidersPage() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Claim Submission Method</label>
-                  <select
+                  <label htmlFor={`${fid}-claim-submission-method`} className="block text-sm font-medium text-gray-700 mb-1">Claim Submission Method</label>
+                  <select id={`${fid}-claim-submission-method`}
                     value={formData.claimSubmissionMethod}
                     onChange={(e) => setFormData({ ...formData, claimSubmissionMethod: e.target.value })}
                     className="input"
@@ -907,8 +908,8 @@ export default function ProvidersPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Avg Payment Days</label>
-                  <input
+                  <label htmlFor={`${fid}-avg-payment-days`} className="block text-sm font-medium text-gray-700 mb-1">Avg Payment Days</label>
+                  <input id={`${fid}-avg-payment-days`}
                     type="number"
                     value={formData.averagePaymentDays || ''}
                     onChange={(e) => setFormData({ ...formData, averagePaymentDays: e.target.value ? Number(e.target.value) : undefined })}
