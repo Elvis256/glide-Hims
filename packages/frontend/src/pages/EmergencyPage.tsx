@@ -1,4 +1,5 @@
 import { useState, useEffect, useId } from 'react';
+import { useDialogA11y } from '../hooks/useDialogA11y';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -57,6 +58,7 @@ export default function EmergencyPage() {
   // One base per mounted page; each field derives a stable id from it, so the
   // ids stay unique even if this page is ever rendered twice.
   const fid = useId();
+
   const queryClient = useQueryClient();
   const facilityId = useFacilityId();
   const [searchTerm, setSearchTerm] = useState('');
@@ -66,6 +68,27 @@ export default function EmergencyPage() {
   const [showTriageModal, setShowTriageModal] = useState(false);
   const [showDischargeModal, setShowDischargeModal] = useState(false);
   const [showAdmitModal, setShowAdmitModal] = useState(false);
+
+  // Escape closes, Tab stays inside, and focus returns to whatever opened the
+  // modal. None of these did any of that: Escape was inert and tabbing walked
+  // out onto the case list behind, so a half-filled triage form could be typed
+  // into the page underneath without anyone noticing.
+  const registerDialogRef = useDialogA11y<HTMLDivElement>({
+    open: showRegisterModal,
+    onClose: () => setShowRegisterModal(false),
+  });
+  const triageDialogRef = useDialogA11y<HTMLDivElement>({
+    open: showTriageModal,
+    onClose: () => setShowTriageModal(false),
+  });
+  const dischargeDialogRef = useDialogA11y<HTMLDivElement>({
+    open: showDischargeModal,
+    onClose: () => setShowDischargeModal(false),
+  });
+  const admitDialogRef = useDialogA11y<HTMLDivElement>({
+    open: showAdmitModal,
+    onClose: () => setShowAdmitModal(false),
+  });
 
   // Registration form state
   const [registerForm, setRegisterForm] = useState({
@@ -682,12 +705,20 @@ export default function EmergencyPage() {
 
       {/* Register Modal */}
       {showRegisterModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={`${fid}-register-title`}
+          ref={registerDialogRef}
+        >
           <div className="bg-white rounded-xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold">Register Emergency Case</h2>
-              <button onClick={() => setShowRegisterModal(false)} className="text-gray-400 hover:text-gray-600">
-                <X className="w-5 h-5" />
+              <h2 id={`${fid}-register-title`} className="text-lg font-semibold">Register Emergency Case</h2>
+              <button onClick={() => setShowRegisterModal(false)} aria-label="Close"
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-5 h-5" aria-hidden="true" />
               </button>
             </div>
             
@@ -803,15 +834,23 @@ export default function EmergencyPage() {
 
       {/* Triage Modal */}
       {showTriageModal && selectedCase && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={`${fid}-triage-title`}
+          ref={triageDialogRef}
+        >
           <div className="bg-white rounded-xl w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <h2 className="text-lg font-semibold">Triage Assessment</h2>
+                <h2 id={`${fid}-triage-title`} className="text-lg font-semibold">Triage Assessment</h2>
                 <p className="text-sm text-gray-500">{selectedCase.caseNumber} - {selectedCase.encounter?.patient?.fullName || 'Unknown'}</p>
               </div>
-              <button onClick={() => setShowTriageModal(false)} className="text-gray-400 hover:text-gray-600">
-                <X className="w-5 h-5" />
+              <button onClick={() => setShowTriageModal(false)} aria-label="Close"
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-5 h-5" aria-hidden="true" />
               </button>
             </div>
             
@@ -966,15 +1005,23 @@ export default function EmergencyPage() {
 
       {/* Discharge Modal */}
       {showDischargeModal && selectedCase && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={`${fid}-discharge-title`}
+          ref={dischargeDialogRef}
+        >
           <div className="bg-white rounded-xl w-full max-w-md p-6">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <h2 className="text-lg font-semibold">Discharge Patient</h2>
+                <h2 id={`${fid}-discharge-title`} className="text-lg font-semibold">Discharge Patient</h2>
                 <p className="text-sm text-gray-500">{selectedCase.caseNumber}</p>
               </div>
-              <button onClick={() => setShowDischargeModal(false)} className="text-gray-400 hover:text-gray-600">
-                <X className="w-5 h-5" />
+              <button onClick={() => setShowDischargeModal(false)} aria-label="Close"
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-5 h-5" aria-hidden="true" />
               </button>
             </div>
             
@@ -1064,15 +1111,23 @@ export default function EmergencyPage() {
 
       {/* Admit Modal */}
       {showAdmitModal && selectedCase && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={`${fid}-admit-title`}
+          ref={admitDialogRef}
+        >
           <div className="bg-white rounded-xl w-full max-w-md p-6">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <h2 className="text-lg font-semibold">Admit to IPD</h2>
+                <h2 id={`${fid}-admit-title`} className="text-lg font-semibold">Admit to IPD</h2>
                 <p className="text-sm text-gray-500">{selectedCase.caseNumber}</p>
               </div>
-              <button onClick={() => setShowAdmitModal(false)} className="text-gray-400 hover:text-gray-600">
-                <X className="w-5 h-5" />
+              <button onClick={() => setShowAdmitModal(false)} aria-label="Close"
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-5 h-5" aria-hidden="true" />
               </button>
             </div>
             

@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useId } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -116,8 +117,23 @@ export default function WardsBedsPage() {
   const [selectedBed, setSelectedBed] = useState<BedInfo | null>(null);
   const [selectedWardId, setSelectedWardId] = useState<string | null>(null);
   const [showTransferModal, setShowTransferModal] = useState(false);
-  const [transferForm, setTransferForm] = useState({ toWardId: '', toBedId: '', reason: 'clinical', notes: '' });
+
   const [handoverWardId, setHandoverWardId] = useState<string | null>(null);
+
+  // Escape closes both of these, Tab stays inside, and focus goes back to the
+  // bed that opened them. The handover sheet in particular is read on a shared
+  // ward terminal, where tabbing off into the bed grid behind is easy to do and
+  // hard to notice.
+  const fid = useId();
+  const handoverDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!handoverWardId,
+    onClose: () => setHandoverWardId(null),
+  });
+  const transferDialogRef = useDialogA11y<HTMLDivElement>({
+    open: showTransferModal,
+    onClose: () => setShowTransferModal(false),
+  });
+  const [transferForm, setTransferForm] = useState({ toWardId: '', toBedId: '', reason: 'clinical', notes: '' });
 
   // Ward shift-handover sheet
   const { data: handover, isLoading: handoverLoading } = useQuery({
@@ -573,11 +589,17 @@ export default function WardsBedsPage() {
 
       {/* Ward Handover Sheet */}
       {handoverWardId && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={`${fid}-handover-title`}
+          ref={handoverDialogRef}
+        >
           <div className="bg-white rounded-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
             <div className="p-4 border-b flex items-center justify-between">
               <div>
-                <h2 className="text-lg font-semibold">
+                <h2 id={`${fid}-handover-title`} className="text-lg font-semibold">
                   Shift Handover — {handover?.ward?.name || '…'}
                 </h2>
                 {handover && (
@@ -700,16 +722,22 @@ export default function WardsBedsPage() {
 
       {/* Transfer Modal */}
       {showTransferModal && selectedBed && admissionsByBed[selectedBed.id] && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={`${fid}-transfer-title`}
+          ref={transferDialogRef}
+        >
           <div className="bg-white rounded-xl w-full max-w-md p-6">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <h2 className="text-lg font-semibold">Transfer Patient</h2>
+                <h2 id={`${fid}-transfer-title`} className="text-lg font-semibold">Transfer Patient</h2>
                 <p className="text-sm text-gray-500">
                   {admissionsByBed[selectedBed.id].patient?.fullName} — from bed {selectedBed.bedNumber}
                 </p>
               </div>
-              <button onClick={() => setShowTransferModal(false)} className="text-gray-400 hover:text-gray-600">
+              <button aria-label="Close" onClick={() => setShowTransferModal(false)} className="text-gray-400 hover:text-gray-600">
                 <X className="w-5 h-5" />
               </button>
             </div>
