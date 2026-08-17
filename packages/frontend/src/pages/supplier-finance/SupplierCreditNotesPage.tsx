@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { formatCurrency } from '../../lib/currency';
@@ -41,6 +42,21 @@ export default function SupplierCreditNotesPage() {
   const [applyingNote, setApplyingNote] = useState<CreditNote | null>(null);
   const [applyVoucherId, setApplyVoucherId] = useState('');
   const [applyAmount, setApplyAmount] = useState('');
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const viewingNoteDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!viewingNote,
+    onClose: () => setViewingNote(null),
+  });
+  const showApplyModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showApplyModal,
+    onClose: () => setShowApplyModal(false),
+  });
+  const showAddModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showAddModal,
+    onClose: () => setShowAddModal(false),
+  });
 
   const facilityId = useFacilityId();
 
@@ -350,7 +366,12 @@ export default function SupplierCreditNotesPage() {
 
       {/* View Modal */}
       {viewingNote && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={viewingNoteDialogRef}
+        >
           <div className="bg-white rounded-xl p-6 w-full max-w-lg">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-bold text-gray-900">{viewingNote.noteNumber}</h2>
@@ -411,7 +432,12 @@ export default function SupplierCreditNotesPage() {
 
       {/* Apply Modal */}
       {showApplyModal && applyingNote && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showApplyModalDialogRef}
+        >
           <div className="bg-white rounded-xl p-6 w-full max-w-md">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-bold text-gray-900">Apply Credit Note</h2>
@@ -501,7 +527,12 @@ export default function SupplierCreditNotesPage() {
 
       {/* Create Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showAddModalDialogRef}
+        >
           <div className="bg-white rounded-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-bold text-gray-900">Create Note</h2>

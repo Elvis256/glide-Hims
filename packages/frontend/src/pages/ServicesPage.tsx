@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useDialogA11y } from '../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../services/api';
 import {
@@ -59,6 +60,21 @@ export default function ServicesPage() {
   const [editingCategory, setEditingCategory] = useState<ServiceCategory | null>(null);
   const [editingService, setEditingService] = useState<Service | null>(null);
   const [activeTab, setActiveTab] = useState<'services' | 'categories' | 'packages'>('services');
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showCategoryModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showCategoryModal,
+    onClose: () => setShowCategoryModal(false),
+  });
+  const showServiceModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showServiceModal,
+    onClose: () => setShowServiceModal(false),
+  });
+  const showPackageModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showPackageModal,
+    onClose: () => setShowPackageModal(false),
+  });
 
   // Fetch categories
   const { data: categories } = useQuery({
@@ -386,7 +402,12 @@ export default function ServicesPage() {
 
       {/* Category Modal */}
       {showCategoryModal && (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
+        <div
+          className="fixed inset-0 z-50 overflow-y-auto"
+          role="dialog"
+          aria-modal="true"
+          ref={showCategoryModalDialogRef}
+        >
           <div className="flex items-center justify-center min-h-screen px-4">
             <div className="fixed inset-0 bg-gray-500 bg-opacity-75" onClick={() => setShowCategoryModal(false)} />
             <div className="relative bg-white rounded-lg shadow-xl max-w-md w-full p-6">
@@ -462,7 +483,12 @@ export default function ServicesPage() {
 
       {/* Service Modal */}
       {showServiceModal && (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
+        <div
+          className="fixed inset-0 z-50 overflow-y-auto"
+          role="dialog"
+          aria-modal="true"
+          ref={showServiceModalDialogRef}
+        >
           <div className="flex items-center justify-center min-h-screen px-4">
             <div className="fixed inset-0 bg-gray-500 bg-opacity-75" onClick={() => setShowServiceModal(false)} />
             <div className="relative bg-white rounded-lg shadow-xl max-w-md w-full p-6">
@@ -577,7 +603,12 @@ export default function ServicesPage() {
 
       {/* Package Modal */}
       {showPackageModal && (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
+        <div
+          className="fixed inset-0 z-50 overflow-y-auto"
+          role="dialog"
+          aria-modal="true"
+          ref={showPackageModalDialogRef}
+        >
           <div className="flex items-center justify-center min-h-screen px-4">
             <div className="fixed inset-0 bg-gray-500 bg-opacity-75" onClick={() => setShowPackageModal(false)} />
             <div className="relative bg-white rounded-lg shadow-xl max-w-md w-full p-6">

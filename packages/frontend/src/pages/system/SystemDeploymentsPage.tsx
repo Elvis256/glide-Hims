@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useSearchParams, Link } from 'react-router-dom';
 import api from '../../services/api';
 import {
@@ -121,6 +122,13 @@ export default function SystemDeploymentsPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [revealedKeys, setRevealedKeys] = useState<Set<string>>(new Set());
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showCreateDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showCreate,
+    onClose: () => setShowCreate(false),
+  });
   const [reissueModal, setReissueModal] = useState<{ open: boolean; dep: Deployment | null; days: number; busy: boolean }>({
     open: false, dep: null, days: 365, busy: false,
   });
@@ -749,7 +757,12 @@ export default function SystemDeploymentsPage() {
 
       {/* Create Deployment Modal */}
       {showCreate && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div
+          className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={showCreateDialogRef}
+        >
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg">
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
               <h2 className="text-lg font-bold text-gray-900">Create Deployment</h2>

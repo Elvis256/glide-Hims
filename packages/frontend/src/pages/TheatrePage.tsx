@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useDialogA11y } from '../hooks/useDialogA11y';
 import { toast } from 'sonner';
 import { api, getApiErrorMessage } from '../services/api';
 import { useFacilityId } from '../lib/facility';
@@ -107,6 +108,21 @@ export default function TheatrePage() {
   const [showTheatreModal, setShowTheatreModal] = useState(false);
   const [theatreForm, setTheatreForm] = useState({ name: '', code: '', type: 'general' });
   const [actionPending, setActionPending] = useState(false);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const selectedCaseDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!selectedCase,
+    onClose: () => setSelectedCase(null),
+  });
+  const cancelCaseDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!cancelCase,
+    onClose: () => setCancelCase(null),
+  });
+  const showTheatreModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showTheatreModal,
+    onClose: () => setShowTheatreModal(false),
+  });
 
   const refresh = () => {
     loadDashboard();
@@ -544,7 +560,12 @@ export default function TheatrePage() {
 
       {/* Case Detail Side Panel */}
       {selectedCase && (
-        <div className="fixed inset-0 z-50 flex justify-end">
+        <div
+          className="fixed inset-0 z-50 flex justify-end"
+          role="dialog"
+          aria-modal="true"
+          ref={selectedCaseDialogRef}
+        >
           <div className="absolute inset-0 bg-black/30" onClick={() => setSelectedCase(null)} />
           <div className="relative w-full max-w-lg bg-white shadow-xl overflow-y-auto">
             <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center">
@@ -737,7 +758,12 @@ export default function TheatrePage() {
 
       {/* Cancel / postpone */}
       {cancelCase && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={cancelCaseDialogRef}
+        >
           <div className="absolute inset-0 bg-black/30" onClick={() => setCancelCase(null)} />
           <div className="relative bg-white rounded-lg shadow-xl w-full max-w-md">
             <div className="border-b px-6 py-4 flex justify-between items-center">
@@ -792,7 +818,12 @@ export default function TheatrePage() {
 
       {/* Add theatre */}
       {showTheatreModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={showTheatreModalDialogRef}
+        >
           <div className="absolute inset-0 bg-black/30" onClick={() => setShowTheatreModal(false)} />
           <div className="relative bg-white rounded-lg shadow-xl w-full max-w-sm">
             <div className="border-b px-6 py-4 flex justify-between items-center">

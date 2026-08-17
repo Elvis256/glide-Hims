@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { HeartHandshake, X, Loader2, AlertTriangle } from 'lucide-react';
@@ -29,6 +30,13 @@ export default function PncTab() {
   const queryClient = useQueryClient();
   const [recording, setRecording] = useState<any | null>(null);
   const [form, setForm] = useState<any>({});
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const recordingDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!recording,
+    onClose: () => setRecording(null),
+  });
 
   const { data: dueList = [], isLoading } = useQuery({
     queryKey: ['pnc-due', facilityId],
@@ -161,7 +169,12 @@ export default function PncTab() {
       </div>
 
       {recording && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={recordingDialogRef}
+        >
           <div className="absolute inset-0 bg-black/30" onClick={() => setRecording(null)} />
           <div className="relative bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center">

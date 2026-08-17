@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
@@ -133,6 +134,17 @@ export default function ImagingOrdersPage() {
   const [selectedOrder, setSelectedOrder] = useState<ImagingOrder | null>(null);
   const [showNewOrderModal, setShowNewOrderModal] = useState(false);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showNewOrderModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showNewOrderModal,
+    onClose: () => setShowNewOrderModal(false),
+  });
+  const showScheduleModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showScheduleModal,
+    onClose: () => setShowScheduleModal(false),
+  });
   const [newOrderForm, setNewOrderForm] = useState<NewOrderFormData>({
     patientSearch: '',
     selectedPatient: null,
@@ -633,7 +645,12 @@ export default function ImagingOrdersPage() {
 
       {/* New Order Modal */}
       {showNewOrderModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showNewOrderModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4">
             <div className="flex items-center justify-between p-4 border-b">
               <h2 className="text-lg font-semibold text-gray-900">New Imaging Order</h2>
@@ -759,7 +776,12 @@ export default function ImagingOrdersPage() {
 
       {/* Schedule Modal */}
       {showScheduleModal && selectedOrder && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showScheduleModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4">
             <div className="flex items-center justify-between p-4 border-b">
               <h2 className="text-lg font-semibold text-gray-900">Schedule Imaging</h2>

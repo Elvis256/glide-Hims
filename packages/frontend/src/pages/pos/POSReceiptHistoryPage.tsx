@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery } from '@tanstack/react-query';
 import {
   Receipt,
@@ -41,6 +42,13 @@ export default function POSReceiptHistoryPage() {
   const [selectedSale, setSelectedSale] = useState<SaleHistory | null>(null);
   const [receiptData, setReceiptData] = useState<any>(null);
   const [loadingReceipt, setLoadingReceipt] = useState(false);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const receiptDataDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!receiptData,
+    onClose: () => setReceiptData(null),
+  });
 
   const historyQuery = useQuery({
     queryKey: ['receipt-history', from, to, saleNumber],
@@ -126,7 +134,12 @@ export default function POSReceiptHistoryPage() {
 
       {/* Receipt Modal */}
       {receiptData && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={receiptDataDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6 space-y-4 print:shadow-none">
             <div ref={receiptRef} className="space-y-4">
             {receiptData.isDuplicate && (

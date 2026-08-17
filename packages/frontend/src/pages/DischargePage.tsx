@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useDialogA11y } from '../hooks/useDialogA11y';
 import api from '../services/api';
 import { printService } from '../lib/print';
 
@@ -45,6 +46,13 @@ export default function DischargePage() {
   const [loading, setLoading] = useState(true);
   const [selectedSummary, setSelectedSummary] = useState<DischargeSummary | null>(null);
   const [showPrintModal, setShowPrintModal] = useState(false);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showPrintModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showPrintModal,
+    onClose: () => setShowPrintModal(false),
+  });
 
   useEffect(() => {
     loadSummaries();
@@ -273,7 +281,12 @@ export default function DischargePage() {
 
       {/* Print Modal */}
       {showPrintModal && selectedSummary && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showPrintModalDialogRef}
+        >
           <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
             <div className="p-6 print-content">
               <div className="text-center border-b pb-4 mb-4">

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useDialogA11y } from '../hooks/useDialogA11y';
 import api from '../services/api';
 import { toast } from 'sonner';
 
@@ -19,6 +20,13 @@ export default function CareersPage() {
   const [selected, setSelected] = useState<JobPosting | null>(null);
   const [applyForm, setApplyForm] = useState<any>({});
   const [submitting, setSubmitting] = useState(false);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const selectedDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!selected,
+    onClose: () => setSelected(null),
+  });
 
   const load = async () => {
     setLoading(true);
@@ -109,7 +117,12 @@ export default function CareersPage() {
       </main>
 
       {selected && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={selectedDialogRef}
+        >
           <div className="bg-white rounded p-6 w-full max-w-lg max-h-screen overflow-y-auto">
             <h2 className="text-xl font-bold mb-1">Apply: {selected.title}</h2>
             <p className="text-sm text-gray-600 mb-4">All fields marked * are required.</p>

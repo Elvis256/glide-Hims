@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { formatCurrency } from '../../lib/currency';
 import { supplierFinanceService, type PaymentVoucher } from '../../services/supplier-finance';
@@ -37,6 +38,17 @@ export default function SupplierPaymentVouchersPage() {
   const [selectedStatus, setSelectedStatus] = useState('All');
   const [showAddModal, setShowAddModal] = useState(false);
   const [viewingVoucher, setViewingVoucher] = useState<PaymentVoucher | null>(null);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const viewingVoucherDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!viewingVoucher,
+    onClose: () => setViewingVoucher(null),
+  });
+  const showAddModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showAddModal,
+    onClose: () => setShowAddModal(false),
+  });
 
   const { data: vouchers, isLoading } = useQuery({
     queryKey: ['payment-vouchers'],
@@ -301,7 +313,12 @@ export default function SupplierPaymentVouchersPage() {
 
       {/* View Modal */}
       {viewingVoucher && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={viewingVoucherDialogRef}
+        >
           <div className="bg-white rounded-xl p-6 w-full max-w-lg">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-bold text-gray-900">{viewingVoucher.voucherNumber}</h2>
@@ -360,7 +377,12 @@ export default function SupplierPaymentVouchersPage() {
 
       {/* Create Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showAddModalDialogRef}
+        >
           <div className="bg-white rounded-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-bold text-gray-900">Create Payment Voucher</h2>

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useDialogA11y } from '../hooks/useDialogA11y';
 import { toast } from 'sonner';
 import { Settings, Users, Activity, RefreshCw, Plus, Edit2, Trash2, X, Play, Pause, ArrowRightLeft, Phone, SkipForward, Clock, AlertTriangle, CheckCircle } from 'lucide-react';
 import api from '../services/api';
@@ -148,6 +149,29 @@ export default function QueueManagementPage() {
 
   // Staff State
   const [staff, setStaff] = useState<StaffMember[]>([]);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showServicePointModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showServicePointModal,
+    onClose: () => setShowServicePointModal(false),
+  });
+  const showAssignStaffModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showAssignStaffModal,
+    onClose: () => setShowAssignStaffModal(false),
+  });
+  const showResetConfirmDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showResetConfirm,
+    onClose: () => setShowResetConfirm(false),
+  });
+  const showTransferModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showTransferModal,
+    onClose: () => setShowTransferModal(false),
+  });
+  const showRemoveConfirmDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showRemoveConfirm,
+    onClose: () => setShowRemoveConfirm(false),
+  });
 
   useEffect(() => {
     hrService.employees.list({ status: 'active' }).then(employees => {
@@ -1000,7 +1024,12 @@ export default function QueueManagementPage() {
 
       {/* Service Point Modal */}
       {showServicePointModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showServicePointModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4">
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <h2 className="text-lg font-semibold">
@@ -1072,7 +1101,12 @@ export default function QueueManagementPage() {
 
       {/* Assign Staff Modal */}
       {showAssignStaffModal && assigningServicePoint && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showAssignStaffModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4">
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <h2 className="text-lg font-semibold">
@@ -1118,7 +1152,12 @@ export default function QueueManagementPage() {
 
       {/* Reset Confirmation Modal */}
       {showResetConfirm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showResetConfirmDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4">
             <div className="p-6 text-center">
               <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -1149,7 +1188,12 @@ export default function QueueManagementPage() {
 
       {/* Transfer Modal */}
       {showTransferModal && transferringPatient && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showTransferModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4">
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <h2 className="text-lg font-semibold">Transfer Patient</h2>
@@ -1200,7 +1244,12 @@ export default function QueueManagementPage() {
 
       {/* Remove Confirmation Modal */}
       {showRemoveConfirm && removingPatient && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showRemoveConfirmDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4">
             <div className="p-6 text-center">
               <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
