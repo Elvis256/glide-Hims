@@ -42,7 +42,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { EncountersService } from '../encounters/encounters.service';
 import { CriticalResultsService } from '../critical-results/critical-results.service';
 import { requireTenantId } from '../../common/utils/tenant.util';
-import { sqlSafeTimeZone } from '../../common/utils/timezone.util';
+import { sqlSafeTimeZone, dayBoundsUtc } from '../../common/utils/timezone.util';
 
 @Injectable()
 export class LabService {
@@ -1370,8 +1370,8 @@ export class LabService {
     tenantId?: string,
   ): Promise<{ pending: number; completed: number }> {
     const tid = requireTenantId(tenantId);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // Bounded by the lab's own day; see the turnaround stats above.
+    const { start: today } = dayBoundsUtc(new Date());
 
     const pendingQuery = this.sampleRepo
       .createQueryBuilder('s')
