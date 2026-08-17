@@ -4,6 +4,7 @@ import {
   startOfDayUtc,
   endOfDayUtc,
   hourOfDayUtc,
+  localDayStart,
   dayBoundsUtc,
   localDateString,
 } from '../timezone.util';
@@ -116,5 +117,38 @@ describe('dayBoundsUtc', () => {
 
   it('refuses an unusable value instead of bracketing the epoch', () => {
     expect(() => dayBoundsUtc('not-a-date')).toThrow(/Not a usable date/);
+  });
+});
+
+describe('localDayStart', () => {
+  beforeEach(() => {
+    resetHospitalTimeZoneCache();
+    delete process.env.HOSPITAL_TIMEZONE;
+  });
+
+  it('walks whole calendar days, not 24-hour blocks', () => {
+    // Adding 24h to an instant is the same thing only while no zone the
+    // deployment runs in observes daylight saving. Calendar arithmetic holds
+    // either way, which is what "tomorrow's appointments" has to mean.
+    const today = localDayStart(0);
+    const tomorrow = localDayStart(1);
+    const dayAfter = localDayStart(2);
+
+    expect(tomorrow.getTime()).toBeGreaterThan(today.getTime());
+    expect(dayAfter.getTime()).toBeGreaterThan(tomorrow.getTime());
+  });
+
+  it('lands on midnight where the hospital is', () => {
+    // Kampala is UTC+3, so a local midnight is 21:00 UTC the day before.
+    expect(localDayStart(0).toISOString()).toMatch(/T21:00:00\.000Z$/);
+  });
+
+  it('crosses a daylight-saving boundary without drifting off midnight', () => {
+    // London springs forward on 2026-03-29; the day before is 23 hours long.
+    const before = startOfDayUtc('2026-03-28', 'Europe/London');
+    const after = startOfDayUtc('2026-03-29', 'Europe/London');
+    expect(after.getTime() - before.getTime()).toBe(24 * 60 * 60 * 1000);
+    const next = startOfDayUtc('2026-03-30', 'Europe/London');
+    expect(next.getTime() - after.getTime()).toBe(23 * 60 * 60 * 1000);
   });
 });

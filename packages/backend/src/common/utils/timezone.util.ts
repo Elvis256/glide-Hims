@@ -163,6 +163,20 @@ export function dayBoundsUtc(
   return { start: startOfDayUtc(dateStr, zone), end: endOfDayUtc(dateStr, zone) };
 }
 
+/**
+ * Start of the hospital's day, `offsetDays` from today.
+ *
+ * Deliberately calendar arithmetic rather than adding 24-hour blocks to an
+ * instant: a day is not always 24 hours long once a zone observes daylight
+ * saving, and "tomorrow's appointments" must mean the next calendar day
+ * whatever the clocks did overnight.
+ */
+export function localDayStart(offsetDays = 0, zone: string = hospitalTimeZone()): Date {
+  const [y, m, d] = localDateString(new Date(), zone).split('-').map(Number);
+  const shifted = new Date(Date.UTC(y, m - 1, d + offsetDays));
+  return startOfDayUtc(shifted.toISOString().slice(0, 10), zone);
+}
+
 /** A given hour of `dateStr` in the hospital's zone — used for census snapshots. */
 export function hourOfDayUtc(
   dateStr: string,
