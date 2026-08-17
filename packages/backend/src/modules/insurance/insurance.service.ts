@@ -35,6 +35,7 @@ import {
   ProcessPreAuthDto,
   RecordPaymentDto,
 } from './dto/insurance.dto';
+import { dayBoundsUtc } from '../../common/utils/timezone.util';
 
 @Injectable()
 export class InsuranceService {
@@ -1058,73 +1059,73 @@ export class InsuranceService {
   ): Promise<PreAuthorization> {
     const tid = requireTenantId(tenantId);
     return this.dataSource.transaction(async (manager) => {
-    const preAuth = await manager.findOne(PreAuthorization, {
-      where: { id, tenantId: tid },
-      lock: { mode: 'pessimistic_write' },
-    });
-    if (!preAuth) throw new NotFoundException('Pre-authorization not found');
+      const preAuth = await manager.findOne(PreAuthorization, {
+        where: { id, tenantId: tid },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!preAuth) throw new NotFoundException('Pre-authorization not found');
 
-    if (preAuth.status !== PreAuthStatus.SUBMITTED && preAuth.status !== PreAuthStatus.PENDING) {
-      throw new BadRequestException('Pre-authorization cannot be processed');
-    }
+      if (preAuth.status !== PreAuthStatus.SUBMITTED && preAuth.status !== PreAuthStatus.PENDING) {
+        throw new BadRequestException('Pre-authorization cannot be processed');
+      }
 
-    // Segregation of duties: the user who requested the pre-auth cannot also
-    // approve / deny it.
-    if (userId && preAuth.requestedById && preAuth.requestedById === userId) {
-      throw new BadRequestException(
-        'Segregation of duties violation: the user who requested the pre-authorization cannot also process it',
-      );
-    }
+      // Segregation of duties: the user who requested the pre-auth cannot also
+      // approve / deny it.
+      if (userId && preAuth.requestedById && preAuth.requestedById === userId) {
+        throw new BadRequestException(
+          'Segregation of duties violation: the user who requested the pre-authorization cannot also process it',
+        );
+      }
 
-    const previousStatus = preAuth.status;
-    const previousApproved = Number(preAuth.approvedAmount || 0);
-    preAuth.approvedAt = new Date();
+      const previousStatus = preAuth.status;
+      const previousApproved = Number(preAuth.approvedAmount || 0);
+      preAuth.approvedAt = new Date();
 
-    if (approve) {
-      preAuth.approvedAmount = dto.approvedAmount;
-      if (dto.validFrom) preAuth.validFrom = new Date(dto.validFrom);
-      if (dto.validUntil) preAuth.validUntil = new Date(dto.validUntil);
-      if (dto.insurerReference) preAuth.insurerReference = dto.insurerReference;
+      if (approve) {
+        preAuth.approvedAmount = dto.approvedAmount;
+        if (dto.validFrom) preAuth.validFrom = new Date(dto.validFrom);
+        if (dto.validUntil) preAuth.validUntil = new Date(dto.validUntil);
+        if (dto.insurerReference) preAuth.insurerReference = dto.insurerReference;
 
-      if (dto.approvedAmount >= Number(preAuth.estimatedCost)) {
-        preAuth.status = PreAuthStatus.APPROVED;
-      } else if (dto.approvedAmount > 0) {
-        preAuth.status = PreAuthStatus.PARTIALLY_APPROVED;
+        if (dto.approvedAmount >= Number(preAuth.estimatedCost)) {
+          preAuth.status = PreAuthStatus.APPROVED;
+        } else if (dto.approvedAmount > 0) {
+          preAuth.status = PreAuthStatus.PARTIALLY_APPROVED;
+        } else {
+          preAuth.status = PreAuthStatus.DENIED;
+          preAuth.denialReason = dto.denialReason;
+        }
       } else {
         preAuth.status = PreAuthStatus.DENIED;
         preAuth.denialReason = dto.denialReason;
+        preAuth.approvedAmount = 0;
       }
-    } else {
-      preAuth.status = PreAuthStatus.DENIED;
-      preAuth.denialReason = dto.denialReason;
-      preAuth.approvedAmount = 0;
-    }
 
-    if (dto.notes) preAuth.notes = dto.notes;
+      if (dto.notes) preAuth.notes = dto.notes;
 
-    const saved = await manager.save(PreAuthorization, preAuth);
+      const saved = await manager.save(PreAuthorization, preAuth);
 
-    await this.auditLogService
-      .log({
-        userId,
-        action: approve ? 'PREAUTH_APPROVED' : 'PREAUTH_DENIED',
-        entityType: 'PreAuthorization',
-        entityId: saved.id,
-        oldValue: { status: previousStatus, approvedAmount: previousApproved },
-        newValue: {
-          status: saved.status,
-          approvedAmount: Number(saved.approvedAmount),
-          insurerReference: saved.insurerReference || null,
-          denialReason: saved.denialReason || null,
-        },
-        reason: dto.notes,
-        tenantId: tid,
-      })
-      .catch((err) =>
-        this.logger.error(`Audit log failed for processPreAuth ${saved.id}: ${err.message}`),
-      );
+      await this.auditLogService
+        .log({
+          userId,
+          action: approve ? 'PREAUTH_APPROVED' : 'PREAUTH_DENIED',
+          entityType: 'PreAuthorization',
+          entityId: saved.id,
+          oldValue: { status: previousStatus, approvedAmount: previousApproved },
+          newValue: {
+            status: saved.status,
+            approvedAmount: Number(saved.approvedAmount),
+            insurerReference: saved.insurerReference || null,
+            denialReason: saved.denialReason || null,
+          },
+          reason: dto.notes,
+          tenantId: tid,
+        })
+        .catch((err) =>
+          this.logger.error(`Audit log failed for processPreAuth ${saved.id}: ${err.message}`),
+        );
 
-    return saved;
+      return saved;
     });
   }
 
@@ -1411,8 +1412,9 @@ export class InsuranceService {
     }
 
     if (filters?.endDate) {
-      const endDate = new Date(filters.endDate);
-      endDate.setHours(23, 59, 59, 999);
+      // The end of that day where the hospital is; on the server clock this
+      // reached 03:00 the following morning and pulled the next day in.
+      const { end: endDate } = dayBoundsUtc(filters.endDate);
       qb.andWhere('encounter.start_time <= :endDate', { endDate });
     }
 
