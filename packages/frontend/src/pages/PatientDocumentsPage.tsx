@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
+import { useDialogA11y } from '../hooks/useDialogA11y';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -176,6 +177,21 @@ export default function PatientDocumentsPage() {
   const [shareLink, setShareLink] = useState('');
   const [shareLinkExpiry, setShareLinkExpiry] = useState('24h');
   const [isGeneratingLink, setIsGeneratingLink] = useState(false);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const previewDocDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!previewDoc,
+    onClose: () => setPreviewDoc(null),
+  });
+  const editingDocDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!editingDoc,
+    onClose: () => setEditingDoc(null),
+  });
+  const shareDocDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!shareDoc,
+    onClose: () => setShareDoc(null),
+  });
 
   // Permissions
   const canDelete = hasPermission('patients.delete');
@@ -1343,7 +1359,12 @@ export default function PatientDocumentsPage() {
 
       {/* Preview Modal */}
       {previewDoc && (
-        <div className="fixed inset-0 bg-black/90 flex flex-col z-50">
+        <div
+          className="fixed inset-0 bg-black/90 flex flex-col z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={previewDocDialogRef}
+        >
           {/* Preview Header */}
           <div className="flex items-center justify-between p-4 bg-black/50 text-white">
             <div className="flex items-center gap-4">
@@ -1487,7 +1508,12 @@ export default function PatientDocumentsPage() {
 
       {/* Edit Metadata Modal */}
       {editingDoc && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={editingDocDialogRef}
+        >
           <div className="bg-white rounded-xl w-full max-w-md">
             <div className="flex items-center justify-between p-4 border-b">
               <h2 className="font-semibold">Edit Document</h2>
@@ -1549,7 +1575,12 @@ export default function PatientDocumentsPage() {
 
       {/* Share Modal */}
       {shareDoc && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={shareDocDialogRef}
+        >
           <div className="bg-white rounded-xl w-full max-w-md">
             <div className="flex items-center justify-between p-4 border-b">
               <h2 className="font-semibold">Share Document</h2>

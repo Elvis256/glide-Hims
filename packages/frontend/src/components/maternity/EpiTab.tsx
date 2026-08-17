@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Syringe, AlertTriangle, X, Loader2 } from 'lucide-react';
@@ -21,6 +22,13 @@ export default function EpiTab() {
   const [view, setView] = useState<'due' | 'defaulters'>('due');
   const [administering, setAdministering] = useState<ImmunizationSchedule | null>(null);
   const [form, setForm] = useState({ batchNumber: '', siteOfAdministration: '', adverseReaction: false, reactionDescription: '', notes: '' });
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const administeringDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!administering,
+    onClose: () => setAdministering(null),
+  });
 
   const { data: due = [], isLoading: dueLoading } = useQuery({
     queryKey: ['epi-due', facilityId],
@@ -135,7 +143,12 @@ export default function EpiTab() {
 
       {/* Administer modal */}
       {administering && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={administeringDialogRef}
+        >
           <div className="absolute inset-0 bg-black/30" onClick={() => setAdministering(null)} />
           <div className="relative bg-white rounded-lg shadow-xl w-full max-w-md">
             <div className="border-b px-6 py-4 flex justify-between items-center">

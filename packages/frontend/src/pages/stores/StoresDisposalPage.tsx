@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Trash2,
@@ -79,6 +80,13 @@ export default function StoresDisposalPage() {
   const [quantity, setQuantity] = useState<number>(1);
   const [reason, setReason] = useState<'expired' | 'damaged' | 'obsolete'>('expired');
   const [notes, setNotes] = useState('');
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showCreateModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showCreateModal,
+    onClose: () => setShowCreateModal(false),
+  });
 
   // Fetch disposal logs
   const { data: disposalLogs = [], isLoading, refetch } = useQuery({
@@ -370,7 +378,12 @@ export default function StoresDisposalPage() {
 
       {/* Create Disposal Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showCreateModalDialogRef}
+        >
           <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <h2 className="text-lg font-semibold text-gray-900">Create Disposal Entry</h2>

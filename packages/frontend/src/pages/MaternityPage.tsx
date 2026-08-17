@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useDialogA11y } from '../hooks/useDialogA11y';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../services/api';
 import { useFacilityId } from '../lib/facility';
@@ -72,6 +73,13 @@ export default function MaternityPage() {
   const [showVisitHistory, setShowVisitHistory] = useState(false);
   const [showAdmitModal, setShowAdmitModal] = useState(false);
   const [deliveryLabour, setDeliveryLabour] = useState<any | null>(null);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const selectedRegistrationDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!selectedRegistration,
+    onClose: () => setSelectedRegistration(null),
+  });
 
   // ANC visit history for the open registration panel
   const { data: visitHistory = [] } = useQuery({
@@ -395,7 +403,12 @@ export default function MaternityPage() {
 
       {/* Registration Detail Side Panel */}
       {selectedRegistration && (
-        <div className="fixed inset-0 z-50 flex justify-end">
+        <div
+          className="fixed inset-0 z-50 flex justify-end"
+          role="dialog"
+          aria-modal="true"
+          ref={selectedRegistrationDialogRef}
+        >
           <div className="absolute inset-0 bg-black/30" onClick={() => setSelectedRegistration(null)} />
           <div className="relative w-full max-w-lg bg-white shadow-xl overflow-y-auto">
             <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center">

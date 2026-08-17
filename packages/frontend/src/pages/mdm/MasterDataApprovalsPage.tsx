@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   mdmService,
@@ -57,6 +58,13 @@ export default function MasterDataApprovalsPage() {
   const [selectedApproval, setSelectedApproval] = useState<PendingApproval | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
   const [showRejectModal, setShowRejectModal] = useState(false);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showRejectModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showRejectModal,
+    onClose: () => setShowRejectModal(false),
+  });
 
   const { data: approvals, isLoading } = useQuery({
     queryKey: ['mdm-approvals'],
@@ -298,7 +306,12 @@ export default function MasterDataApprovalsPage() {
 
       {/* Rejection Modal */}
       {showRejectModal && selectedApproval && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showRejectModalDialogRef}
+        >
           <div className="bg-white rounded-xl w-full max-w-md">
             <div className="p-6 border-b">
               <h2 className="text-xl font-bold text-gray-900">Reject Change Request</h2>

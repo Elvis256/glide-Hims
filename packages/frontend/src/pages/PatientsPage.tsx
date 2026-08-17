@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useDialogA11y } from '../hooks/useDialogA11y';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -138,6 +139,13 @@ export default function PatientsPage() {
   const [actionMenuOpen, setActionMenuOpen] = useState<string | null>(null);
   const [tokenModalPatient, setTokenModalPatient] = useState<Patient | null>(null);
   const [tokenServicePoint, setTokenServicePoint] = useState<'registration' | 'triage' | 'consultation' | 'laboratory' | 'radiology' | 'pharmacy' | 'billing' | 'cashier'>('registration');
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const tokenModalPatientDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!tokenModalPatient,
+    onClose: () => setTokenModalPatient(null),
+  });
 
   // Fetch patients with pagination
   const { data: patientsResponse, isLoading } = useQuery({
@@ -910,7 +918,12 @@ export default function PatientsPage() {
 
       {/* Issue Token Modal */}
       {tokenModalPatient && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={tokenModalPatientDialogRef}
+        >
           <div className="bg-white rounded-xl w-full max-w-md">
             <div className="flex items-center justify-between p-4 border-b">
               <h2 className="text-lg font-semibold">Issue Token</h2>

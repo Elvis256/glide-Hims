@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useNavigate } from 'react-router-dom';
 import { RefreshCw, CheckCircle, XCircle, AlertTriangle, Trash2, ArrowLeft, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -31,6 +32,13 @@ export default function POSOfflineSyncPage() {
   const [progress, setProgress] = useState<SyncProgress | null>(null);
   const [discardModal, setDiscardModal] = useState<{ clientSaleId: string } | null>(null);
   const [discardReason, setDiscardReason] = useState('');
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const discardModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!discardModal,
+    onClose: () => setDiscardModal(null),
+  });
 
   const loadData = useCallback(async () => {
     const p = await offlineDb.pendingSales.toArray();
@@ -271,7 +279,12 @@ export default function POSOfflineSyncPage() {
 
       {/* Discard modal */}
       {discardModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          role="dialog"
+          aria-modal="true"
+          ref={discardModalDialogRef}
+        >
           <div className="bg-white rounded-xl p-6 max-w-sm w-full mx-4 shadow-2xl space-y-4">
             <h3 className="font-bold text-gray-900">Discard Offline Sale</h3>
             <p className="text-sm text-gray-500">

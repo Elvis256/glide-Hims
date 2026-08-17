@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useDialogA11y } from '../hooks/useDialogA11y';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -81,6 +82,13 @@ export default function InsuranceCardsPage() {
   });
   const [patientSearch, setPatientSearch] = useState('');
   const [patientName, setPatientName] = useState('');
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showRegisterModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showRegisterModal,
+    onClose: () => setShowRegisterModal(false),
+  });
 
   // Patient search + provider list for the register form (the old form asked
   // clerks to type raw UUIDs — impossible to use)
@@ -360,7 +368,12 @@ export default function InsuranceCardsPage() {
 
       {/* Register Card Modal */}
       {showRegisterModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showRegisterModalDialogRef}
+        >
           <div className="bg-white rounded-xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
             <h2 className="text-lg font-bold mb-4">Register Insurance Card</h2>
             <div className="space-y-3">

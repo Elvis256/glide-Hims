@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
+import { useDialogA11y } from '../hooks/useDialogA11y';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -82,6 +83,17 @@ export default function PatientDetailPage() {
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadType, setUploadType] = useState<string>('identification');
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showSMSModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showSMSModal,
+    onClose: () => setShowSMSModal(false),
+  });
+  const showUploadModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showUploadModal,
+    onClose: () => setShowUploadModal(false),
+  });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Permissions
@@ -1225,7 +1237,12 @@ export default function PatientDetailPage() {
 
       {/* SMS Modal */}
       {showSMSModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showSMSModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-bold">Send SMS</h2>
@@ -1274,7 +1291,12 @@ export default function PatientDetailPage() {
 
       {/* Upload Document Modal */}
       {showUploadModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showUploadModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-bold">Upload Document</h2>

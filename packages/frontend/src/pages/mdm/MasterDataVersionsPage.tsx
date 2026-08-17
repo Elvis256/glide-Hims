@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery } from '@tanstack/react-query';
 import {
   mdmService,
@@ -64,6 +65,13 @@ export default function MasterDataVersionsPage() {
   const [selectedStatus, setSelectedStatus] = useState<'All' | ApprovalStatus>('All');
   const [showFilters, setShowFilters] = useState(false);
   const [selectedVersion, setSelectedVersion] = useState<DataVersion | null>(null);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const selectedVersionDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!selectedVersion,
+    onClose: () => setSelectedVersion(null),
+  });
 
   const { data: versions, isLoading } = useQuery({
     queryKey: ['mdm-versions', selectedEntityType, selectedStatus],
@@ -325,7 +333,12 @@ export default function MasterDataVersionsPage() {
 
       {/* Version Details Modal */}
       {selectedVersion && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={selectedVersionDialogRef}
+        >
           <div className="bg-white rounded-xl w-full max-w-2xl max-h-[80vh] overflow-auto">
             <div className="p-6 border-b">
               <h2 className="text-xl font-bold text-gray-900">Version Details</h2>
