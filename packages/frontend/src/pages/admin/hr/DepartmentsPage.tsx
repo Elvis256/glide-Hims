@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Link } from 'react-router-dom';
@@ -49,6 +50,17 @@ export default function DepartmentsPage() {
   const [parentDeptId, setParentDeptId] = useState<string | null>(null);
   const [newDept, setNewDept] = useState({ name: '', code: '', building: '', location: '', parentId: '' });
   const [error, setError] = useState('');
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showAddModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showAddModal,
+    onClose: () => setShowAddModal(false),
+  });
+  const showEditModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showEditModal,
+    onClose: () => setShowEditModal(false),
+  });
   
   const queryClient = useQueryClient();
 
@@ -453,7 +465,12 @@ export default function DepartmentsPage() {
 
       {/* Add Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showAddModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
             <h2 className="text-xl font-bold mb-4">
               {parentDeptId ? 'Add Sub-Department' : 'Add New Department'}
@@ -544,7 +561,12 @@ export default function DepartmentsPage() {
 
       {/* Edit Modal */}
       {showEditModal && editingDept && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showEditModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
             <h2 className="text-xl font-bold mb-4">Edit Department</h2>
             {error && (

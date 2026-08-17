@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Activity,
@@ -40,6 +41,13 @@ export default function ChronicCareDashboardPage() {
   const [selectedPatients, setSelectedPatients] = useState<string[]>([]);
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [bulkMessage, setBulkMessage] = useState({ subject: '', message: '' });
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showBulkModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showBulkModal,
+    onClose: () => setShowBulkModal(false),
+  });
 
   // Fetch dashboard stats
   const { data: stats, isLoading: statsLoading } = useQuery({
@@ -352,7 +360,12 @@ export default function ChronicCareDashboardPage() {
 
       {/* Bulk Reminder Modal */}
       {showBulkModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showBulkModalDialogRef}
+        >
           <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
             <h3 className="text-lg font-semibold mb-4">Send Bulk Reminders</h3>
             <p className="text-sm text-gray-500 mb-4">

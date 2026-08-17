@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import api from '../../services/api';
 import { toast } from 'sonner';
 
@@ -26,6 +27,13 @@ export default function WebhooksPage() {
   const [items, setItems] = useState<Webhook[]>([]);
   const [editing, setEditing] = useState<Partial<Webhook> | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const editingDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!editing,
+    onClose: () => setEditing(null),
+  });
 
   const load = async () => {
     setLoading(true);
@@ -119,7 +127,12 @@ export default function WebhooksPage() {
       )}
 
       {editing && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={editingDialogRef}
+        >
           <div className="bg-white rounded p-6 w-full max-w-lg">
             <h2 className="text-xl font-bold mb-4">{editing.id ? 'Edit' : 'New'} Webhook</h2>
             <div className="space-y-3">

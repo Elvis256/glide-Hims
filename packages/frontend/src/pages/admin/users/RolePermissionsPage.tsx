@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -207,6 +208,17 @@ export default function RolePermissionsPage() {
   }, [modules]);
 
   const [expandedModules, setExpandedModules] = useState<string[]>([]);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showCreateModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showCreateModal,
+    onClose: () => setShowCreateModal(false),
+  });
+  const showCreateGroupModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showCreateGroupModal,
+    onClose: () => setShowCreateGroupModal(false),
+  });
   
   // Expand all modules when they load
   React.useEffect(() => {
@@ -691,7 +703,12 @@ export default function RolePermissionsPage() {
 
       {/* Create Role Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showCreateModalDialogRef}
+        >
           <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-gray-900">Create New Role</h2>
@@ -760,7 +777,12 @@ export default function RolePermissionsPage() {
 
       {/* Create Permission Group Modal */}
       {showCreateGroupModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showCreateGroupModalDialogRef}
+        >
           <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-gray-900">Create Permission Group</h2>

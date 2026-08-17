@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -696,6 +697,17 @@ export default function ServiceCatalogPage() {
   const [seeding, setSeeding] = useState(false);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const deleteTargetDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!deleteTarget,
+    onClose: () => setDeleteTarget(null),
+  });
+  const deleteCatTargetDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!deleteCatTarget,
+    onClose: () => setDeleteCatTarget(null),
+  });
+
   // ── Queries ──────────────────────────────────────────────────────────────
   const { data: servicesData, isLoading, error } = useQuery({
     queryKey: ['services'],
@@ -1275,7 +1287,12 @@ export default function ServiceCatalogPage() {
 
       {/* Delete Service Confirm */}
       {deleteTarget && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={deleteTargetDialogRef}
+        >
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center">
             <div className="w-14 h-14 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-4">
               <Trash2 className="w-7 h-7 text-red-500" />
@@ -1295,7 +1312,12 @@ export default function ServiceCatalogPage() {
 
       {/* Delete Category Confirm */}
       {deleteCatTarget && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={deleteCatTargetDialogRef}
+        >
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center">
             <div className="w-14 h-14 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-4">
               <Trash2 className="w-7 h-7 text-red-500" />

@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { toast } from 'sonner';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { CURRENCY_SYMBOL, formatCurrency } from '../../../lib/currency';
@@ -168,6 +169,17 @@ export default function LabEquipmentPage() {
   const [editingEquipment, setEditingEquipment] = useState<Equipment | null>(null);
   const [equipmentForm, setEquipmentForm] = useState<EquipmentFormData>(getEmptyEquipmentForm());
   const [maintenanceForm, setMaintenanceForm] = useState<MaintenanceFormData>(getEmptyMaintenanceForm());
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showEquipmentModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showEquipmentModal,
+    onClose: () => setShowEquipmentModal(false),
+  });
+  const showMaintenanceModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showMaintenanceModal,
+    onClose: () => setShowMaintenanceModal(false),
+  });
 
   // Fetch equipment from API
   const { data: equipmentData, isLoading } = useQuery({
@@ -633,7 +645,12 @@ export default function LabEquipmentPage() {
 
       {/* Equipment Modal */}
       {showEquipmentModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showEquipmentModalDialogRef}
+        >
           <div className="bg-white rounded-lg w-full max-w-2xl max-h-[90vh] overflow-auto">
             <div className="flex items-center justify-between p-4 border-b">
               <h2 className="text-lg font-semibold">
@@ -811,7 +828,12 @@ export default function LabEquipmentPage() {
 
       {/* Maintenance Modal */}
       {showMaintenanceModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showMaintenanceModalDialogRef}
+        >
           <div className="bg-white rounded-lg w-full max-w-md">
             <div className="flex items-center justify-between p-4 border-b">
               <h2 className="text-lg font-semibold">Add Maintenance Record</h2>

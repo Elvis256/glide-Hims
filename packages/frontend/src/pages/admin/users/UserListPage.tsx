@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -91,6 +92,37 @@ export default function UserListPage() {
   const [empPickerSearch, setEmpPickerSearch] = useState('');
   const [showUnlinkConfirm, setShowUnlinkConfirm] = useState(false);
   const [unlinkingUser, setUnlinkingUser] = useState<User | null>(null);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showAddModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showAddModal,
+    onClose: () => setShowAddModal(false),
+  });
+  const showEditModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showEditModal,
+    onClose: () => setShowEditModal(false),
+  });
+  const showViewModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showViewModal,
+    onClose: () => setShowViewModal(false),
+  });
+  const showDeleteConfirmDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showDeleteConfirm,
+    onClose: () => setShowDeleteConfirm(false),
+  });
+  const showResetPasswordModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showResetPasswordModal,
+    onClose: () => setShowResetPasswordModal(false),
+  });
+  const showLinkEmployeeModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showLinkEmployeeModal,
+    onClose: () => setShowLinkEmployeeModal(false),
+  });
+  const showUnlinkConfirmDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showUnlinkConfirm,
+    onClose: () => setShowUnlinkConfirm(false),
+  });
 
   // Fetch users from API
   const { data: usersData, isLoading, error } = useQuery({
@@ -867,7 +899,12 @@ export default function UserListPage() {
 
       {/* Add User Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showAddModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4 max-h-[80vh] flex flex-col">
             <div className="flex items-center justify-between p-4 border-b shrink-0">
               <h2 className="text-lg font-semibold">Add New User</h2>
@@ -1154,7 +1191,12 @@ export default function UserListPage() {
 
       {/* Edit User Modal */}
       {showEditModal && editingUser && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showEditModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4">
             <div className="flex items-center justify-between p-4 border-b">
               <h2 className="text-lg font-semibold">Edit User</h2>
@@ -1343,7 +1385,12 @@ export default function UserListPage() {
 
       {/* View User Details Modal */}
       {showViewModal && viewingUser && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showViewModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4">
             <div className="flex items-center justify-between p-4 border-b">
               <h2 className="text-lg font-semibold">User Details</h2>
@@ -1445,7 +1492,12 @@ export default function UserListPage() {
 
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && userToDelete && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showDeleteConfirmDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4">
             <div className="p-6 text-center">
               <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -1484,7 +1536,12 @@ export default function UserListPage() {
 
       {/* Reset Password Modal */}
       {showResetPasswordModal && resetPasswordUser && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showResetPasswordModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4">
             <div className="flex items-center justify-between p-4 border-b">
               <h2 className="text-lg font-semibold">Reset Password</h2>
@@ -1557,7 +1614,12 @@ export default function UserListPage() {
 
       {/* Link Employee Picker Modal */}
       {showLinkEmployeeModal && linkingUser && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showLinkEmployeeModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl mx-4 max-h-[80vh] flex flex-col">
             <div className="flex items-center justify-between p-4 border-b shrink-0">
               <div>
@@ -1649,7 +1711,12 @@ export default function UserListPage() {
 
       {/* Unlink Employee Confirm */}
       {showUnlinkConfirm && unlinkingUser && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showUnlinkConfirmDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4">
             <div className="p-5 border-b">
               <h2 className="text-lg font-semibold flex items-center gap-2">

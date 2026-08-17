@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery } from '@tanstack/react-query';
 import {
   Bell,
@@ -49,6 +50,13 @@ export default function ExpiryAlertsPage() {
   const [alertConfigs, setAlertConfigs] = useState<AlertConfig[]>([]);
   const [selectedHistoryFilter, setSelectedHistoryFilter] = useState<string>('all');
   const [showAddModal, setShowAddModal] = useState(false);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showAddModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showAddModal,
+    onClose: () => setShowAddModal(false),
+  });
 
   // Fetch expiry alerts from notification history if available
   const { data: alertHistoryData, isLoading } = useQuery({
@@ -384,7 +392,12 @@ export default function ExpiryAlertsPage() {
 
       {/* Add Alert Modal Placeholder */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showAddModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900">Add Alert Rule</h3>

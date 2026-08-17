@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { toast } from 'sonner';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, getApiErrorMessage } from '../../../services/api';
@@ -131,6 +132,13 @@ export default function MembershipBenefitsPage() {
   const [showModal, setShowModal] = useState(false);
   const [editingBenefit, setEditingBenefit] = useState<BenefitWithScheme | null>(null);
   const [formData, setFormData] = useState<BenefitFormData>(emptyFormData);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showModal,
+    onClose: () => setShowModal(false),
+  });
 
   const { data: schemes = [], isLoading: loading } = useQuery({
     queryKey: ['membership-schemes', facilityId],
@@ -331,7 +339,12 @@ export default function MembershipBenefitsPage() {
     <div className="h-[calc(100vh-120px)] flex flex-col bg-gray-50">
       {/* Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showModalDialogRef}
+        >
           <div className="bg-white rounded-lg shadow-xl w-full max-w-lg mx-4">
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <h2 className="text-lg font-semibold">

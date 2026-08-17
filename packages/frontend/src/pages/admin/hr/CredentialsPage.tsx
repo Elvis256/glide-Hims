@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Award,
@@ -287,6 +288,29 @@ export default function CredentialsPage() {
 
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewName, setPreviewName] = useState('');
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showAddModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showAddModal,
+    onClose: () => setShowAddModal(false),
+  });
+  const showUploadModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showUploadModal,
+    onClose: () => setShowUploadModal(false),
+  });
+  const viewingCredentialDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!viewingCredential,
+    onClose: () => setViewingCredential(null),
+  });
+  const showDeleteConfirmDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showDeleteConfirm,
+    onClose: () => setShowDeleteConfirm(null),
+  });
+  const showTypeModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showTypeModal,
+    onClose: () => setShowTypeModal(false),
+  });
 
   const handleDownload = async (credential: Credential) => {
     try {
@@ -779,7 +803,12 @@ export default function CredentialsPage() {
 
       {/* Add Credential Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showAddModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
             <h2 className="text-xl font-bold mb-4">{editingCredential ? 'Edit Credential' : 'Add Credential'}</h2>
             <div className="space-y-4">
@@ -848,7 +877,12 @@ export default function CredentialsPage() {
 
       {/* Upload Document Modal */}
       {showUploadModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showUploadModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
             <h2 className="text-xl font-bold mb-4">Upload Document</h2>
             <div className="space-y-4">
@@ -890,7 +924,12 @@ export default function CredentialsPage() {
 
       {/* View Credential Modal */}
       {viewingCredential && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={viewingCredentialDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-bold">Credential Details</h2>
@@ -960,7 +999,12 @@ export default function CredentialsPage() {
 
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showDeleteConfirmDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
             <h2 className="text-lg font-bold mb-2">Delete Credential</h2>
             <p className="text-gray-600 mb-4">Are you sure you want to delete this credential? This action cannot be undone.</p>
@@ -977,7 +1021,12 @@ export default function CredentialsPage() {
 
       {/* Add/Edit Credential Type Modal */}
       {showTypeModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showTypeModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
             <h2 className="text-xl font-bold mb-4">{editingTypeId ? 'Edit Credential Type' : 'Add Credential Type'}</h2>
             <div className="space-y-4">

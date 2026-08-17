@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
@@ -50,6 +51,13 @@ export default function ItemMasterPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingItem, setEditingItem] = useState<ItemRecord | null>(null);
   const [viewItem, setViewItem] = useState<ItemRecord | null>(null);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const viewItemDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!viewItem,
+    onClose: () => setViewItem(null),
+  });
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['all-inventory-items', searchTerm, categoryFilter, drugFilter, statusFilter],
@@ -331,7 +339,12 @@ export default function ItemMasterPage() {
 
       {/* View Detail Modal */}
       {viewItem && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={viewItemDialogRef}
+        >
           <div className="bg-white rounded-xl w-full max-w-lg max-h-[80vh] overflow-y-auto">
             <div className="flex items-center justify-between p-4 border-b sticky top-0 bg-white">
               <h2 className="text-lg font-semibold">Item Details</h2>

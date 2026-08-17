@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api, getApiErrorMessage } from '../../../services/api';
@@ -62,6 +63,13 @@ export default function MembershipRulesPage() {
   const [expandedScheme, setExpandedScheme] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingScheme, setEditingScheme] = useState<MembershipScheme | null>(null);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const isModalOpenDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!isModalOpen,
+    onClose: () => setIsModalOpen(false),
+  });
   const [formData, setFormData] = useState<SchemeFormData>({
     discountPercent: 0,
     creditLimit: 0,
@@ -349,7 +357,12 @@ export default function MembershipRulesPage() {
 
       {/* Edit Rule Modal */}
       {isModalOpen && editingScheme && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={isModalOpenDialogRef}
+        >
           <div className="bg-white rounded-lg shadow-xl w-full max-w-lg mx-4">
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <h2 className="text-lg font-semibold text-gray-900">

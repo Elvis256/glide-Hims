@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { DollarSign, Users, Calendar, FileText, Download, Plus, Loader2, Play, Eye, X, ChevronDown, ChevronUp, RotateCcw } from 'lucide-react';
@@ -17,6 +18,17 @@ export default function PayrollPage() {
   const [expandedPayslip, setExpandedPayslip] = useState<string | null>(null);
   const [newMonth, setNewMonth] = useState(new Date().getMonth() + 1);
   const [newYear, setNewYear] = useState(new Date().getFullYear());
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showCreateModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showCreateModal,
+    onClose: () => setShowCreateModal(false),
+  });
+  const showPayslipsModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showPayslipsModal,
+    onClose: () => setShowPayslipsModal(null),
+  });
   const queryClient = useQueryClient();
 
   // Get facility
@@ -410,7 +422,12 @@ export default function PayrollPage() {
 
       {/* Create Payroll Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showCreateModalDialogRef}
+        >
           <div className="bg-white rounded-lg p-6 w-full max-w-md">
             <h2 className="text-xl font-semibold mb-4">Create Payroll Run</h2>
             <div className="space-y-4">
@@ -465,7 +482,12 @@ export default function PayrollPage() {
 
       {/* View Payslips Modal */}
       {showPayslipsModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showPayslipsModalDialogRef}
+        >
           <div className="bg-white rounded-lg w-full max-w-4xl max-h-[85vh] flex flex-col">
             <div className="p-4 border-b flex justify-between items-center">
               <h2 className="text-lg font-semibold">Payslips</h2>
