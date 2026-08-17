@@ -3,6 +3,7 @@ import globals from 'globals'
 import reactHooks from 'eslint-plugin-react-hooks'
 import reactRefresh from 'eslint-plugin-react-refresh'
 import tseslint from 'typescript-eslint'
+import jsxA11y from 'eslint-plugin-jsx-a11y'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
@@ -14,6 +15,11 @@ export default defineConfig([
       tseslint.configs.recommended,
       reactHooks.configs.flat.recommended,
       reactRefresh.configs.vite,
+      // Accessibility. Reported as warnings rather than errors: there is a
+      // known backlog (~2300 findings, mostly labels not tied to their input),
+      // and failing the build on it would only get the plugin removed. New
+      // code shows up here immediately, which is the point.
+      jsxA11y.flatConfigs.recommended,
     ],
     languageOptions: {
       ecmaVersion: 2020,
@@ -35,6 +41,15 @@ export default defineConfig([
       'prefer-const': 'off',
       'no-useless-catch': 'off',
       'no-useless-escape': 'off',
+      // Existing backlog is reported, not enforced; ratchet these to 'error'
+      // area by area as each is cleared.
+      'jsx-a11y/label-has-associated-control': 'warn',
+      'jsx-a11y/click-events-have-key-events': 'warn',
+      'jsx-a11y/no-static-element-interactions': 'warn',
+      'jsx-a11y/no-noninteractive-element-interactions': 'warn',
+      'jsx-a11y/no-autofocus': 'warn',
+      'jsx-a11y/media-has-caption': 'warn',
+      'jsx-a11y/img-redundant-alt': 'warn',
       'react-hooks/exhaustive-deps': 'warn',
       'no-case-declarations': 'off',
       'no-unused-expressions': 'off',

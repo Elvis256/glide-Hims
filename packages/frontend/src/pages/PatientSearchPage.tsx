@@ -602,18 +602,37 @@ export default function PatientSearchPage() {
                   </button>
                 </div>
               ) : (
-                <div className="space-y-2">
+                <div
+                  className="space-y-2"
+                  role="listbox"
+                  aria-label="Patient search results"
+                  // Focusable so the active-descendant it points at is
+                  // announced; the arrow keys are handled at window level, so
+                  // this only has to be reachable, not drive the keys itself.
+                  tabIndex={0}
+                  aria-activedescendant={
+                    selectedIndex >= 0 ? `patient-option-${selectedIndex}` : undefined
+                  }
+                >
                   {patients.map((patient, index) => {
                     const badges = getPatientBadges(patient);
                     const isSelected = index === selectedIndex;
                     
                     return (
+                      // Arrow keys already move `selectedIndex` and Enter opens
+                      // the row; these attributes are what make that visible to
+                      // a screen reader, which otherwise announced nothing as
+                      // the highlight moved down the list.
                       <div
                         key={patient.id}
                         data-patient-item
+                        role="option"
+                        aria-selected={isSelected}
+                        id={`patient-option-${index}`}
+                        tabIndex={-1}
                         className={`border rounded-lg p-3 transition-all cursor-pointer ${
-                          isSelected 
-                            ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200' 
+                          isSelected
+                            ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
                             : 'hover:border-blue-300 hover:bg-blue-50/30'
                         }`}
                         onClick={() => handleSelectPatient(patient)}
@@ -739,9 +758,13 @@ export default function PatientSearchPage() {
               </h3>
               <div className="space-y-2">
                 {recentPatients.slice(0, 5).map((patient) => (
-                  <div 
-                    key={patient.id} 
-                    className="flex items-center gap-2 p-2 rounded hover:bg-gray-50 cursor-pointer transition-colors"
+                  // A button, not a clickable div: the arrow-key navigation
+                  // above only walks the search results, so these rows had no
+                  // keyboard path to them at all.
+                  <button
+                    type="button"
+                    key={patient.id}
+                    className="w-full text-left flex items-center gap-2 p-2 rounded hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer transition-colors"
                     onClick={() => handleSelectPatient(patient)}
                   >
                     <div className="w-8 h-8 bg-gradient-to-br from-gray-400 to-gray-500 rounded-full flex items-center justify-center flex-shrink-0 text-white font-medium text-xs">
@@ -751,7 +774,7 @@ export default function PatientSearchPage() {
                       <p className="font-medium text-gray-900 text-xs truncate">{patient.fullName}</p>
                       <p className="text-xs text-gray-500">{patient.mrn} • {calculateAge(patient.dateOfBirth)}y</p>
                     </div>
-                  </div>
+                  </button>
                 ))}
               </div>
             </div>
