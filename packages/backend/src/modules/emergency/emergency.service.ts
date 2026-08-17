@@ -26,6 +26,7 @@ import { VitalsService } from '../vitals/vitals.service';
 import { VitalSource } from '../../database/entities/vital.entity';
 import { AuditLogService } from '../../common/interceptors/audit-log.service';
 import { requireTenantId } from '../../common/utils/tenant.util';
+import { dayBoundsUtc } from '../../common/utils/timezone.util';
 
 @Injectable()
 export class EmergencyService {
@@ -498,8 +499,10 @@ export class EmergencyService {
   // ========== DASHBOARD ==========
   async getEmergencyDashboard(facilityId: string, tenantId?: string): Promise<any> {
     const tid = requireTenantId(tenantId);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // The ward's today, not the server's: setHours works in the server zone,
+    // which is UTC, so "today" began at 03:00 locally and cases registered
+    // overnight were counted against yesterday.
+    const { start: today } = dayBoundsUtc(new Date());
 
     // Count by triage level (active cases)
     const byTriageLevelQb = this.caseRepo

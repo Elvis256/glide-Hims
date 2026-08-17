@@ -28,6 +28,7 @@ import { FinanceService } from '../finance/finance.service';
 import { CriticalResultsService } from '../critical-results/critical-results.service';
 import { AuditLogService } from '../../common/interceptors/audit-log.service';
 import { requireTenantId } from '../../common/utils/tenant.util';
+import { dayBoundsUtc } from '../../common/utils/timezone.util';
 
 @Injectable()
 export class RadiologyService {
@@ -198,10 +199,9 @@ export class RadiologyService {
       qb.andWhere('imgOrder.priority = :priority', { priority: options.priority });
     }
     if (options.date) {
-      const start = new Date(options.date);
-      start.setHours(0, 0, 0, 0);
-      const end = new Date(options.date);
-      end.setHours(23, 59, 59, 999);
+      // A requested date is a calendar day where the department is, not a
+      // 24 hours starting at UTC midnight.
+      const { start, end } = dayBoundsUtc(options.date);
       qb.andWhere('imgOrder.orderedAt BETWEEN :start AND :end', { start, end });
     }
 
@@ -514,8 +514,7 @@ export class RadiologyService {
 
   async getDashboard(facilityId: string, tenantId?: string) {
     const tid = requireTenantId(tenantId);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const { start: today } = dayBoundsUtc(new Date());
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
