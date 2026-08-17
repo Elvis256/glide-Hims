@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Loader2, Printer, Ban, ArrowLeft, ExternalLink, Plus, AlertTriangle, CheckCircle, Mail, Undo2, Upload, FileText, Image, Download, ShieldCheck, ShieldX } from 'lucide-react';
 import api from '../../services/api';
@@ -333,6 +334,12 @@ function PaymentProofSection({ paymentId, proofs, onReload }: { paymentId: strin
 }
 
 function RecordPaymentModal({ invoice, balance, onClose, onSaved }: { invoice: InvoiceDetail; balance: number; onClose: () => void; onSaved: () => void }) {
+  // This component is mounted only while the modal is showing.
+  const dialogRef = useDialogA11y<HTMLDivElement>({
+    open: true,
+    onClose,
+  });
+
   const [amountMinor, setAmountMinor] = useState<number>(balance);
   const [gateway, setGateway] = useState<string>('manual');
   const [method, setMethod] = useState<string>('bank');
@@ -364,7 +371,12 @@ function RecordPaymentModal({ invoice, balance, onClose, onSaved }: { invoice: I
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      role="dialog"
+      aria-modal="true"
+      ref={dialogRef}
+    >
       <div className="bg-white rounded-lg w-full max-w-lg p-6 space-y-4">
         <h2 className="text-lg font-bold">Record payment for {invoice.invoiceNumber}</h2>
         {gateway === 'manual' && (

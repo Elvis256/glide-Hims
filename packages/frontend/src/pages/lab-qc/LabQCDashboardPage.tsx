@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { usePermissions } from '../../components/PermissionGate';
@@ -71,6 +72,12 @@ interface NewQCRunModalProps {
  *  the z-score and Westgard status server-side), and lets the user set up a
  *  new material inline when none exists yet. */
 function NewQCRunModal({ open, onClose, facilityId, equipmentOptions, onSuccess }: NewQCRunModalProps) {
+  // This component is mounted only while the modal is showing.
+  const dialogRef = useDialogA11y<HTMLDivElement>({
+    open: true,
+    onClose,
+  });
+
   const [mode, setMode] = useState<'run' | 'material'>('run');
   const [materialId, setMaterialId] = useState('');
   const [value, setValue] = useState('');
@@ -164,7 +171,12 @@ function NewQCRunModal({ open, onClose, facilityId, equipmentOptions, onSuccess 
   const inputCls = 'w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 text-sm';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      role="dialog"
+      aria-modal="true"
+      ref={dialogRef}
+    >
       <div className="bg-white rounded-xl shadow-xl w-full max-w-xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-5 border-b sticky top-0 bg-white">
           <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">

@@ -45,6 +45,13 @@ export function useDialogA11y<T extends HTMLElement = HTMLDivElement>({
     if (!open) return;
 
     const container = containerRef.current;
+    // No element to trap within — the caller says it is open but the ref was
+    // never attached, or attached to something that is not rendered. Do
+    // nothing at all rather than guard a container that does not exist: the
+    // Tab handler below would otherwise find no focusables and swallow every
+    // Tab on the page.
+    if (!container) return;
+
     // Remember where focus was so it can be handed back on close.
     const previouslyFocused = document.activeElement as HTMLElement | null;
 

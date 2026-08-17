@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useDialogA11y } from '../hooks/useDialogA11y';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { X, Loader2, UserPlus } from 'lucide-react';
 import { patientsService } from '../services/patients';
@@ -11,6 +12,12 @@ interface QuickRegModalProps {
 }
 
 export default function QuickRegModal({ isOpen, onClose, onSuccess }: QuickRegModalProps) {
+  // This component is mounted only while the modal is showing.
+  const dialogRef = useDialogA11y<HTMLDivElement>({
+    open: true,
+    onClose,
+  });
+
   const queryClient = useQueryClient();
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
@@ -31,7 +38,12 @@ export default function QuickRegModal({ isOpen, onClose, onSuccess }: QuickRegMo
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+      role="dialog"
+      aria-modal="true"
+      ref={dialogRef}
+    >
       <div className="bg-white rounded-lg p-6 w-96">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-lg font-bold">Quick Register</h2>

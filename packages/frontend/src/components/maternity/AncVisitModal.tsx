@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { X, Loader2 } from 'lucide-react';
@@ -13,6 +14,12 @@ interface Props {
 }
 
 export default function AncVisitModal({ registrationId, gestationalAge, onClose, onSaved }: Props) {
+  // This component is mounted only while the modal is showing.
+  const dialogRef = useDialogA11y<HTMLDivElement>({
+    open: true,
+    onClose,
+  });
+
   const [form, setForm] = useState({
     visitDate: new Date().toISOString().slice(0, 10),
     gestationalAge: String(Math.max(Math.floor(gestationalAge), 0) || ''),
@@ -97,7 +104,12 @@ export default function AncVisitModal({ registrationId, gestationalAge, onClose,
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      ref={dialogRef}
+    >
       <div className="absolute inset-0 bg-black/30" onClick={onClose} />
       <div className="relative bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center">
