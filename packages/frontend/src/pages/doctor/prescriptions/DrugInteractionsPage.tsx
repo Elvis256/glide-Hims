@@ -1,4 +1,5 @@
 import { usePermissions } from '../../../components/PermissionGate';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useState, useMemo, useCallback } from 'react';
 import {
   AlertTriangle,
@@ -112,6 +113,13 @@ export default function DrugInteractionsPage() {
   const [checkedInteractions, setCheckedInteractions] = useState<Interaction[]>([]);
   const [showProceedWarning, setShowProceedWarning] = useState(false);
   const [isCheckingApi, setIsCheckingApi] = useState(false);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showProceedWarningDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showProceedWarning,
+    onClose: () => setShowProceedWarning(false),
+  });
 
   // Fetch patients from API
   const { data: patientsData, isLoading: patientsLoading } = useQuery({
@@ -464,7 +472,12 @@ export default function DrugInteractionsPage() {
 
       {/* Proceed Warning Modal */}
       {showProceedWarning && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showProceedWarningDialogRef}
+        >
           <div className="bg-white rounded-lg w-full max-w-md m-4">
             <div className="p-4 border-b flex items-center gap-3">
               <AlertTriangle className="w-6 h-6 text-red-500" />

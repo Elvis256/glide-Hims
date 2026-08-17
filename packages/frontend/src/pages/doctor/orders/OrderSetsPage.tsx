@@ -1,4 +1,5 @@
 import { usePermissions } from '../../../components/PermissionGate';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -204,6 +205,13 @@ export default function OrderSetsPage() {
   const [expandedSets, setExpandedSets] = useState<string[]>([]);
   const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showCreateModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showCreateModal,
+    onClose: () => setShowCreateModal(false),
+  });
 
   const { data: patientsData, isLoading: isLoadingPatients } = useQuery({
     queryKey: ['patients', patientSearch],
@@ -664,7 +672,12 @@ export default function OrderSetsPage() {
 
       {/* Create Modal Placeholder */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showCreateModalDialogRef}
+        >
           <div className="bg-white rounded-xl p-6 max-w-md w-full mx-4">
             <h2 className="text-lg font-bold mb-4">Create New Order Set</h2>
             <p className="text-gray-500 text-sm mb-4">

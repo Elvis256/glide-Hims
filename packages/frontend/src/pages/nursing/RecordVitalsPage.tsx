@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -172,6 +173,24 @@ export default function RecordVitalsPage() {
   // Insurance / payer type
   const [payerType, setPayerType] = useState<PayerType>('cash');
   const [selectedPolicyId, setSelectedPolicyId] = useState<string | undefined>(undefined);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showRangesModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showRangesModal,
+    onClose: () => setShowRangesModal(false),
+  });
+  const showCriticalModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showCriticalModal,
+    // This one asks "confirm & save" and offers Cancel, so Escape does what
+    // Cancel does — including dropping the pending save, so escaping cannot
+    // leave a save half-armed. The lab's critical alerts are different: they
+    // have no way out but the acknowledgement, and keep it that way.
+    onClose: () => {
+      setShowCriticalModal(false);
+      setPendingSaveAction(null);
+    },
+  });
 
   const [vitals, setVitals] = useState({
     temperature: '',
@@ -1368,7 +1387,12 @@ export default function RecordVitalsPage() {
 
       {/* Normal Ranges Modal */}
       {showRangesModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showRangesModalDialogRef}
+        >
           <div className="bg-white rounded-xl p-6 max-w-lg w-full mx-4 max-h-[80vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold">Normal Vital Ranges</h3>
@@ -1397,7 +1421,12 @@ export default function RecordVitalsPage() {
 
       {/* Critical Values Confirmation Modal */}
       {showCriticalModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showCriticalModalDialogRef}
+        >
           <div className="bg-white rounded-xl p-6 max-w-md w-full mx-4">
             <div className="flex items-center gap-3 mb-4">
               <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">

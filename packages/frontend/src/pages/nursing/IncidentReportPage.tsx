@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useId } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -347,6 +348,13 @@ export default function IncidentReportPage() {
   };
 
   const [formData, setFormData] = useState<IncidentFormData>(initialFormData);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showConfirmDialogDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showConfirmDialog,
+    onClose: () => setShowConfirmDialog(false),
+  });
 
   // Dashboard stats
   const dashboardStats = useMemo(() => {
@@ -913,7 +921,12 @@ export default function IncidentReportPage() {
     <div id="incident-report-content" className="h-[calc(100vh-120px)] flex flex-col">
       {/* Confirmation Dialog */}
       {showConfirmDialog && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showConfirmDialogDialogRef}
+        >
           <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
             <div className="flex items-center gap-3 mb-4">
               <div className="p-2 bg-yellow-100 rounded-lg">

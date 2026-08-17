@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useCallback, useRef, useId } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -835,6 +836,17 @@ export default function NewConsultationPage() {
   // State for order cancellation
   const [cancellingOrderId, setCancellingOrderId] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState('');
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const admitModalOpenDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!admitModalOpen,
+    onClose: () => setAdmitModalOpen(false),
+  });
+  const referralModalOpenDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!referralModalOpen,
+    onClose: () => setReferralModalOpen(false),
+  });
 
   // Fetch available lab tests from system (lab_tests catalog + Laboratory services)
   const { data: availableLabTests = [] } = useQuery({
@@ -4648,7 +4660,12 @@ export default function NewConsultationPage() {
 
       {/* ====== ADMIT TO IPD MODAL ====== */}
       {admitModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4">
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={admitModalOpenDialogRef}
+        >
           <div className="w-full max-w-lg bg-white rounded-xl shadow-2xl">
             <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200">
               <h3 className="text-base font-semibold text-gray-900">Admit Patient to IPD</h3>
@@ -4785,7 +4802,12 @@ export default function NewConsultationPage() {
 
       {/* ====== REFERRAL MODAL ====== */}
       {referralModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4">
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={referralModalOpenDialogRef}
+        >
           <div className="w-full max-w-lg bg-white rounded-xl shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 sticky top-0 bg-white">
               <h3 className="text-base font-semibold text-gray-900">Create Referral</h3>
