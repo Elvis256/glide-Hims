@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
@@ -62,6 +63,21 @@ export default function AssetAllocationPage() {
   } | null>(null);
   const [decisionComments, setDecisionComments] = useState('');
   const [returnFor, setReturnFor] = useState<AssetAllocation | null>(null);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showCreateModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showCreateModal,
+    onClose: () => setShowCreateModal(false),
+  });
+  const decisionForDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!decisionFor,
+    onClose: () => setDecisionFor(null),
+  });
+  const returnForDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!returnFor,
+    onClose: () => setReturnFor(null),
+  });
   const [returnDraft, setReturnDraft] = useState({
     returnDate: new Date().toISOString().slice(0, 10),
     conditionOnReturn: '',
@@ -459,7 +475,12 @@ export default function AssetAllocationPage() {
 
       {/* New Allocation Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showCreateModalDialogRef}
+        >
           <div className="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] overflow-auto">
             <div className="border-b px-6 py-4 flex items-center justify-between">
               <h2 className="text-lg font-semibold">New Allocation Request</h2>
@@ -580,7 +601,12 @@ export default function AssetAllocationPage() {
 
       {/* Approve / Reject Modal */}
       {decisionFor && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={decisionForDialogRef}
+        >
           <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
             <div className="border-b px-6 py-4 flex items-center justify-between">
               <h2 className="text-lg font-semibold">
@@ -653,7 +679,12 @@ export default function AssetAllocationPage() {
 
       {/* Return Modal */}
       {returnFor && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={returnForDialogRef}
+        >
           <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
             <div className="border-b px-6 py-4 flex items-center justify-between">
               <h2 className="text-lg font-semibold">Return Asset</h2>

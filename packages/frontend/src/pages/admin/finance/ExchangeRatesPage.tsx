@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Search,
@@ -68,6 +69,13 @@ export default function ExchangeRatesPage() {
   const [activeTab, setActiveTab] = useState<'rates' | 'settings'>('rates');
   const [showAddModal, setShowAddModal] = useState(false);
   const [settings, setSettings] = useState<AutoUpdateSettings>(defaultSettings);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showAddModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showAddModal,
+    onClose: () => setShowAddModal(false),
+  });
   
   // Add Rate form state
   const [newRate, setNewRate] = useState({
@@ -632,7 +640,12 @@ export default function ExchangeRatesPage() {
 
       {/* Add Rate Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showAddModalDialogRef}
+        >
           <div className="bg-white rounded-lg shadow-lg w-full max-w-md">
             <div className="flex items-center justify-between p-4 border-b">
               <h3 className="font-semibold text-gray-900">Add Exchange Rate</h3>

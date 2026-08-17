@@ -1,4 +1,5 @@
 import { useState, useMemo, Component } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import type { ErrorInfo, ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link, useLocation } from 'react-router-dom';
@@ -539,6 +540,25 @@ function StaffDirectoryPageContent() {
   const [importPreview, setImportPreview] = useState<string[][]>([]);
   const [importErrors, setImportErrors] = useState<string[]>([]);
   const [importing, setImporting] = useState(false);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showViewModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showViewModal,
+    onClose: () => setShowViewModal(false),
+  });
+  const showEditModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showEditModal,
+    onClose: () => setShowEditModal(false),
+  });
+  const showDocsModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showDocsModal,
+    onClose: () => setShowDocsModal(false),
+  });
+  const showImportModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showImportModal,
+    onClose: () => setShowImportModal(false),
+  });
 
   const handleImportFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1141,7 +1161,12 @@ function StaffDirectoryPageContent() {
 
       {/* View Staff Modal */}
       {showViewModal && selectedStaff && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showViewModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-bold">Staff Details</h2>
@@ -1235,7 +1260,12 @@ function StaffDirectoryPageContent() {
 
       {/* Edit Staff Modal */}
       {showEditModal && selectedStaff && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showEditModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-bold">Edit Staff: {selectedStaff.fullName}</h2>
@@ -1416,7 +1446,12 @@ function StaffDirectoryPageContent() {
 
       {/* Documents Modal */}
       {showDocsModal && selectedStaff && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showDocsModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-bold">Documents: {selectedStaff.fullName}</h2>
@@ -1585,7 +1620,12 @@ function StaffDirectoryPageContent() {
 
       {/* Import Modal */}
       {showImportModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showImportModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-bold">Import Staff</h2>

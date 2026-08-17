@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import api from '../../services/api';
 import { toast } from 'sonner';
 
@@ -33,6 +34,13 @@ export default function PasswordPoliciesPage() {
   const [policies, setPolicies] = useState<PasswordPolicy[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Partial<PasswordPolicy> | null>(null);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const editingDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!editing,
+    onClose: () => setEditing(null),
+  });
 
   const load = async () => {
     setLoading(true);
@@ -148,7 +156,12 @@ export default function PasswordPoliciesPage() {
       )}
 
       {editing && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={editingDialogRef}
+        >
           <div className="bg-white rounded p-6 w-full max-w-lg max-h-screen overflow-y-auto">
             <h2 className="text-xl font-bold mb-4">
               {(editing as any).id ? 'Edit' : 'New'} Password Policy

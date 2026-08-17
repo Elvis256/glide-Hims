@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
@@ -84,6 +85,13 @@ export default function AssetTrackingPage() {
   const [filterCategoryId, setFilterCategoryId] = useState('');
 
   const [viewAsset, setViewAsset] = useState<FixedAsset | null>(null);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const viewAssetDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!viewAsset,
+    onClose: () => setViewAsset(null),
+  });
 
   const serverFilters = useMemo(
     () => ({
@@ -532,7 +540,12 @@ export default function AssetTrackingPage() {
 
       {/* Asset Detail Side Panel */}
       {viewAsset && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex justify-end">
+        <div
+          className="fixed inset-0 bg-black/50 z-50 flex justify-end"
+          role="dialog"
+          aria-modal="true"
+          ref={viewAssetDialogRef}
+        >
           <div className="bg-white shadow-xl w-full max-w-2xl h-full overflow-y-auto">
             <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between z-10">
               <h2 className="text-lg font-semibold">{viewAsset.name}</h2>

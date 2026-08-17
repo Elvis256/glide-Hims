@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -57,6 +58,13 @@ export default function ExpiredItemsPage() {
   const [selectedCause, setSelectedCause] = useState<string>('all');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showDisposalModal, setShowDisposalModal] = useState(false);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showDisposalModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showDisposalModal,
+    onClose: () => setShowDisposalModal(false),
+  });
   const facilityId = useFacilityId();
 
   const { data: expiryData, isLoading } = useQuery({
@@ -409,7 +417,12 @@ export default function ExpiredItemsPage() {
 
       {/* Process Disposal Modal */}
       {showDisposalModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showDisposalModalDialogRef}
+        >
           <div className="bg-white rounded-xl w-full max-w-md p-6 shadow-xl">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold text-gray-900">Process Disposal</h2>

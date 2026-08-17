@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api, getApiErrorMessage } from '../../../services/api';
@@ -126,6 +127,13 @@ export default function ReagentsInventoryPage() {
   const [deleteModal, setDeleteModal] = useState<{ open: boolean; reagent: Reagent | null }>({ open: false, reagent: null });
   const [receiveModal, setReceiveModal] = useState<{ open: boolean; reagent: Reagent | null }>({ open: false, reagent: null });
   const [receiveForm, setReceiveForm] = useState<ReceiveStockForm>({ lotNumber: '', quantity: '', expiryDate: '', costPerUnit: '', supplier: '' });
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showModal,
+    onClose: () => setShowModal(false),
+  });
   const importInputRef = useRef<HTMLInputElement>(null);
 
   const { data: reagents = [], isLoading } = useQuery<Reagent[]>({
@@ -583,7 +591,12 @@ export default function ReagentsInventoryPage() {
 
       {/* Add/Edit Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showModalDialogRef}
+        >
           <div className="bg-white rounded-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <h2 className="text-lg font-semibold">

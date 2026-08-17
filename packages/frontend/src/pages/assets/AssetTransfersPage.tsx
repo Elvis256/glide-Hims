@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
@@ -64,6 +65,21 @@ export default function AssetTransfersPage() {
   } | null>(null);
 
   const [completeDraft, setCompleteDraft] = useState({ conditionOnReceipt: '', notes: '' });
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showCreateModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showCreateModal,
+    onClose: () => setShowCreateModal(false),
+  });
+  const selectedTransferDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!selectedTransfer,
+    onClose: () => setSelectedTransfer(null),
+  });
+  const completeForDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!completeFor,
+    onClose: () => setCompleteFor(null),
+  });
 
   const [formData, setFormData] = useState({
     assetId: '',
@@ -485,7 +501,12 @@ export default function AssetTransfersPage() {
 
       {/* New Transfer Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showCreateModalDialogRef}
+        >
           <div className="bg-white rounded-xl w-full max-w-lg max-h-[90vh] overflow-auto">
             <div className="p-6 border-b flex items-center justify-between">
               <h2 className="text-xl font-bold text-gray-900">New Asset Transfer</h2>
@@ -624,7 +645,12 @@ export default function AssetTransfersPage() {
 
       {/* Transfer Details Modal */}
       {selectedTransfer && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={selectedTransferDialogRef}
+        >
           <div className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-auto">
             <div className="p-6 border-b flex items-center justify-between">
               <div>
@@ -833,7 +859,12 @@ export default function AssetTransfersPage() {
 
       {/* Complete Transfer Modal */}
       {completeFor && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={completeForDialogRef}
+        >
           <div className="bg-white rounded-xl w-full max-w-md">
             <div className="p-6 border-b flex items-center justify-between">
               <h2 className="text-lg font-bold text-gray-900">Complete Transfer</h2>

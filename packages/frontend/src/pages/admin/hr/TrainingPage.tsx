@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { GraduationCap, Users, Award, Calendar, Plus, Loader2, Trash2, Eye } from 'lucide-react';
 import { hrService, type TrainingProgram, type CreateTrainingProgramDto, type Employee } from '../../../services/hr';
@@ -15,6 +16,17 @@ export default function TrainingPage() {
     completedCount: 0,
   });
   const [enrolleeIds, setEnrolleeIds] = useState<string[]>([]);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showModal,
+    onClose: () => setShowModal(false),
+  });
+  const showEnrollModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showEnrollModal,
+    onClose: () => setShowEnrollModal(false),
+  });
   const queryClient = useQueryClient();
 
   // Get facility
@@ -284,7 +296,12 @@ export default function TrainingPage() {
 
       {/* Create Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showModalDialogRef}
+        >
           <div className="bg-white rounded-lg p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <h2 className="text-xl font-semibold mb-4">Add Training Program</h2>
             <div className="space-y-4">
@@ -397,7 +414,12 @@ export default function TrainingPage() {
 
       {/* Enroll Modal */}
       {showEnrollModal && selectedProgram && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showEnrollModalDialogRef}
+        >
           <div className="bg-white rounded-lg p-6 w-full max-w-lg">
             <h2 className="text-xl font-semibold mb-4">Enroll Staff in {selectedProgram.name}</h2>
             <div className="space-y-4">

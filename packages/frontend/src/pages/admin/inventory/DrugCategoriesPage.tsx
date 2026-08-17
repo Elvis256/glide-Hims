@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   FolderTree,
@@ -74,6 +75,21 @@ export default function DrugCategoriesPage() {
   const [editingCategory, setEditingCategory] = useState<DrugCategory | null>(null);
   const [formData, setFormData] = useState<CategoryFormData>(EMPTY_FORM);
   const [mutationError, setMutationError] = useState<string | null>(null);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showAddModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showAddModal,
+    onClose: () => setShowAddModal(false),
+  });
+  const showEditModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showEditModal,
+    onClose: () => setShowEditModal(false),
+  });
+  const showDeleteConfirmDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showDeleteConfirm,
+    onClose: () => setShowDeleteConfirm(null),
+  });
 
   const { data: categories = [], isLoading, error: fetchError } = useQuery<DrugCategory[]>({
     queryKey: ['drug-categories', facilityId],
@@ -389,7 +405,12 @@ export default function DrugCategoriesPage() {
 
       {/* Add Category Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showAddModalDialogRef}
+        >
           <div className="bg-white rounded-lg w-full max-w-lg m-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-4 border-b sticky top-0 bg-white">
               <h2 className="text-lg font-semibold">Add New Category</h2>
@@ -525,7 +546,12 @@ export default function DrugCategoriesPage() {
 
       {/* Edit Category Modal */}
       {showEditModal && editingCategory && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showEditModalDialogRef}
+        >
           <div className="bg-white rounded-lg w-full max-w-lg m-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-4 border-b sticky top-0 bg-white">
               <h2 className="text-lg font-semibold">Edit Category</h2>
@@ -668,7 +694,12 @@ export default function DrugCategoriesPage() {
 
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showDeleteConfirmDialogRef}
+        >
           <div className="bg-white rounded-lg w-full max-w-sm m-4">
             <div className="p-4 border-b">
               <h2 className="text-lg font-semibold">Delete Category</h2>

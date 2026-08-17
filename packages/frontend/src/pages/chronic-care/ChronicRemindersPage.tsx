@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format, addDays, isPast, isToday, isTomorrow, differenceInDays } from 'date-fns';
 import { toast } from 'sonner';
@@ -42,6 +43,13 @@ export default function ChronicRemindersPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPatients, setSelectedPatients] = useState<string[]>([]);
   const [showBulkModal, setShowBulkModal] = useState(false);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showBulkModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showBulkModal,
+    onClose: () => setShowBulkModal(false),
+  });
   const [reminderMessage, setReminderMessage] = useState({
     subject: 'Follow-up Reminder',
     message: 'Dear {patientName}, this is a reminder for your chronic care follow-up appointment. Please contact us to schedule your visit.',
@@ -424,7 +432,12 @@ export default function ChronicRemindersPage() {
 
       {/* Bulk Reminder Modal */}
       {showBulkModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showBulkModalDialogRef}
+        >
           <div className="bg-white rounded-lg shadow-xl w-full max-w-lg">
             <div className="border-b px-6 py-4 flex items-center justify-between">
               <h2 className="text-lg font-semibold">Send Bulk Reminders</h2>

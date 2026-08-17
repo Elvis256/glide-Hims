@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Search,
@@ -55,6 +56,13 @@ export default function CurrenciesPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive'>('all');
   const [formData, setFormData] = useState<CreateCurrencyDto>(initialFormState);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showAddModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showAddModal,
+    onClose: () => setShowAddModal(false),
+  });
 
   // Fetch currencies config from settings API
   const { data: currencies = [], isLoading } = useQuery({
@@ -327,7 +335,12 @@ export default function CurrenciesPage() {
 
       {/* Add Currency Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-surface-900/50 flex items-center justify-center z-50 p-4">
+        <div
+          className="fixed inset-0 bg-surface-900/50 flex items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={showAddModalDialogRef}
+        >
           <Card flush className="w-full max-w-md shadow-xl animate-fade-in">
             <div className="flex items-center justify-between p-4 border-b border-surface-200/70">
               <h3 className="text-base font-semibold text-surface-900">Add New Currency</h3>
