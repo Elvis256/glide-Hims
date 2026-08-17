@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useId } from 'react';
 import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -129,6 +129,7 @@ const calculateMAP = (systolic: number, diastolic: number): number => {
 };
 
 export default function RecordVitalsPage() {
+  const fid = useId();
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
@@ -1315,8 +1316,8 @@ export default function RecordVitalsPage() {
 
                 {/* Notes */}
                 <div className="space-y-1 col-span-2 md:col-span-3">
-                  <label className="text-sm font-medium text-gray-700">Additional Notes</label>
-                  <textarea
+                  <label htmlFor={`${fid}-additional-notes`} className="text-sm font-medium text-gray-700">Additional Notes</label>
+                  <textarea id={`${fid}-additional-notes`}
                     rows={2}
                     placeholder="Additional observations..."
                     value={vitals.notes}

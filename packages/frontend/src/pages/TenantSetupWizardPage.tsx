@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useId } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
@@ -261,6 +261,7 @@ const presetIcons: Record<string, React.ReactNode> = {
 };
 
 export default function TenantSetupWizardPage() {
+  const fid = useId();
   const navigate = useNavigate();
   const { slug } = useParams<{ slug: string }>();
 
@@ -488,8 +489,8 @@ export default function TenantSetupWizardPage() {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Facility Name *</label>
-                <input
+                <label htmlFor={`${fid}-facility-name`} className="block text-sm font-medium text-gray-700 mb-1">Facility Name *</label>
+                <input id={`${fid}-facility-name`}
                   type="text"
                   value={facility.name}
                   onChange={e => setFacility(prev => ({ ...prev, name: e.target.value }))}
@@ -498,8 +499,8 @@ export default function TenantSetupWizardPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Facility Type *</label>
-                <select
+                <label htmlFor={`${fid}-facility-type`} className="block text-sm font-medium text-gray-700 mb-1">Facility Type *</label>
+                <select id={`${fid}-facility-type`}
                   value={facility.type}
                   onChange={e => setFacility(prev => ({ ...prev, type: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -510,8 +511,8 @@ export default function TenantSetupWizardPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
-                <input
+                <label htmlFor={`${fid}-location`} className="block text-sm font-medium text-gray-700 mb-1">Location</label>
+                <input id={`${fid}-location`}
                   type="text"
                   value={facility.location}
                   onChange={e => setFacility(prev => ({ ...prev, location: e.target.value }))}
@@ -520,8 +521,8 @@ export default function TenantSetupWizardPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-                <input
+                <label htmlFor={`${fid}-phone`} className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                <input id={`${fid}-phone`}
                   type="text"
                   value={facility.phone}
                   onChange={e => setFacility(prev => ({ ...prev, phone: e.target.value }))}
@@ -530,8 +531,8 @@ export default function TenantSetupWizardPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                <input
+                <label htmlFor={`${fid}-email`} className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <input id={`${fid}-email`}
                   type="email"
                   value={facility.email}
                   onChange={e => setFacility(prev => ({ ...prev, email: e.target.value }))}
@@ -552,8 +553,8 @@ export default function TenantSetupWizardPage() {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
-                <input
+                <label htmlFor={`${fid}-full-name`} className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
+                <input id={`${fid}-full-name`}
                   type="text"
                   value={admin.fullName}
                   onChange={e => setAdmin(prev => ({ ...prev, fullName: e.target.value }))}
@@ -562,8 +563,8 @@ export default function TenantSetupWizardPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Username *</label>
-                <input
+                <label htmlFor={`${fid}-username`} className="block text-sm font-medium text-gray-700 mb-1">Username *</label>
+                <input id={`${fid}-username`}
                   type="text"
                   value={admin.username}
                   onChange={e => setAdmin(prev => ({ ...prev, username: e.target.value }))}
@@ -572,8 +573,8 @@ export default function TenantSetupWizardPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
-                <input
+                <label htmlFor={`${fid}-email-2`} className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
+                <input id={`${fid}-email-2`}
                   type="email"
                   value={admin.email}
                   onChange={e => setAdmin(prev => ({ ...prev, email: e.target.value }))}
@@ -582,8 +583,8 @@ export default function TenantSetupWizardPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-                <input
+                <label htmlFor={`${fid}-phone-2`} className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                <input id={`${fid}-phone-2`}
                   type="text"
                   value={admin.phone}
                   onChange={e => setAdmin(prev => ({ ...prev, phone: e.target.value }))}
@@ -611,8 +612,8 @@ export default function TenantSetupWizardPage() {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Confirm Password *</label>
-                <input
+                <label htmlFor={`${fid}-confirm-password`} className="block text-sm font-medium text-gray-700 mb-1">Confirm Password *</label>
+                <input id={`${fid}-confirm-password`}
                   type={showPassword ? 'text' : 'password'}
                   value={confirmPassword}
                   onChange={e => setConfirmPassword(e.target.value)}
@@ -636,8 +637,8 @@ export default function TenantSetupWizardPage() {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Currency</label>
-                <select
+                <label htmlFor={`${fid}-currency`} className="block text-sm font-medium text-gray-700 mb-1">Currency</label>
+                <select id={`${fid}-currency`}
                   value={settings.currency}
                   onChange={e => setSettings(prev => ({ ...prev, currency: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -646,8 +647,8 @@ export default function TenantSetupWizardPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Timezone</label>
-                <select
+                <label htmlFor={`${fid}-timezone`} className="block text-sm font-medium text-gray-700 mb-1">Timezone</label>
+                <select id={`${fid}-timezone`}
                   value={settings.timezone}
                   onChange={e => setSettings(prev => ({ ...prev, timezone: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -675,8 +676,8 @@ export default function TenantSetupWizardPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Date Format</label>
-                <select
+                <label htmlFor={`${fid}-date-format`} className="block text-sm font-medium text-gray-700 mb-1">Date Format</label>
+                <select id={`${fid}-date-format`}
                   value={settings.dateFormat}
                   onChange={e => setSettings(prev => ({ ...prev, dateFormat: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"

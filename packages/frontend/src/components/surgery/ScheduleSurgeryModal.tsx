@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useId } from 'react';
 import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -15,6 +15,7 @@ interface Props {
 }
 
 export default function ScheduleSurgeryModal({ theatres, onClose, onScheduled }: Props) {
+  const fid = useId();
   // This component is mounted only while the modal is showing.
   const dialogRef = useDialogA11y<HTMLDivElement>({
     open: true,
@@ -139,36 +140,36 @@ export default function ScheduleSurgeryModal({ theatres, onClose, onScheduled }:
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Procedure *</label>
-              <input value={form.procedureName} onChange={set('procedureName')} placeholder="e.g. Appendicectomy" className="w-full px-3 py-2 border rounded-lg" />
+              <label htmlFor={`${fid}-procedure`} className="block text-sm font-medium text-gray-700 mb-1">Procedure *</label>
+              <input id={`${fid}-procedure`} value={form.procedureName} onChange={set('procedureName')} placeholder="e.g. Appendicectomy" className="w-full px-3 py-2 border rounded-lg" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Procedure Code</label>
-              <input value={form.procedureCode} onChange={set('procedureCode')} placeholder="ICD/CPT (optional)" className="w-full px-3 py-2 border rounded-lg" />
+              <label htmlFor={`${fid}-procedure-code`} className="block text-sm font-medium text-gray-700 mb-1">Procedure Code</label>
+              <input id={`${fid}-procedure-code`} value={form.procedureCode} onChange={set('procedureCode')} placeholder="ICD/CPT (optional)" className="w-full px-3 py-2 border rounded-lg" />
             </div>
             <div className="col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Indication / Diagnosis</label>
-              <input value={form.diagnosis} onChange={set('diagnosis')} className="w-full px-3 py-2 border rounded-lg" />
+              <label htmlFor={`${fid}-indication-diagnosis`} className="block text-sm font-medium text-gray-700 mb-1">Indication / Diagnosis</label>
+              <input id={`${fid}-indication-diagnosis`} value={form.diagnosis} onChange={set('diagnosis')} className="w-full px-3 py-2 border rounded-lg" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Type *</label>
-              <select value={form.surgeryType} onChange={set('surgeryType')} className="w-full px-3 py-2 border rounded-lg">
+              <label htmlFor={`${fid}-type`} className="block text-sm font-medium text-gray-700 mb-1">Type *</label>
+              <select id={`${fid}-type`} value={form.surgeryType} onChange={set('surgeryType')} className="w-full px-3 py-2 border rounded-lg">
                 <option value="major">Major</option>
                 <option value="minor">Minor</option>
                 <option value="day_case">Day case</option>
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Priority *</label>
-              <select value={form.priority} onChange={set('priority')} className="w-full px-3 py-2 border rounded-lg">
+              <label htmlFor={`${fid}-priority`} className="block text-sm font-medium text-gray-700 mb-1">Priority *</label>
+              <select id={`${fid}-priority`} value={form.priority} onChange={set('priority')} className="w-full px-3 py-2 border rounded-lg">
                 <option value="elective">Elective</option>
                 <option value="urgent">Urgent</option>
                 <option value="emergency">Emergency</option>
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Theatre *</label>
-              <select value={form.theatreId} onChange={set('theatreId')} className="w-full px-3 py-2 border rounded-lg">
+              <label htmlFor={`${fid}-theatre`} className="block text-sm font-medium text-gray-700 mb-1">Theatre *</label>
+              <select id={`${fid}-theatre`} value={form.theatreId} onChange={set('theatreId')} className="w-full px-3 py-2 border rounded-lg">
                 <option value="">Select theatre...</option>
                 {theatres.map((t) => (
                   <option key={t.id} value={t.id}>{t.name} ({t.code})</option>
@@ -179,8 +180,8 @@ export default function ScheduleSurgeryModal({ theatres, onClose, onScheduled }:
               )}
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Lead Surgeon *</label>
-              <select value={form.leadSurgeonId} onChange={set('leadSurgeonId')} className="w-full px-3 py-2 border rounded-lg">
+              <label htmlFor={`${fid}-lead-surgeon`} className="block text-sm font-medium text-gray-700 mb-1">Lead Surgeon *</label>
+              <select id={`${fid}-lead-surgeon`} value={form.leadSurgeonId} onChange={set('leadSurgeonId')} className="w-full px-3 py-2 border rounded-lg">
                 <option value="">Select surgeon...</option>
                 {surgeons.map((d: any) => (
                   <option key={d.id} value={d.id}>{d.fullName}</option>
@@ -188,22 +189,22 @@ export default function ScheduleSurgeryModal({ theatres, onClose, onScheduled }:
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Date *</label>
-              <input type="date" value={form.scheduledDate} onChange={set('scheduledDate')} className="w-full px-3 py-2 border rounded-lg" />
+              <label htmlFor={`${fid}-date`} className="block text-sm font-medium text-gray-700 mb-1">Date *</label>
+              <input id={`${fid}-date`} type="date" value={form.scheduledDate} onChange={set('scheduledDate')} className="w-full px-3 py-2 border rounded-lg" />
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Time *</label>
-                <input type="time" value={form.scheduledTime} onChange={set('scheduledTime')} className="w-full px-3 py-2 border rounded-lg" />
+                <label htmlFor={`${fid}-time`} className="block text-sm font-medium text-gray-700 mb-1">Time *</label>
+                <input id={`${fid}-time`} type="time" value={form.scheduledTime} onChange={set('scheduledTime')} className="w-full px-3 py-2 border rounded-lg" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Duration (min) *</label>
-                <input type="number" min="10" step="10" value={form.estimatedDurationMinutes} onChange={set('estimatedDurationMinutes')} className="w-full px-3 py-2 border rounded-lg" />
+                <label htmlFor={`${fid}-duration-min`} className="block text-sm font-medium text-gray-700 mb-1">Duration (min) *</label>
+                <input id={`${fid}-duration-min`} type="number" min="10" step="10" value={form.estimatedDurationMinutes} onChange={set('estimatedDurationMinutes')} className="w-full px-3 py-2 border rounded-lg" />
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Anesthesia</label>
-              <select value={form.anesthesiaType} onChange={set('anesthesiaType')} className="w-full px-3 py-2 border rounded-lg">
+              <label htmlFor={`${fid}-anesthesia`} className="block text-sm font-medium text-gray-700 mb-1">Anesthesia</label>
+              <select id={`${fid}-anesthesia`} value={form.anesthesiaType} onChange={set('anesthesiaType')} className="w-full px-3 py-2 border rounded-lg">
                 <option value="">To be decided</option>
                 <option value="general">General</option>
                 <option value="spinal">Spinal</option>

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useId } from 'react';
 import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../../../services/api';
@@ -84,6 +84,7 @@ const emptyFormData: SupplierFormData = {
 };
 
 export default function VendorListPage() {
+  const fid = useId();
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<SupplierType | 'all'>('all');
@@ -306,8 +307,8 @@ export default function VendorListPage() {
         {showFilters && (
           <div className="flex items-center gap-4 mt-3 pt-3 border-t">
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Type</label>
-              <select
+              <label htmlFor={`${fid}-type`} className="block text-xs text-gray-500 mb-1">Type</label>
+              <select id={`${fid}-type`}
                 value={typeFilter}
                 onChange={(e) => setTypeFilter(e.target.value as SupplierType | 'all')}
                 className="border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -320,8 +321,8 @@ export default function VendorListPage() {
               </select>
             </div>
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Status</label>
-              <select
+              <label htmlFor={`${fid}-status`} className="block text-xs text-gray-500 mb-1">Status</label>
+              <select id={`${fid}-status`}
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value as SupplierStatus | 'all')}
                 className="border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -601,8 +602,8 @@ export default function VendorListPage() {
             <div className="p-6 space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Code *</label>
-                  <input
+                  <label htmlFor={`${fid}-code`} className="block text-sm font-medium text-gray-700 mb-1">Code *</label>
+                  <input id={`${fid}-code`}
                     type="text"
                     value={formData.code}
                     onChange={(e) => setFormData({ ...formData, code: e.target.value })}
@@ -611,8 +612,8 @@ export default function VendorListPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
-                  <input
+                  <label htmlFor={`${fid}-name`} className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+                  <input id={`${fid}-name`}
                     type="text"
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
@@ -623,8 +624,8 @@ export default function VendorListPage() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Type *</label>
-                  <select
+                  <label htmlFor={`${fid}-type-2`} className="block text-sm font-medium text-gray-700 mb-1">Type *</label>
+                  <select id={`${fid}-type-2`}
                     value={formData.type}
                     onChange={(e) => setFormData({ ...formData, type: e.target.value as SupplierType })}
                     className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -636,8 +637,8 @@ export default function VendorListPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                  <select
+                  <label htmlFor={`${fid}-status-2`} className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                  <select id={`${fid}-status-2`}
                     value={formData.status}
                     onChange={(e) => setFormData({ ...formData, status: e.target.value as SupplierStatus })}
                     className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -650,8 +651,8 @@ export default function VendorListPage() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Contact Person</label>
-                  <input
+                  <label htmlFor={`${fid}-contact-person`} className="block text-sm font-medium text-gray-700 mb-1">Contact Person</label>
+                  <input id={`${fid}-contact-person`}
                     type="text"
                     value={formData.contactPerson}
                     onChange={(e) => setFormData({ ...formData, contactPerson: e.target.value })}
@@ -659,8 +660,8 @@ export default function VendorListPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-                  <input
+                  <label htmlFor={`${fid}-phone`} className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                  <input id={`${fid}-phone`}
                     type="text"
                     value={formData.phone}
                     onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
@@ -669,8 +670,8 @@ export default function VendorListPage() {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                <input
+                <label htmlFor={`${fid}-email`} className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <input id={`${fid}-email`}
                   type="email"
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
@@ -678,8 +679,8 @@ export default function VendorListPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
-                <textarea
+                <label htmlFor={`${fid}-address`} className="block text-sm font-medium text-gray-700 mb-1">Address</label>
+                <textarea id={`${fid}-address`}
                   rows={2}
                   value={formData.address}
                   onChange={(e) => setFormData({ ...formData, address: e.target.value })}
@@ -687,8 +688,8 @@ export default function VendorListPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-                <textarea
+                <label htmlFor={`${fid}-notes`} className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                <textarea id={`${fid}-notes`}
                   rows={2}
                   value={formData.notes}
                   onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
@@ -734,8 +735,8 @@ export default function VendorListPage() {
             <div className="p-6 space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Code *</label>
-                  <input
+                  <label htmlFor={`${fid}-code-2`} className="block text-sm font-medium text-gray-700 mb-1">Code *</label>
+                  <input id={`${fid}-code-2`}
                     type="text"
                     value={formData.code}
                     onChange={(e) => setFormData({ ...formData, code: e.target.value })}
@@ -743,8 +744,8 @@ export default function VendorListPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
-                  <input
+                  <label htmlFor={`${fid}-name-2`} className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+                  <input id={`${fid}-name-2`}
                     type="text"
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
@@ -754,8 +755,8 @@ export default function VendorListPage() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Type *</label>
-                  <select
+                  <label htmlFor={`${fid}-type-3`} className="block text-sm font-medium text-gray-700 mb-1">Type *</label>
+                  <select id={`${fid}-type-3`}
                     value={formData.type}
                     onChange={(e) => setFormData({ ...formData, type: e.target.value as SupplierType })}
                     className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -767,8 +768,8 @@ export default function VendorListPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                  <select
+                  <label htmlFor={`${fid}-status-3`} className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                  <select id={`${fid}-status-3`}
                     value={formData.status}
                     onChange={(e) => setFormData({ ...formData, status: e.target.value as SupplierStatus })}
                     className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -781,8 +782,8 @@ export default function VendorListPage() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Contact Person</label>
-                  <input
+                  <label htmlFor={`${fid}-contact-person-2`} className="block text-sm font-medium text-gray-700 mb-1">Contact Person</label>
+                  <input id={`${fid}-contact-person-2`}
                     type="text"
                     value={formData.contactPerson}
                     onChange={(e) => setFormData({ ...formData, contactPerson: e.target.value })}
@@ -790,8 +791,8 @@ export default function VendorListPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-                  <input
+                  <label htmlFor={`${fid}-phone-2`} className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                  <input id={`${fid}-phone-2`}
                     type="text"
                     value={formData.phone}
                     onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
@@ -800,8 +801,8 @@ export default function VendorListPage() {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                <input
+                <label htmlFor={`${fid}-email-2`} className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <input id={`${fid}-email-2`}
                   type="email"
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
@@ -809,8 +810,8 @@ export default function VendorListPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
-                <textarea
+                <label htmlFor={`${fid}-address-2`} className="block text-sm font-medium text-gray-700 mb-1">Address</label>
+                <textarea id={`${fid}-address-2`}
                   rows={2}
                   value={formData.address}
                   onChange={(e) => setFormData({ ...formData, address: e.target.value })}
@@ -818,8 +819,8 @@ export default function VendorListPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-                <textarea
+                <label htmlFor={`${fid}-notes-2`} className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                <textarea id={`${fid}-notes-2`}
                   rows={2}
                   value={formData.notes}
                   onChange={(e) => setFormData({ ...formData, notes: e.target.value })}

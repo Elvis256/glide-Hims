@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useId } from 'react';
 import { useDialogA11y } from '../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
@@ -69,6 +69,7 @@ const VitalCard = ({
 };
 
 export default function VitalsPage() {
+  const fid = useId();
   const [searchParams] = useSearchParams();
   const encounterId = searchParams.get('encounterId');
   const patientId = searchParams.get('patientId');
@@ -346,8 +347,8 @@ export default function VitalsPage() {
               <form onSubmit={handleSubmit} className="space-y-4">
                 {!encounterId && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Encounter ID</label>
-                    <input
+                    <label htmlFor={`${fid}-encounter-id`} className="block text-sm font-medium text-gray-700">Encounter ID</label>
+                    <input id={`${fid}-encounter-id`}
                       type="text"
                       name="encounterId"
                       required
@@ -357,8 +358,8 @@ export default function VitalsPage() {
                 )}
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Temperature (°C)</label>
-                    <input
+                    <label htmlFor={`${fid}-temperature-c`} className="block text-sm font-medium text-gray-700">Temperature (°C)</label>
+                    <input id={`${fid}-temperature-c`}
                       type="number"
                       name="temperature"
                       step="0.1"
@@ -368,8 +369,8 @@ export default function VitalsPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Heart Rate (bpm)</label>
-                    <input
+                    <label htmlFor={`${fid}-heart-rate-bpm`} className="block text-sm font-medium text-gray-700">Heart Rate (bpm)</label>
+                    <input id={`${fid}-heart-rate-bpm`}
                       type="number"
                       name="heartRate"
                       min="30"
@@ -380,8 +381,8 @@ export default function VitalsPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">BP Systolic (mmHg)</label>
-                    <input
+                    <label htmlFor={`${fid}-bp-systolic-mmhg`} className="block text-sm font-medium text-gray-700">BP Systolic (mmHg)</label>
+                    <input id={`${fid}-bp-systolic-mmhg`}
                       type="number"
                       name="systolic"
                       min="60"
@@ -390,8 +391,8 @@ export default function VitalsPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">BP Diastolic (mmHg)</label>
-                    <input
+                    <label htmlFor={`${fid}-bp-diastolic-mmhg`} className="block text-sm font-medium text-gray-700">BP Diastolic (mmHg)</label>
+                    <input id={`${fid}-bp-diastolic-mmhg`}
                       type="number"
                       name="diastolic"
                       min="40"
@@ -402,8 +403,8 @@ export default function VitalsPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Respiratory Rate (/min)</label>
-                    <input
+                    <label htmlFor={`${fid}-respiratory-rate-min`} className="block text-sm font-medium text-gray-700">Respiratory Rate (/min)</label>
+                    <input id={`${fid}-respiratory-rate-min`}
                       type="number"
                       name="respiratoryRate"
                       min="5"
@@ -412,8 +413,8 @@ export default function VitalsPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">O2 Saturation (%)</label>
-                    <input
+                    <label htmlFor={`${fid}-o2-saturation`} className="block text-sm font-medium text-gray-700">O2 Saturation (%)</label>
+                    <input id={`${fid}-o2-saturation`}
                       type="number"
                       name="oxygenSaturation"
                       min="50"
@@ -424,8 +425,8 @@ export default function VitalsPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Weight (kg)</label>
-                    <input
+                    <label htmlFor={`${fid}-weight-kg`} className="block text-sm font-medium text-gray-700">Weight (kg)</label>
+                    <input id={`${fid}-weight-kg`}
                       type="number"
                       name="weight"
                       step="0.1"
@@ -435,8 +436,8 @@ export default function VitalsPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Height (cm)</label>
-                    <input
+                    <label htmlFor={`${fid}-height-cm`} className="block text-sm font-medium text-gray-700">Height (cm)</label>
+                    <input id={`${fid}-height-cm`}
                       type="number"
                       name="height"
                       min="30"
@@ -446,8 +447,8 @@ export default function VitalsPage() {
                   </div>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Pain Score (0-10)</label>
-                  <input
+                  <label htmlFor={`${fid}-pain-score-0-10`} className="block text-sm font-medium text-gray-700">Pain Score (0-10)</label>
+                  <input id={`${fid}-pain-score-0-10`}
                     type="range"
                     name="painScore"
                     min="0"
@@ -461,8 +462,8 @@ export default function VitalsPage() {
                   </div>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Notes</label>
-                  <textarea
+                  <label htmlFor={`${fid}-notes`} className="block text-sm font-medium text-gray-700">Notes</label>
+                  <textarea id={`${fid}-notes`}
                     name="notes"
                     rows={2}
                     className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"

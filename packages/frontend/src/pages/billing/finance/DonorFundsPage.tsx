@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useId } from 'react';
 import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -62,6 +62,7 @@ const statusConfig: Record<string, { label: string; color: string }> = {
 type ViewMode = 'funds' | 'inter-facility';
 
 export default function DonorFundsPage() {
+  const fid = useId();
   const queryClient = useQueryClient();
   const facilityId = useFacilityId();
 
@@ -397,21 +398,21 @@ export default function DonorFundsPage() {
               <div className="p-6 space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Fund Name</label>
-                    <input type="text" name="name" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g., USAID Grant 2025" />
+                    <label htmlFor={`${fid}-fund-name`} className="block text-sm font-medium text-gray-700 mb-1">Fund Name</label>
+                    <input id={`${fid}-fund-name`} type="text" name="name" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g., USAID Grant 2025" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Donor</label>
-                    <input type="text" name="donor" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Donor organization" />
+                    <label htmlFor={`${fid}-donor`} className="block text-sm font-medium text-gray-700 mb-1">Donor</label>
+                    <input id={`${fid}-donor`} type="text" name="donor" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Donor organization" />
                   </div>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Total Amount</label>
-                  <input type="number" name="totalAmount" required min="0" step="0.01" className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="0.00" />
+                  <label htmlFor={`${fid}-total-amount`} className="block text-sm font-medium text-gray-700 mb-1">Total Amount</label>
+                  <input id={`${fid}-total-amount`} type="number" name="totalAmount" required min="0" step="0.01" className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="0.00" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                  <textarea name="description" rows={3} className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Fund description and objectives" />
+                  <label htmlFor={`${fid}-description`} className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                  <textarea id={`${fid}-description`} name="description" rows={3} className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Fund description and objectives" />
                 </div>
               </div>
               <div className="flex items-center justify-end gap-3 px-6 py-4 border-t bg-gray-50 rounded-b-xl">
@@ -457,16 +458,16 @@ export default function DonorFundsPage() {
             >
               <div className="p-6 space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
-                  <input type="number" name="amount" required min="0" step="0.01" className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="0.00" />
+                  <label htmlFor={`${fid}-amount`} className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
+                  <input id={`${fid}-amount`} type="number" name="amount" required min="0" step="0.01" className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="0.00" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                  <input type="text" name="description" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Expense description" />
+                  <label htmlFor={`${fid}-description-2`} className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                  <input id={`${fid}-description-2`} type="text" name="description" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Expense description" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Reference</label>
-                  <input type="text" name="reference" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Invoice/PO reference" />
+                  <label htmlFor={`${fid}-reference`} className="block text-sm font-medium text-gray-700 mb-1">Reference</label>
+                  <input id={`${fid}-reference`} type="text" name="reference" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Invoice/PO reference" />
                 </div>
               </div>
               <div className="flex items-center justify-end gap-3 px-6 py-4 border-t bg-gray-50 rounded-b-xl">
@@ -511,8 +512,8 @@ export default function DonorFundsPage() {
             >
               <div className="p-6 space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Fund</label>
-                  <select name="fundId" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  <label htmlFor={`${fid}-fund`} className="block text-sm font-medium text-gray-700 mb-1">Fund</label>
+                  <select id={`${fid}-fund`} name="fundId" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                     <option value="">Select fund...</option>
                     {funds.filter((f) => f.status === 'active').map((f) => (
                       <option key={f.id} value={f.id}>{f.name} ({formatCurrency(f.remainingBalance)} remaining)</option>
@@ -521,21 +522,21 @@ export default function DonorFundsPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">From Facility ID</label>
-                    <input type="text" name="fromFacilityId" required defaultValue={facilityId} className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    <label htmlFor={`${fid}-from-facility-id`} className="block text-sm font-medium text-gray-700 mb-1">From Facility ID</label>
+                    <input id={`${fid}-from-facility-id`} type="text" name="fromFacilityId" required defaultValue={facilityId} className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">To Facility ID</label>
-                    <input type="text" name="toFacilityId" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Destination facility" />
+                    <label htmlFor={`${fid}-to-facility-id`} className="block text-sm font-medium text-gray-700 mb-1">To Facility ID</label>
+                    <input id={`${fid}-to-facility-id`} type="text" name="toFacilityId" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Destination facility" />
                   </div>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
-                  <input type="number" name="amount" required min="0" step="0.01" className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="0.00" />
+                  <label htmlFor={`${fid}-amount-2`} className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
+                  <input id={`${fid}-amount-2`} type="number" name="amount" required min="0" step="0.01" className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="0.00" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                  <input type="text" name="description" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Transfer description" />
+                  <label htmlFor={`${fid}-description-3`} className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                  <input id={`${fid}-description-3`} type="text" name="description" required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Transfer description" />
                 </div>
               </div>
               <div className="flex items-center justify-end gap-3 px-6 py-4 border-t bg-gray-50 rounded-b-xl">

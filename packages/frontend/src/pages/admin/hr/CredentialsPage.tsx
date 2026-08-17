@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import { useState, useMemo, useRef, useEffect, useCallback, useId } from 'react';
 import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -76,6 +76,7 @@ const getCredentialStatus = (expiryDate?: string): Credential['status'] => {
 };
 
 export default function CredentialsPage() {
+  const fid = useId();
   const queryClient = useQueryClient();
   const facilityId = useFacilityId();
   const [activeTab, setActiveTab] = useState<'credentials' | 'types' | 'alerts'>('credentials');
@@ -813,8 +814,8 @@ export default function CredentialsPage() {
             <h2 className="text-xl font-bold mb-4">{editingCredential ? 'Edit Credential' : 'Add Credential'}</h2>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Staff Member</label>
-                <select value={credForm.staffId} onChange={(e) => setCredForm({ ...credForm, staffId: e.target.value })} className="w-full border rounded-lg px-3 py-2">
+                <label htmlFor={`${fid}-staff-member`} className="block text-sm font-medium text-gray-700 mb-1">Staff Member</label>
+                <select id={`${fid}-staff-member`} value={credForm.staffId} onChange={(e) => setCredForm({ ...credForm, staffId: e.target.value })} className="w-full border rounded-lg px-3 py-2">
                   <option value="">Select Staff</option>
                   {staffList.map((s: any) => (
                     <option key={s.id} value={s.id}>{s.fullName || `${s.firstName} ${s.lastName}`} ({s.employeeCode || s.id})</option>
@@ -822,8 +823,8 @@ export default function CredentialsPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Credential Type</label>
-                <select value={credForm.credentialType} onChange={(e) => setCredForm({ ...credForm, credentialType: e.target.value })} className="w-full border rounded-lg px-3 py-2">
+                <label htmlFor={`${fid}-credential-type`} className="block text-sm font-medium text-gray-700 mb-1">Credential Type</label>
+                <select id={`${fid}-credential-type`} value={credForm.credentialType} onChange={(e) => setCredForm({ ...credForm, credentialType: e.target.value })} className="w-full border rounded-lg px-3 py-2">
                   <option value="">Select Type</option>
                   {credentialTypes.map((type) => (
                     <option key={type.id} value={type.name}>{type.name}</option>
@@ -831,26 +832,26 @@ export default function CredentialsPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Issuing Body</label>
-                <input type="text" value={credForm.issuingBody} onChange={(e) => setCredForm({ ...credForm, issuingBody: e.target.value })} className="w-full border rounded-lg px-3 py-2" placeholder="e.g., State Medical Board" />
+                <label htmlFor={`${fid}-issuing-body`} className="block text-sm font-medium text-gray-700 mb-1">Issuing Body</label>
+                <input id={`${fid}-issuing-body`} type="text" value={credForm.issuingBody} onChange={(e) => setCredForm({ ...credForm, issuingBody: e.target.value })} className="w-full border rounded-lg px-3 py-2" placeholder="e.g., State Medical Board" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">License/Certificate Number</label>
-                <input type="text" value={credForm.licenseNumber} onChange={(e) => setCredForm({ ...credForm, licenseNumber: e.target.value })} className="w-full border rounded-lg px-3 py-2" placeholder="Enter license number" />
+                <label htmlFor={`${fid}-license-certificate-number`} className="block text-sm font-medium text-gray-700 mb-1">License/Certificate Number</label>
+                <input id={`${fid}-license-certificate-number`} type="text" value={credForm.licenseNumber} onChange={(e) => setCredForm({ ...credForm, licenseNumber: e.target.value })} className="w-full border rounded-lg px-3 py-2" placeholder="Enter license number" />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Issue Date</label>
-                  <input type="date" value={credForm.issueDate} onChange={(e) => setCredForm({ ...credForm, issueDate: e.target.value })} className="w-full border rounded-lg px-3 py-2" />
+                  <label htmlFor={`${fid}-issue-date`} className="block text-sm font-medium text-gray-700 mb-1">Issue Date</label>
+                  <input id={`${fid}-issue-date`} type="date" value={credForm.issueDate} onChange={(e) => setCredForm({ ...credForm, issueDate: e.target.value })} className="w-full border rounded-lg px-3 py-2" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Expiry Date</label>
-                  <input type="date" value={credForm.expiryDate} onChange={(e) => setCredForm({ ...credForm, expiryDate: e.target.value })} className="w-full border rounded-lg px-3 py-2" />
+                  <label htmlFor={`${fid}-expiry-date`} className="block text-sm font-medium text-gray-700 mb-1">Expiry Date</label>
+                  <input id={`${fid}-expiry-date`} type="date" value={credForm.expiryDate} onChange={(e) => setCredForm({ ...credForm, expiryDate: e.target.value })} className="w-full border rounded-lg px-3 py-2" />
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Upload Document</label>
-                <input ref={addCredFileRef} type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden" onChange={(e) => setAddCredFile(e.target.files?.[0] || null)} />
+                <label htmlFor={`${fid}-upload-document`} className="block text-sm font-medium text-gray-700 mb-1">Upload Document</label>
+                <input id={`${fid}-upload-document`} ref={addCredFileRef} type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden" onChange={(e) => setAddCredFile(e.target.files?.[0] || null)} />
                 <div onClick={() => addCredFileRef.current?.click()} className="border-2 border-dashed rounded-lg p-4 text-center cursor-pointer hover:border-blue-400">
                   <Upload className="h-8 w-8 text-gray-400 mx-auto mb-2" />
                   {addCredFile ? (
@@ -887,8 +888,8 @@ export default function CredentialsPage() {
             <h2 className="text-xl font-bold mb-4">Upload Document</h2>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Select Credential</label>
-                <select value={uploadCredentialId} onChange={(e) => setUploadCredentialId(e.target.value)} className="w-full border rounded-lg px-3 py-2">
+                <label htmlFor={`${fid}-select-credential`} className="block text-sm font-medium text-gray-700 mb-1">Select Credential</label>
+                <select id={`${fid}-select-credential`} value={uploadCredentialId} onChange={(e) => setUploadCredentialId(e.target.value)} className="w-full border rounded-lg px-3 py-2">
                   <option value="">Select credential to update</option>
                   {credentials.map((c) => (
                     <option key={c.id} value={c.id}>{c.staffName} - {c.credentialName}</option>
@@ -896,8 +897,8 @@ export default function CredentialsPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Document</label>
-                <input ref={uploadFileRef} type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden" onChange={(e) => setUploadFile(e.target.files?.[0] || null)} />
+                <label htmlFor={`${fid}-document`} className="block text-sm font-medium text-gray-700 mb-1">Document</label>
+                <input id={`${fid}-document`} ref={uploadFileRef} type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden" onChange={(e) => setUploadFile(e.target.files?.[0] || null)} />
                 <div onClick={() => uploadFileRef.current?.click()} className="border-2 border-dashed rounded-lg p-8 text-center cursor-pointer hover:border-blue-400">
                   <Upload className="h-12 w-12 text-gray-400 mx-auto mb-3" />
                   {uploadFile ? (
@@ -1031,12 +1032,12 @@ export default function CredentialsPage() {
             <h2 className="text-xl font-bold mb-4">{editingTypeId ? 'Edit Credential Type' : 'Add Credential Type'}</h2>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
-                <input type="text" value={typeForm.name} onChange={(e) => setTypeForm({ ...typeForm, name: e.target.value })} className="w-full border rounded-lg px-3 py-2" placeholder="e.g., Medical License" />
+                <label htmlFor={`${fid}-name`} className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                <input id={`${fid}-name`} type="text" value={typeForm.name} onChange={(e) => setTypeForm({ ...typeForm, name: e.target.value })} className="w-full border rounded-lg px-3 py-2" placeholder="e.g., Medical License" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
-                <select value={typeForm.category} onChange={(e) => setTypeForm({ ...typeForm, category: e.target.value as CredentialType['category'] })} className="w-full border rounded-lg px-3 py-2">
+                <label htmlFor={`${fid}-category`} className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                <select id={`${fid}-category`} value={typeForm.category} onChange={(e) => setTypeForm({ ...typeForm, category: e.target.value as CredentialType['category'] })} className="w-full border rounded-lg px-3 py-2">
                   <option value="License">License</option>
                   <option value="Certification">Certification</option>
                   <option value="Training">Training</option>
@@ -1051,8 +1052,8 @@ export default function CredentialsPage() {
               </div>
               {typeForm.requiresRenewal && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Renewal Period (months)</label>
-                  <input type="number" value={typeForm.renewalPeriod} onChange={(e) => setTypeForm({ ...typeForm, renewalPeriod: parseInt(e.target.value) || 0 })} className="w-full border rounded-lg px-3 py-2" min="1" />
+                  <label htmlFor={`${fid}-renewal-period-months`} className="block text-sm font-medium text-gray-700 mb-1">Renewal Period (months)</label>
+                  <input id={`${fid}-renewal-period-months`} type="number" value={typeForm.renewalPeriod} onChange={(e) => setTypeForm({ ...typeForm, renewalPeriod: parseInt(e.target.value) || 0 })} className="w-full border rounded-lg px-3 py-2" min="1" />
                 </div>
               )}
               <div className="flex items-center gap-3">

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useId } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Loader2, RefreshCw, AlertTriangle, CheckCircle, CreditCard, Printer, Download, Plus, Trash2, Star } from 'lucide-react';
 import api from '../services/api';
@@ -33,6 +33,7 @@ interface PortalData {
 }
 
 export default function BillingPortalPage() {
+  const fid = useId();
   const [params] = useSearchParams();
   const [data, setData] = useState<PortalData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -330,8 +331,8 @@ export default function BillingPortalPage() {
             <h3 className="text-lg font-semibold mb-3">Add payment method</h3>
             <div className="space-y-3 text-sm">
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Type</label>
-                <select value={newPm.kind} onChange={(e) => setNewPm({ ...newPm, kind: e.target.value as any })} className="w-full border rounded px-2 py-1.5">
+                <label htmlFor={`${fid}-type`} className="block text-xs font-medium text-gray-700 mb-1">Type</label>
+                <select id={`${fid}-type`} value={newPm.kind} onChange={(e) => setNewPm({ ...newPm, kind: e.target.value as any })} className="w-full border rounded px-2 py-1.5">
                   <option value="card">Card</option>
                   <option value="mobile_money">Mobile money</option>
                   <option value="bank">Bank transfer</option>
@@ -339,38 +340,38 @@ export default function BillingPortalPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Label (optional)</label>
-                <input value={newPm.label} onChange={(e) => setNewPm({ ...newPm, label: e.target.value })} placeholder="e.g. Office Visa" className="w-full border rounded px-2 py-1.5" />
+                <label htmlFor={`${fid}-label-optional`} className="block text-xs font-medium text-gray-700 mb-1">Label (optional)</label>
+                <input id={`${fid}-label-optional`} value={newPm.label} onChange={(e) => setNewPm({ ...newPm, label: e.target.value })} placeholder="e.g. Office Visa" className="w-full border rounded px-2 py-1.5" />
               </div>
               {newPm.kind === 'card' && (
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Brand</label>
-                    <input value={newPm.brand} onChange={(e) => setNewPm({ ...newPm, brand: e.target.value })} placeholder="Visa" className="w-full border rounded px-2 py-1.5" />
+                    <label htmlFor={`${fid}-brand`} className="block text-xs font-medium text-gray-700 mb-1">Brand</label>
+                    <input id={`${fid}-brand`} value={newPm.brand} onChange={(e) => setNewPm({ ...newPm, brand: e.target.value })} placeholder="Visa" className="w-full border rounded px-2 py-1.5" />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Last 4 digits</label>
-                    <input value={newPm.last4} onChange={(e) => setNewPm({ ...newPm, last4: e.target.value.replace(/\D/g, '').slice(0, 4) })} maxLength={4} className="w-full border rounded px-2 py-1.5 font-mono" />
+                    <label htmlFor={`${fid}-last-4-digits`} className="block text-xs font-medium text-gray-700 mb-1">Last 4 digits</label>
+                    <input id={`${fid}-last-4-digits`} value={newPm.last4} onChange={(e) => setNewPm({ ...newPm, last4: e.target.value.replace(/\D/g, '').slice(0, 4) })} maxLength={4} className="w-full border rounded px-2 py-1.5 font-mono" />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Exp month</label>
-                    <input value={newPm.expMonth} onChange={(e) => setNewPm({ ...newPm, expMonth: e.target.value.replace(/\D/g, '').slice(0, 2) })} placeholder="MM" className="w-full border rounded px-2 py-1.5" />
+                    <label htmlFor={`${fid}-exp-month`} className="block text-xs font-medium text-gray-700 mb-1">Exp month</label>
+                    <input id={`${fid}-exp-month`} value={newPm.expMonth} onChange={(e) => setNewPm({ ...newPm, expMonth: e.target.value.replace(/\D/g, '').slice(0, 2) })} placeholder="MM" className="w-full border rounded px-2 py-1.5" />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Exp year</label>
-                    <input value={newPm.expYear} onChange={(e) => setNewPm({ ...newPm, expYear: e.target.value.replace(/\D/g, '').slice(0, 4) })} placeholder="YYYY" className="w-full border rounded px-2 py-1.5" />
+                    <label htmlFor={`${fid}-exp-year`} className="block text-xs font-medium text-gray-700 mb-1">Exp year</label>
+                    <input id={`${fid}-exp-year`} value={newPm.expYear} onChange={(e) => setNewPm({ ...newPm, expYear: e.target.value.replace(/\D/g, '').slice(0, 4) })} placeholder="YYYY" className="w-full border rounded px-2 py-1.5" />
                   </div>
                 </div>
               )}
               {newPm.kind === 'mobile_money' && (
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Phone last 4</label>
-                  <input value={newPm.last4} onChange={(e) => setNewPm({ ...newPm, last4: e.target.value.replace(/\D/g, '').slice(0, 4) })} maxLength={4} className="w-full border rounded px-2 py-1.5 font-mono" />
+                  <label htmlFor={`${fid}-phone-last-4`} className="block text-xs font-medium text-gray-700 mb-1">Phone last 4</label>
+                  <input id={`${fid}-phone-last-4`} value={newPm.last4} onChange={(e) => setNewPm({ ...newPm, last4: e.target.value.replace(/\D/g, '').slice(0, 4) })} maxLength={4} className="w-full border rounded px-2 py-1.5 font-mono" />
                 </div>
               )}
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Holder / account name</label>
-                <input value={newPm.holderName} onChange={(e) => setNewPm({ ...newPm, holderName: e.target.value })} className="w-full border rounded px-2 py-1.5" />
+                <label htmlFor={`${fid}-holder-account-name`} className="block text-xs font-medium text-gray-700 mb-1">Holder / account name</label>
+                <input id={`${fid}-holder-account-name`} value={newPm.holderName} onChange={(e) => setNewPm({ ...newPm, holderName: e.target.value })} className="w-full border rounded px-2 py-1.5" />
               </div>
               <label className="flex items-center gap-2 text-xs">
                 <input type="checkbox" checked={newPm.isDefault} onChange={(e) => setNewPm({ ...newPm, isDefault: e.target.checked })} />
@@ -412,6 +413,7 @@ interface WebhookDelivery {
 }
 
 function WebhooksCard() {
+  const fid = useId();
   const [endpoints, setEndpoints] = useState<WebhookEndpoint[]>([]);
   const [deliveries, setDeliveries] = useState<WebhookDelivery[]>([]);
   const [eventTypes, setEventTypes] = useState<string[]>([]);
@@ -579,12 +581,12 @@ function WebhooksCard() {
             <h3 className="text-lg font-semibold mb-3">Add webhook endpoint</h3>
             <div className="space-y-3 text-sm">
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">URL</label>
-                <input value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder="https://your-app.example.com/webhooks/glide" className="w-full border rounded px-2 py-1.5 font-mono text-xs" />
+                <label htmlFor={`${fid}-url`} className="block text-xs font-medium text-gray-700 mb-1">URL</label>
+                <input id={`${fid}-url`} value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder="https://your-app.example.com/webhooks/glide" className="w-full border rounded px-2 py-1.5 font-mono text-xs" />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Description (optional)</label>
-                <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="w-full border rounded px-2 py-1.5" />
+                <label htmlFor={`${fid}-description-optional`} className="block text-xs font-medium text-gray-700 mb-1">Description (optional)</label>
+                <input id={`${fid}-description-optional`} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="w-full border rounded px-2 py-1.5" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">Events</label>
@@ -616,6 +618,7 @@ interface StatementSummary {
 }
 
 function StatementCard() {
+  const fid = useId();
   const today = new Date();
   const oneYearAgo = new Date(today.getFullYear() - 1, today.getMonth(), today.getDate());
   const fmtInput = (d: Date) => d.toISOString().slice(0, 10);
@@ -656,12 +659,12 @@ function StatementCard() {
     <Card title="Account statement">
       <div className="flex flex-wrap items-end gap-3 mb-3">
         <div>
-          <label className="block text-xs text-gray-500 mb-1">From</label>
-          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="border rounded px-2 py-1 text-sm" />
+          <label htmlFor={`${fid}-from`} className="block text-xs text-gray-500 mb-1">From</label>
+          <input id={`${fid}-from`} type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="border rounded px-2 py-1 text-sm" />
         </div>
         <div>
-          <label className="block text-xs text-gray-500 mb-1">To</label>
-          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="border rounded px-2 py-1 text-sm" />
+          <label htmlFor={`${fid}-to`} className="block text-xs text-gray-500 mb-1">To</label>
+          <input id={`${fid}-to`} type="date" value={to} onChange={(e) => setTo(e.target.value)} className="border rounded px-2 py-1 text-sm" />
         </div>
         <div className="flex gap-1">
           {[1, 3, 6, 12].map((m) => (
