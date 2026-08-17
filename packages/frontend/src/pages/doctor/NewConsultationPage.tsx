@@ -627,7 +627,8 @@ export default function NewConsultationPage() {
 
     // Also save on beforeunload
     const onUnload = () => {
-      try { localStorage.setItem(key, JSON.stringify({ form, savedAt: Date.now() })); } catch {}
+      try { localStorage.setItem(key, JSON.stringify({ form, savedAt: Date.now() })); }
+      catch { /* storage unavailable or full — the draft is a convenience, not the record */ }
     };
     window.addEventListener('beforeunload', onUnload);
 
@@ -1466,7 +1467,8 @@ export default function NewConsultationPage() {
       // Clear localStorage draft on successful completion
       const patientId = selectedPatient?.patientId || urlPatientId;
       if (patientId) {
-        try { localStorage.removeItem(getDraftKey(patientId)); } catch {}
+        try { localStorage.removeItem(getDraftKey(patientId)); }
+        catch { /* storage unavailable — the draft expires on its own */ }
       }
       // Close any open disposition modal
       setAdmitModalOpen(false);
