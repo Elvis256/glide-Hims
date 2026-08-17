@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useId } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -54,6 +54,9 @@ const statusColors: Record<string, string> = {
 };
 
 export default function EmergencyPage() {
+  // One base per mounted page; each field derives a stable id from it, so the
+  // ids stay unique even if this page is ever rendered twice.
+  const fid = useId();
   const queryClient = useQueryClient();
   const facilityId = useFacilityId();
   const [searchTerm, setSearchTerm] = useState('');
@@ -458,10 +461,23 @@ export default function EmergencyPage() {
               </div>
             ) : (
               sortedCases.map((c) => (
+                // Selecting a case was mouse-only. Not an "option": the list
+                // also holds loading and empty states, and a listbox may only
+                // contain options. It is a row that acts, so: reachable by Tab,
+                // chosen with Enter or Space, and marked as the current one.
                 <div
                   key={c.id}
+                  role="button"
+                  tabIndex={0}
+                  aria-current={selectedCase?.id === c.id ? true : undefined}
                   onClick={() => setSelectedCase(c)}
-                  className={`p-4 cursor-pointer hover:bg-gray-50 ${
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setSelectedCase(c);
+                    }
+                  }}
+                  className={`p-4 cursor-pointer hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-red-500 ${
                     selectedCase?.id === c.id ? 'bg-red-50 border-l-4 border-red-500' : ''
                   }`}
                 >
@@ -678,7 +694,7 @@ export default function EmergencyPage() {
             <div className="space-y-4">
               {/* Patient Search */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Patient *</label>
+                <span id={`${fid}-patient-group`} className="block text-sm font-medium text-gray-700 mb-1">Patient *</span>
                 {registerForm.patientId ? (
                   <div className="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded-lg">
                     <div className="flex items-center gap-2">
@@ -727,8 +743,8 @@ export default function EmergencyPage() {
 
               {/* Chief Complaint */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Chief Complaint *</label>
-                <textarea
+                <label htmlFor={`${fid}-chief-complaint`} className="block text-sm font-medium text-gray-700 mb-1">Chief Complaint *</label>
+                <textarea id={`${fid}-chief-complaint`}
                   value={registerForm.chiefComplaint}
                   onChange={(e) => setRegisterForm(prev => ({ ...prev, chiefComplaint: e.target.value }))}
                   placeholder="Primary reason for emergency visit..."
@@ -738,8 +754,8 @@ export default function EmergencyPage() {
 
               {/* Arrival Mode */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Arrival Mode</label>
-                <select
+                <label htmlFor={`${fid}-arrival-mode`} className="block text-sm font-medium text-gray-700 mb-1">Arrival Mode</label>
+                <select id={`${fid}-arrival-mode`}
                   value={registerForm.arrivalMode}
                   onChange={(e) => setRegisterForm(prev => ({ ...prev, arrivalMode: e.target.value as ArrivalMode }))}
                   className="w-full border rounded-lg px-3 py-2"
@@ -755,8 +771,8 @@ export default function EmergencyPage() {
 
               {/* Presenting Symptoms */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Presenting Symptoms</label>
-                <textarea
+                <label htmlFor={`${fid}-presenting-symptoms`} className="block text-sm font-medium text-gray-700 mb-1">Presenting Symptoms</label>
+                <textarea id={`${fid}-presenting-symptoms`}
                   value={registerForm.presentingSymptoms}
                   onChange={(e) => setRegisterForm(prev => ({ ...prev, presentingSymptoms: e.target.value }))}
                   placeholder="Additional symptoms..."
@@ -802,8 +818,8 @@ export default function EmergencyPage() {
             <div className="space-y-4">
               {/* Triage Level */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Triage Level *</label>
-                <div className="grid grid-cols-5 gap-2">
+                <span id={`${fid}-triage-group`} className="block text-sm font-medium text-gray-700 mb-2">Triage Level *</span>
+                <div className="grid grid-cols-5 gap-2" role="group" aria-labelledby={`${fid}-triage-group`}>
                   {[
                     { level: 1, label: 'Resuscitation', color: 'bg-red-600' },
                     { level: 2, label: 'Emergent', color: 'bg-orange-500' },
@@ -830,8 +846,8 @@ export default function EmergencyPage() {
               {/* Vitals Grid */}
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">BP Systolic</label>
-                  <input
+                  <label htmlFor={`${fid}-bp-systolic`} className="block text-sm font-medium text-gray-700 mb-1">BP Systolic</label>
+                  <input id={`${fid}-bp-systolic`}
                     type="number"
                     value={triageForm.bloodPressureSystolic}
                     onChange={(e) => setTriageForm(prev => ({ ...prev, bloodPressureSystolic: e.target.value }))}
@@ -840,8 +856,8 @@ export default function EmergencyPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">BP Diastolic</label>
-                  <input
+                  <label htmlFor={`${fid}-bp-diastolic`} className="block text-sm font-medium text-gray-700 mb-1">BP Diastolic</label>
+                  <input id={`${fid}-bp-diastolic`}
                     type="number"
                     value={triageForm.bloodPressureDiastolic}
                     onChange={(e) => setTriageForm(prev => ({ ...prev, bloodPressureDiastolic: e.target.value }))}
@@ -850,8 +866,8 @@ export default function EmergencyPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Heart Rate</label>
-                  <input
+                  <label htmlFor={`${fid}-heart-rate`} className="block text-sm font-medium text-gray-700 mb-1">Heart Rate</label>
+                  <input id={`${fid}-heart-rate`}
                     type="number"
                     value={triageForm.heartRate}
                     onChange={(e) => setTriageForm(prev => ({ ...prev, heartRate: e.target.value }))}
@@ -860,8 +876,8 @@ export default function EmergencyPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Resp Rate</label>
-                  <input
+                  <label htmlFor={`${fid}-resp-rate`} className="block text-sm font-medium text-gray-700 mb-1">Resp Rate</label>
+                  <input id={`${fid}-resp-rate`}
                     type="number"
                     value={triageForm.respiratoryRate}
                     onChange={(e) => setTriageForm(prev => ({ ...prev, respiratoryRate: e.target.value }))}
@@ -870,8 +886,8 @@ export default function EmergencyPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Temp (°C)</label>
-                  <input
+                  <label htmlFor={`${fid}-temp-c`} className="block text-sm font-medium text-gray-700 mb-1">Temp (°C)</label>
+                  <input id={`${fid}-temp-c`}
                     type="number"
                     step="0.1"
                     value={triageForm.temperature}
@@ -881,8 +897,8 @@ export default function EmergencyPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">SpO2 (%)</label>
-                  <input
+                  <label htmlFor={`${fid}-spo2`} className="block text-sm font-medium text-gray-700 mb-1">SpO2 (%)</label>
+                  <input id={`${fid}-spo2`}
                     type="number"
                     value={triageForm.oxygenSaturation}
                     onChange={(e) => setTriageForm(prev => ({ ...prev, oxygenSaturation: e.target.value }))}
@@ -891,8 +907,8 @@ export default function EmergencyPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Pain (0-10)</label>
-                  <input
+                  <label htmlFor={`${fid}-pain-0-10`} className="block text-sm font-medium text-gray-700 mb-1">Pain (0-10)</label>
+                  <input id={`${fid}-pain-0-10`}
                     type="number"
                     min="0"
                     max="10"
@@ -903,8 +919,8 @@ export default function EmergencyPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">GCS (3-15)</label>
-                  <input
+                  <label htmlFor={`${fid}-gcs-3-15`} className="block text-sm font-medium text-gray-700 mb-1">GCS (3-15)</label>
+                  <input id={`${fid}-gcs-3-15`}
                     type="number"
                     min="3"
                     max="15"
@@ -918,8 +934,8 @@ export default function EmergencyPage() {
 
               {/* Triage Notes */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Triage Notes</label>
-                <textarea
+                <label htmlFor={`${fid}-triage-notes`} className="block text-sm font-medium text-gray-700 mb-1">Triage Notes</label>
+                <textarea id={`${fid}-triage-notes`}
                   value={triageForm.triageNotes}
                   onChange={(e) => setTriageForm(prev => ({ ...prev, triageNotes: e.target.value }))}
                   placeholder="Assessment notes..."
@@ -964,8 +980,17 @@ export default function EmergencyPage() {
             
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Outcome *</label>
-                <div className="grid grid-cols-3 gap-2">
+                <span
+                  id={`${fid}-outcome-group`}
+                  className="block text-sm font-medium text-gray-700 mb-1"
+                >
+                  Outcome *
+                </span>
+                <div
+                  className="grid grid-cols-3 gap-2"
+                  role="group"
+                  aria-labelledby={`${fid}-outcome-group`}
+                >
                   {[
                     { value: EmergencyDisposition.DISCHARGED, label: 'Discharged home', cls: 'border-green-500 bg-green-50 text-green-700' },
                     { value: EmergencyDisposition.LEFT_AMA, label: 'Left AMA', cls: 'border-orange-500 bg-orange-50 text-orange-700' },
@@ -1000,8 +1025,8 @@ export default function EmergencyPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Disposition Notes</label>
-                <textarea
+                <label htmlFor={`${fid}-disposition-notes`} className="block text-sm font-medium text-gray-700 mb-1">Disposition Notes</label>
+                <textarea id={`${fid}-disposition-notes`}
                   value={dischargeForm.dispositionNotes}
                   onChange={(e) => setDischargeForm(prev => ({ ...prev, dispositionNotes: e.target.value }))}
                   placeholder={
@@ -1053,8 +1078,8 @@ export default function EmergencyPage() {
             
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Ward *</label>
-                <select
+                <label htmlFor={`${fid}-ward`} className="block text-sm font-medium text-gray-700 mb-1">Ward *</label>
+                <select id={`${fid}-ward`}
                   value={admitForm.wardId}
                   onChange={(e) => setAdmitForm(prev => ({ ...prev, wardId: e.target.value, bedId: '' }))}
                   className="w-full border rounded-lg px-3 py-2"
@@ -1071,8 +1096,8 @@ export default function EmergencyPage() {
                 )}
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Bed *</label>
-                <select
+                <label htmlFor={`${fid}-bed`} className="block text-sm font-medium text-gray-700 mb-1">Bed *</label>
+                <select id={`${fid}-bed`}
                   value={admitForm.bedId}
                   onChange={(e) => setAdmitForm(prev => ({ ...prev, bedId: e.target.value }))}
                   disabled={!admitForm.wardId}
@@ -1088,8 +1113,8 @@ export default function EmergencyPage() {
                 )}
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Primary Diagnosis *</label>
-                <input
+                <label htmlFor={`${fid}-primary-diagnosis`} className="block text-sm font-medium text-gray-700 mb-1">Primary Diagnosis *</label>
+                <input id={`${fid}-primary-diagnosis`}
                   type="text"
                   value={admitForm.primaryDiagnosis}
                   onChange={(e) => setAdmitForm(prev => ({ ...prev, primaryDiagnosis: e.target.value }))}
@@ -1098,8 +1123,8 @@ export default function EmergencyPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Admission Notes</label>
-                <textarea
+                <label htmlFor={`${fid}-admission-notes`} className="block text-sm font-medium text-gray-700 mb-1">Admission Notes</label>
+                <textarea id={`${fid}-admission-notes`}
                   value={admitForm.admissionNotes}
                   onChange={(e) => setAdmitForm(prev => ({ ...prev, admissionNotes: e.target.value }))}
                   placeholder="Reason for admission, initial orders..."
