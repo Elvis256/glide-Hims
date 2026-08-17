@@ -57,4 +57,40 @@ export default defineConfig([
       '@typescript-eslint/no-unused-expressions': 'off',
     },
   },
+  // ---------------------------------------------------------------------
+  // Cleared ground. These files and directories report zero accessibility
+  // findings today, so here the same rules are errors: the work is done and
+  // regressing it should stop a build, not add another line to a backlog of
+  // two thousand warnings that nobody reads.
+  //
+  // Add to this list as an area is cleared. Removing something from it should
+  // take an argument, not a commit.
+  // ---------------------------------------------------------------------
+  {
+    files: [
+      'src/routes/**/*.tsx',
+      'src/components/ui/**/*.tsx',
+      'src/components/procurement/**/*.tsx',
+      'src/components/finance/**/*.tsx',
+      'src/components/catalog/**/*.tsx',
+      'src/components/Deployments/**/*.tsx',
+      'src/components/ConfirmDialog.tsx',
+      'src/components/ConfirmDialog.test.tsx',
+      'src/pages/EmergencyPage.tsx',
+      'src/pages/doctor/NewConsultationPage.tsx',
+      'src/pages/approvals/**/*.tsx',
+      'src/pages/dental/**/*.tsx',
+      'src/pages/optical/**/*.tsx',
+      'src/pages/Public/**/*.tsx',
+    ],
+    rules: {
+      'jsx-a11y/label-has-associated-control': 'error',
+      'jsx-a11y/click-events-have-key-events': 'error',
+      'jsx-a11y/no-static-element-interactions': 'error',
+      'jsx-a11y/no-noninteractive-element-interactions': 'error',
+      'jsx-a11y/no-autofocus': 'error',
+      'jsx-a11y/media-has-caption': 'error',
+      'jsx-a11y/img-redundant-alt': 'error',
+    },
+  },
 ])
