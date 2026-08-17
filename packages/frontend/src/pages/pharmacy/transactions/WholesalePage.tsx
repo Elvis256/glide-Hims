@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Search,
@@ -93,6 +94,13 @@ export default function WholesalePage() {
   const [showInvoice, setShowInvoice] = useState(false);
   const [volumeDiscount, setVolumeDiscount] = useState(0);
   const [activeTab, setActiveTab] = useState<'order' | 'invoices'>('order');
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showInvoiceDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showInvoice,
+    onClose: () => setShowInvoice(false),
+  });
 
   // Fetch products from inventory
   const { data: inventoryData, isLoading: isLoadingProducts } = useQuery({
@@ -698,7 +706,12 @@ export default function WholesalePage() {
 
       {/* Invoice Modal */}
       {showInvoice && selectedFacility && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showInvoiceDialogRef}
+        >
           <div className="bg-white rounded-lg shadow-xl w-[500px] max-h-[90vh] overflow-y-auto">
             <div className="p-4 border-b flex items-center justify-between">
               <h3 className="font-semibold text-gray-900">Invoice Generated</h3>

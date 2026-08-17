@@ -1,4 +1,5 @@
 import { usePermissions } from '../../components/PermissionGate';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import AccessDenied from '../../components/AccessDenied';
 import { useState, useMemo, useRef, useEffect } from 'react';
 import JsBarcode from 'jsbarcode';
@@ -122,6 +123,13 @@ export default function SampleCollectionPage() {
   const barcodeRef = useRef<SVGSVGElement>(null);
   const [scanInput, setScanInput] = useState('');
   const [tubeDropdownOpen, setTubeDropdownOpen] = useState(false);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showPrintModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showPrintModal,
+    onClose: () => setShowPrintModal(false),
+  });
   const scanDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tubeDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -559,7 +567,12 @@ export default function SampleCollectionPage() {
       </div>
 
       {showPrintModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showPrintModalDialogRef}
+        >
           <div className="bg-white rounded-lg p-6 w-96 shadow-xl">
             <div className="text-center">
               <CheckCircle className="w-16 h-16 mx-auto mb-4 text-green-500" />

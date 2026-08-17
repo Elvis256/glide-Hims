@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import api from '../../../services/api';
@@ -199,6 +200,17 @@ export default function PurchaseOrdersPage() {
   const [fromQuoteDeliveryAddress, setFromQuoteDeliveryAddress] = useState('');
   const [fromQuoteNotes, setFromQuoteNotes] = useState('');
   const [createFormData, setCreateFormData] = useState<Partial<CreatePurchaseOrderData>>({});
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showCreateModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showCreateModal,
+    onClose: () => setShowCreateModal(false),
+  });
+  const showFromQuoteModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showFromQuoteModal,
+    onClose: () => setShowFromQuoteModal(false),
+  });
   const [poLineItems, setPoLineItems] = useState<Array<{ rowId: string; itemId: string; itemCode: string; itemName: string; itemUnit: string; quantityOrdered: number; unitPrice: number }>>([
     { rowId: '1', itemId: '', itemCode: '', itemName: '', itemUnit: 'unit', quantityOrdered: 1, unitPrice: 0 },
   ]);
@@ -750,7 +762,12 @@ export default function PurchaseOrdersPage() {
 
       {/* Create Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showCreateModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden">
             <div className="px-6 py-4 border-b flex items-center justify-between">
               <h2 className="text-lg font-semibold">Create Purchase Order</h2>
@@ -970,7 +987,12 @@ export default function PurchaseOrdersPage() {
 
       {/* Create PO From Approved Quotation Modal */}
       {showFromQuoteModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showFromQuoteModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col">
             <div className="px-6 py-4 border-b flex items-center justify-between">
               <div>

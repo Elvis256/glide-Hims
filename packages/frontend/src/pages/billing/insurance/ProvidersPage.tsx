@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import api, { getApiErrorMessage } from '../../../services/api';
@@ -86,6 +87,17 @@ export default function ProvidersPage() {
   const [detailsTab, setDetailsTab] = useState<'info' | 'coverage' | 'metrics'>('info');
   const [showAddPriceModal, setShowAddPriceModal] = useState(false);
   const [priceForm, setPriceForm] = useState({ serviceId: '', agreedPrice: '', effectiveFrom: '', notes: '' });
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showDetailsModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showDetailsModal,
+    onClose: () => setShowDetailsModal(false),
+  });
+  const showAddPriceModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showAddPriceModal,
+    onClose: () => setShowAddPriceModal(false),
+  });
   const [formData, setFormData] = useState<ProviderFormData>({
     code: '',
     name: '',
@@ -486,7 +498,12 @@ export default function ProvidersPage() {
 
       {/* Details Modal */}
       {showDetailsModal && selectedProvider && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showDetailsModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl mx-4 max-h-[85vh] flex flex-col">
             <div className="flex items-center justify-between p-4 border-b flex-shrink-0">
               <div className="flex items-center gap-3">
@@ -632,7 +649,12 @@ export default function ProvidersPage() {
 
                   {/* Add Price Modal */}
                   {showAddPriceModal && (
-                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]">
+                    <div
+                      className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]"
+                      role="dialog"
+                      aria-modal="true"
+                      ref={showAddPriceModalDialogRef}
+                    >
                       <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4">
                         <div className="flex items-center justify-between p-4 border-b">
                           <h2 className="font-semibold text-lg">Add Insurance Price</h2>

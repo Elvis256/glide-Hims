@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Search,
@@ -63,6 +64,13 @@ export default function RetailSalesPage() {
   const [showReceipt, setShowReceipt] = useState(false);
   const [globalDiscount, setGlobalDiscount] = useState(0);
   const [saleError, setSaleError] = useState<string | null>(null);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showReceiptDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showReceipt,
+    onClose: () => setShowReceipt(false),
+  });
 
   // Fetch stores suitable for pharmacy sales (pharmacy or main type)
   const { data: storesData } = useQuery({
@@ -637,7 +645,12 @@ export default function RetailSalesPage() {
 
       {/* Receipt Modal */}
       {showReceipt && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showReceiptDialogRef}
+        >
           <div className="bg-white rounded-lg shadow-xl w-96 max-h-[90vh] overflow-y-auto">
             <div className="p-4 border-b flex items-center justify-between">
               <h3 className="font-semibold text-gray-900">Receipt</h3>

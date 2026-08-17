@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ClipboardCheck,
@@ -83,6 +84,13 @@ export default function ApproveQuotationsPage() {
   const [selectedApproval, setSelectedApproval] = useState<ExtendedQuotationApproval | null>(null);
   const [showActionModal, setShowActionModal] = useState<'approve' | 'reject' | null>(null);
   const [comments, setComments] = useState('');
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showActionModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showActionModal,
+    onClose: () => setShowActionModal(null),
+  });
 
   // Fetch pending approvals
   const { data: pendingApprovals = [], isLoading } = useQuery({
@@ -397,7 +405,12 @@ export default function ApproveQuotationsPage() {
 
       {/* Action Modal */}
       {showActionModal && selectedApproval && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showActionModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
             <div className="px-6 py-4 border-b">
               <h2 className="text-lg font-semibold">

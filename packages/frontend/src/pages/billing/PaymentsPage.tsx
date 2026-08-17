@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useAuthStore } from '../../store/auth';
@@ -92,6 +93,21 @@ export default function PaymentsPage() {
   // Invoice lookup
   const [foundInvoice, setFoundInvoice] = useState<{ id: string; invoiceNumber: string; totalAmount: number; balance: number; patientName?: string; items?: Array<{ id: string; description: string; quantity: number; unitPrice: number; totalPrice?: number }> } | null>(null);
   const [lookupError, setLookupError] = useState('');
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const voidingPaymentDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!voidingPayment,
+    onClose: () => setVoidingPayment(null),
+  });
+  const showRecordPaymentDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showRecordPayment,
+    onClose: () => setShowRecordPayment(false),
+  });
+  const receiptPaymentIdDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!receiptPaymentId,
+    onClose: () => setReceiptPaymentId(null),
+  });
 
   // Fetch payments from API with filters. Empty strings must be OMITTED —
   // @IsDateString rejects '' and the whole list 400'd after "Clear filters".
@@ -581,7 +597,12 @@ export default function PaymentsPage() {
 
       {/* Void Payment Modal */}
       {voidingPayment && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={voidingPaymentDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <div className="flex items-center gap-2 text-red-600">
@@ -648,7 +669,12 @@ export default function PaymentsPage() {
 
       {/* Record Payment Modal */}
       {showRecordPayment && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showRecordPaymentDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <h2 className="text-lg font-bold text-gray-900">Record New Payment</h2>
@@ -785,7 +811,12 @@ export default function PaymentsPage() {
       )}
       {/* Receipt Preview Modal */}
       {receiptPaymentId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+          role="dialog"
+          aria-modal="true"
+          ref={receiptPaymentIdDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
             <div className="flex items-center justify-between p-4 border-b">
               <h3 className="font-bold text-gray-900 flex items-center gap-2"><Receipt className="w-4 h-4" /> Payment Receipt</h3>

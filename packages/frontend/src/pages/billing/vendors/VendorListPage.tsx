@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../../../services/api';
 import { useFacilityId } from '../../../lib/facility';
@@ -94,6 +95,25 @@ export default function VendorListPage() {
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
   const [formData, setFormData] = useState<SupplierFormData>(emptyFormData);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const viewingSupplierDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!viewingSupplier,
+    onClose: () => setViewingSupplier(null),
+  });
+  const deleteConfirmIdDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!deleteConfirmId,
+    onClose: () => setDeleteConfirmId(null),
+  });
+  const showAddModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showAddModal,
+    onClose: () => setShowAddModal(false),
+  });
+  const showEditModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showEditModal,
+    onClose: () => setShowEditModal(false),
+  });
 
   const facilityId = useFacilityId();
 
@@ -433,7 +453,12 @@ export default function VendorListPage() {
 
       {/* Quick View Modal */}
       {viewingSupplier && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={viewingSupplierDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <div>
@@ -523,7 +548,12 @@ export default function VendorListPage() {
 
       {/* Delete Confirmation Modal */}
       {deleteConfirmId && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={deleteConfirmIdDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6">
             <div className="text-center">
               <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
@@ -552,7 +582,12 @@ export default function VendorListPage() {
 
       {/* Add Supplier Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showAddModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between px-6 py-4 border-b sticky top-0 bg-white">
               <div>
@@ -680,7 +715,12 @@ export default function VendorListPage() {
 
       {/* Edit Supplier Modal */}
       {showEditModal && editingSupplier && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showEditModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between px-6 py-4 border-b sticky top-0 bg-white">
               <div>

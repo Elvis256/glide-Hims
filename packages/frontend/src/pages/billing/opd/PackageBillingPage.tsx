@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -119,6 +120,17 @@ export default function PackageBillingPage() {
 
   const [applying, setApplying] = useState(false);
 
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showSuccessDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showSuccess,
+    onClose: () => setSelectedPackage(null),
+  });
+  const showApplyModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showApplyModal,
+    onClose: () => setSelectedPatient(null),
+  });
+
   // Bill the package as a single line at the package price (same pattern as
   // Emergency Billing) — the old flow was unreachable and sent fields the
   // backend DTO rejects.
@@ -183,7 +195,12 @@ export default function PackageBillingPage() {
       </div>
 
       {showSuccess && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showSuccessDialogRef}
+        >
           <div className="bg-white rounded-xl p-6 text-center">
             <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <CheckCircle className="w-10 h-10 text-green-600" />
@@ -400,7 +417,12 @@ export default function PackageBillingPage() {
 
       {/* Apply Package Modal */}
       {showApplyModal && selectedPackage && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showApplyModalDialogRef}
+        >
           <div className="bg-white rounded-xl p-6 max-w-md w-full mx-4">
             <h3 className="text-lg font-bold text-gray-900 mb-4">Confirm Package Application</h3>
             <div className="mb-4">
