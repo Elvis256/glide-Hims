@@ -70,6 +70,7 @@ import {
   ProcurementApprovalChain,
   ApprovalChainStatus,
 } from '../../database/entities/procurement-approval-chain.entity';
+import { localDayStart } from '../../common/utils/timezone.util';
 
 @Injectable()
 export class ProcurementService {
@@ -2131,10 +2132,10 @@ export class ProcurementService {
 
   async getDashboard(facilityId: string, tenantId?: string) {
     const tid = requireTenantId(tenantId);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    // postedAt is a timestamptz, so "received today" has to be bounded by the
+    // store's day. On the server clock it ran 03:00 to 03:00 locally.
+    const today = localDayStart(0);
+    const tomorrow = localDayStart(1);
 
     const prWhere: any = { facilityId, deletedAt: IsNull() };
     prWhere.tenantId = tid;
@@ -2823,17 +2824,12 @@ export class ProcurementService {
         requiredRole: r.requiredRole,
         approverId: r.approverId ?? null,
         approverName:
-          enriched.approverName ||
-          (approver
-            ? approver.fullName || approver.email
-            : null),
+          enriched.approverName || (approver ? approver.fullName || approver.email : null),
         groupId: r.groupId ?? null,
         groupName: enriched.groupName ?? null,
         status: r.status,
         approvedById: r.approvedById ?? null,
-        approvedByName: approvedBy
-          ? approvedBy.fullName || approvedBy.email
-          : null,
+        approvedByName: approvedBy ? approvedBy.fullName || approvedBy.email : null,
         approvedAt: r.approvedAt ?? null,
         comments: r.comments ?? null,
         createdAt: r.createdAt,

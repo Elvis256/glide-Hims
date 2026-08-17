@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Like, DataSource, IsNull } from 'typeorm';
 import { SystemSetting } from '../../database/entities/system-setting.entity';
 import { requireTenantId } from '../../common/utils/tenant.util';
+import { sqlSafeTimeZone } from '../../common/utils/timezone.util';
 
 @Injectable()
 export class SystemSettingsService {
@@ -102,6 +103,10 @@ export class SystemSettingsService {
 
   /** Aggregate stats for the platform overview page */
   async getPlatformOverview() {
+    // Today's encounters begin at midnight where the hospital is; date_trunc
+    // resolves in the session zone, which is UTC, so the counter used to sit
+    // three hours behind and reset in the middle of the morning.
+    const tz = sqlSafeTimeZone();
     const [stats] = await this.dataSource.query(`
       SELECT
         (SELECT COUNT(*) FROM tenants WHERE deleted_at IS NULL) AS "totalTenants",
@@ -112,7 +117,7 @@ export class SystemSettingsService {
         (SELECT COUNT(*) FROM facilities WHERE deleted_at IS NULL) AS "totalFacilities",
         (SELECT COUNT(*) FROM patients WHERE deleted_at IS NULL) AS "totalPatients",
         (SELECT COUNT(*) FROM encounters WHERE deleted_at IS NULL) AS "totalEncounters",
-        (SELECT COUNT(*) FROM encounters WHERE deleted_at IS NULL AND created_at >= CURRENT_DATE) AS "todayEncounters",
+        (SELECT COUNT(*) FROM encounters WHERE deleted_at IS NULL AND created_at >= (date_trunc('day', NOW() AT TIME ZONE '${tz}') AT TIME ZONE '${tz}')) AS "todayEncounters",
         (SELECT pg_size_pretty(pg_database_size(current_database()))) AS "databaseSize"
     `);
     return {
