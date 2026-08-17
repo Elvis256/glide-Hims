@@ -1,4 +1,5 @@
 import { usePermissions } from '../../components/PermissionGate';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import AccessDenied from '../../components/AccessDenied';
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -132,6 +133,23 @@ export default function ResultsEntryPage() {
 
   // Auto-prepare samples when navigating with an orderId
   const [prepared, setPrepared] = useState(false);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showCriticalAlertDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showCriticalAlert,
+    // No onClose: this is an acknowledgement gate, not a dismissable
+    // dialog. It still traps focus and restores it on close.
+  });
+  const releaseCriticalAlertDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!releaseCriticalAlert,
+    // No onClose: this is an acknowledgement gate, not a dismissable
+    // dialog. It still traps focus and restores it on close.
+  });
+  const rejectModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!rejectModal,
+    onClose: () => setRejectModal(null),
+  });
   const prepareMutation = useMutation({
     mutationFn: (oid: string) => labService.samples.prepareForOrder(oid),
     onSuccess: () => {
@@ -933,7 +951,12 @@ export default function ResultsEntryPage() {
       </div>
 
       {showCriticalAlert && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showCriticalAlertDialogRef}
+        >
           <div className="bg-white rounded-lg p-6 w-96 shadow-xl">
             <div className="text-center">
               <div className="w-16 h-16 mx-auto mb-4 bg-red-100 rounded-full flex items-center justify-center">
@@ -959,7 +982,12 @@ export default function ResultsEntryPage() {
       )}
 
       {releaseCriticalAlert && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={releaseCriticalAlertDialogRef}
+        >
           <div className="bg-white rounded-xl p-6 w-[500px] shadow-2xl border-2 border-red-500">
             <div className="flex items-start gap-3 mb-4">
               <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
@@ -1031,7 +1059,12 @@ export default function ResultsEntryPage() {
       )}
 
       {rejectModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={rejectModalDialogRef}
+        >
           <div className="bg-white rounded-lg p-6 w-[480px] shadow-xl">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
