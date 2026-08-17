@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo, useId } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
 import { patientsService, type UpdatePatientDto } from '../services/patients';
@@ -99,6 +99,7 @@ const calculateAge = (dob: string): string => {
 };
 
 export default function PatientEditPage() {
+  const fid = useId();
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
@@ -529,10 +530,10 @@ export default function PatientEditPage() {
               </div>
               <div className="space-y-3 flex-1">
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                  <label htmlFor={`${fid}-full-name`} className="block text-xs font-medium text-gray-600 mb-1">
                     Full Name <span className="text-red-500">*</span>
                   </label>
-                  <input
+                  <input id={`${fid}-full-name`}
                     type="text"
                     value={formData.fullName}
                     onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
@@ -546,10 +547,10 @@ export default function PatientEditPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                    <label htmlFor={`${fid}-gender`} className="block text-xs font-medium text-gray-600 mb-1">
                       Gender <span className="text-red-500">*</span>
                     </label>
-                    <select
+                    <select id={`${fid}-gender`}
                       value={formData.gender}
                       onChange={(e) => setFormData({ ...formData, gender: e.target.value as 'male' | 'female' | 'other' })}
                       className={getFieldClass('gender', 'input text-sm py-1.5')}
@@ -561,10 +562,10 @@ export default function PatientEditPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                    <label htmlFor={`${fid}-dob`} className="block text-xs font-medium text-gray-600 mb-1">
                       DOB <span className="text-red-500">*</span>
                     </label>
-                    <input
+                    <input id={`${fid}-dob`}
                       type="date"
                       value={formData.dateOfBirth}
                       onChange={(e) => setFormData({ ...formData, dateOfBirth: e.target.value })}
@@ -593,8 +594,8 @@ export default function PatientEditPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Religion</label>
-                    <select
+                    <label htmlFor={`${fid}-religion`} className="block text-xs font-medium text-gray-600 mb-1">Religion</label>
+                    <select id={`${fid}-religion`}
                       value={formData.religion}
                       onChange={(e) => setFormData({ ...formData, religion: e.target.value })}
                       className={getFieldClass('religion', 'input text-sm py-1.5')}
@@ -607,8 +608,8 @@ export default function PatientEditPage() {
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Blood Group</label>
-                  <select
+                  <label htmlFor={`${fid}-blood-group`} className="block text-xs font-medium text-gray-600 mb-1">Blood Group</label>
+                  <select id={`${fid}-blood-group`}
                     value={formData.bloodGroup}
                     onChange={(e) => setFormData({ ...formData, bloodGroup: e.target.value })}
                     className={getFieldClass('bloodGroup', 'input text-sm py-1.5')}
@@ -625,8 +626,8 @@ export default function PatientEditPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Occupation</label>
-                  <input
+                  <label htmlFor={`${fid}-occupation`} className="block text-xs font-medium text-gray-600 mb-1">Occupation</label>
+                  <input id={`${fid}-occupation`}
                     type="text"
                     value={formData.occupation}
                     onChange={(e) => setFormData({ ...formData, occupation: e.target.value })}
@@ -635,8 +636,8 @@ export default function PatientEditPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Known Allergies</label>
-                  <input
+                  <label htmlFor={`${fid}-known-allergies`} className="block text-xs font-medium text-gray-600 mb-1">Known Allergies</label>
+                  <input id={`${fid}-known-allergies`}
                     type="text"
                     value={formData.allergies}
                     onChange={(e) => setFormData({ ...formData, allergies: e.target.value })}
@@ -657,8 +658,8 @@ export default function PatientEditPage() {
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Phone</label>
-                  <input
+                  <label htmlFor={`${fid}-phone`} className="block text-xs font-medium text-gray-600 mb-1">Phone</label>
+                  <input id={`${fid}-phone`}
                     type="tel"
                     value={formData.phone}
                     onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
@@ -667,8 +668,8 @@ export default function PatientEditPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Email</label>
-                  <input
+                  <label htmlFor={`${fid}-email`} className="block text-xs font-medium text-gray-600 mb-1">Email</label>
+                  <input id={`${fid}-email`}
                     type="email"
                     value={formData.email}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
@@ -777,8 +778,8 @@ export default function PatientEditPage() {
             </div>
             <div className="space-y-3 flex-1">
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Full Name</label>
-                <input
+                <label htmlFor={`${fid}-full-name-2`} className="block text-xs font-medium text-gray-600 mb-1">Full Name</label>
+                <input id={`${fid}-full-name-2`}
                   type="text"
                   value={formData.nextOfKin?.name || ''}
                   onChange={(e) => setFormData({ ...formData, nextOfKin: { ...formData.nextOfKin, name: e.target.value } })}
@@ -787,8 +788,8 @@ export default function PatientEditPage() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Phone</label>
-                <input
+                <label htmlFor={`${fid}-phone-2`} className="block text-xs font-medium text-gray-600 mb-1">Phone</label>
+                <input id={`${fid}-phone-2`}
                   type="tel"
                   value={formData.nextOfKin?.phone || ''}
                   onChange={(e) => setFormData({ ...formData, nextOfKin: { ...formData.nextOfKin, phone: e.target.value } })}
@@ -797,8 +798,8 @@ export default function PatientEditPage() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Relationship</label>
-                <select
+                <label htmlFor={`${fid}-relationship`} className="block text-xs font-medium text-gray-600 mb-1">Relationship</label>
+                <select id={`${fid}-relationship`}
                   value={formData.nextOfKin?.relationship || ''}
                   onChange={(e) => setFormData({ ...formData, nextOfKin: { ...formData.nextOfKin, relationship: e.target.value } })}
                   className={getFieldClass('nextOfKin.relationship', 'input text-sm py-1.5')}
