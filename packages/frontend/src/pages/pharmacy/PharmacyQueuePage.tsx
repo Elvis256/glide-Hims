@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, Link } from 'react-router-dom';
 import {
@@ -44,6 +45,17 @@ export default function PharmacyQueuePage() {
   const [returnDoctorReason, setReturnDoctorReason] = useState('');
   const [returnDoctorEncounterId, setReturnDoctorEncounterId] = useState<string | null>(null);
   const [returnDoctorPatientName, setReturnDoctorPatientName] = useState('');
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const drawerPrescriptionDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!drawerPrescription,
+    onClose: () => setDrawerPrescription(null),
+  });
+  const showReturnDoctorModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showReturnDoctorModal,
+    onClose: () => setShowReturnDoctorModal(false),
+  });
 
   // Fetch pending prescriptions
   const { data: prescriptionsData, isLoading, refetch } = useQuery({
@@ -345,7 +357,12 @@ export default function PharmacyQueuePage() {
     <div className="h-[calc(100vh-120px)] flex flex-col p-6 bg-gray-50">
       {/* Prescription Detail Drawer */}
       {drawerPrescription && (
-        <div className="fixed inset-0 z-50 flex justify-end">
+        <div
+          className="fixed inset-0 z-50 flex justify-end"
+          role="dialog"
+          aria-modal="true"
+          ref={drawerPrescriptionDialogRef}
+        >
           <div className="absolute inset-0 bg-black/30" onClick={() => setDrawerPrescription(null)} />
           <div className="relative w-full max-w-md bg-white shadow-2xl flex flex-col h-full">
             <div className="flex items-center justify-between p-4 border-b">
@@ -790,7 +807,12 @@ export default function PharmacyQueuePage() {
 
       {/* Return to Doctor Modal */}
       {showReturnDoctorModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          role="dialog"
+          aria-modal="true"
+          ref={showReturnDoctorModalDialogRef}
+        >
           <div className="absolute inset-0 bg-black/30" onClick={() => { setShowReturnDoctorModal(false); setReturnDoctorReason(''); setReturnDoctorEncounterId(null); setReturnDoctorPatientName(''); }} />
           <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4">
             <div className="flex items-center gap-3 p-6 border-b border-orange-200 bg-orange-50 rounded-t-2xl">
