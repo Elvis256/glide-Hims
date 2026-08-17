@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useId } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
@@ -83,6 +83,7 @@ const chiefComplaints = [
 const bays = ['Resus 1', 'Resus 2', 'Bay 1', 'Bay 2', 'Bay 3', 'Bay 4', 'Bay 5', 'Minor Injuries'];
 
 export default function EmergencyTriagePage() {
+  const fid = useId();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const facilityId = useFacilityId();
@@ -398,8 +399,8 @@ export default function EmergencyTriagePage() {
                   })}
                 </div>
                 <div className="mt-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Additional Notes</label>
-                  <textarea
+                  <label htmlFor={`${fid}-additional-notes`} className="block text-sm font-medium text-gray-700 mb-1">Additional Notes</label>
+                  <textarea id={`${fid}-additional-notes`}
                     value={complaintNotes}
                     onChange={(e) => setComplaintNotes(e.target.value)}
                     className="w-full border rounded-lg px-3 py-2 h-20"
@@ -419,11 +420,11 @@ export default function EmergencyTriagePage() {
               <div className="grid grid-cols-2 gap-6">
                 <div className="space-y-4">
                   <div>
-                    <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor={`${fid}-temperature-c`} className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1">
                       <Thermometer className="w-4 h-4 text-orange-500" />
                       Temperature (°C)
                     </label>
-                    <input
+                    <input id={`${fid}-temperature-c`}
                       type="number"
                       step="0.1"
                       value={vitals.temperature}
@@ -433,11 +434,11 @@ export default function EmergencyTriagePage() {
                     />
                   </div>
                   <div>
-                    <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor={`${fid}-heart-rate-bpm`} className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1">
                       <Heart className="w-4 h-4 text-red-500" />
                       Heart Rate (bpm)
                     </label>
-                    <input
+                    <input id={`${fid}-heart-rate-bpm`}
                       type="number"
                       value={vitals.heartRate}
                       onChange={(e) => setVitals({ ...vitals, heartRate: e.target.value })}
@@ -471,11 +472,11 @@ export default function EmergencyTriagePage() {
                 </div>
                 <div className="space-y-4">
                   <div>
-                    <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor={`${fid}-respiratory-rate-breaths-min`} className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1">
                       <Wind className="w-4 h-4 text-blue-500" />
                       Respiratory Rate (breaths/min)
                     </label>
-                    <input
+                    <input id={`${fid}-respiratory-rate-breaths-min`}
                       type="number"
                       value={vitals.respiratoryRate}
                       onChange={(e) => setVitals({ ...vitals, respiratoryRate: e.target.value })}
@@ -484,11 +485,11 @@ export default function EmergencyTriagePage() {
                     />
                   </div>
                   <div>
-                    <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor={`${fid}-oxygen-saturation`} className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1">
                       <Droplets className="w-4 h-4 text-cyan-500" />
                       Oxygen Saturation (%)
                     </label>
-                    <input
+                    <input id={`${fid}-oxygen-saturation`}
                       type="number"
                       value={vitals.oxygenSaturation}
                       onChange={(e) => setVitals({ ...vitals, oxygenSaturation: e.target.value })}
@@ -497,11 +498,11 @@ export default function EmergencyTriagePage() {
                     />
                   </div>
                   <div>
-                    <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor={`${fid}-blood-glucose-mg-dl`} className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1">
                       <Droplets className="w-4 h-4 text-purple-500" />
                       Blood Glucose (mg/dL)
                     </label>
-                    <input
+                    <input id={`${fid}-blood-glucose-mg-dl`}
                       type="number"
                       step="0.1"
                       value={vitals.bloodGlucose}
@@ -566,8 +567,8 @@ export default function EmergencyTriagePage() {
               </h3>
               <div className="grid grid-cols-2 gap-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Assign Doctor (optional)</label>
-                  <select
+                  <label htmlFor={`${fid}-assign-doctor-optional`} className="block text-sm font-medium text-gray-700 mb-1">Assign Doctor (optional)</label>
+                  <select id={`${fid}-assign-doctor-optional`}
                     value={selectedDoctor}
                     onChange={(e) => setSelectedDoctor(e.target.value)}
                     className="w-full border rounded-lg px-3 py-2"
@@ -579,8 +580,8 @@ export default function EmergencyTriagePage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Assign Bay (optional)</label>
-                  <select
+                  <label htmlFor={`${fid}-assign-bay-optional`} className="block text-sm font-medium text-gray-700 mb-1">Assign Bay (optional)</label>
+                  <select id={`${fid}-assign-bay-optional`}
                     value={selectedBay}
                     onChange={(e) => setSelectedBay(e.target.value)}
                     className="w-full border rounded-lg px-3 py-2"
