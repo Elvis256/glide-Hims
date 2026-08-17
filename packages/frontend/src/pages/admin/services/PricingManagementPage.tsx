@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useCallback } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Search,
@@ -61,6 +62,13 @@ export default function PricingManagementPage() {
   const [importStatus, setImportStatus] = useState<'idle' | 'parsing' | 'previewing' | 'uploading' | 'done' | 'error'>('idle');
   const [importError, setImportError] = useState('');
   const [importResult, setImportResult] = useState({ created: 0, updated: 0 });
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showImportModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: showImportModal,
+    onClose: () => resetImportModal(),
+  });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const queryClient = useQueryClient();
@@ -776,7 +784,12 @@ export default function PricingManagementPage() {
 
       {/* Import Modal */}
       {showImportModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={showImportModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col">
             {/* Modal Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b">

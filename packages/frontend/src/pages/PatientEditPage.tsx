@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useMemo, useId } from 'react';
+import { useDialogA11y } from '../hooks/useDialogA11y';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
 import { patientsService, type UpdatePatientDto } from '../services/patients';
@@ -160,6 +161,13 @@ export default function PatientEditPage() {
 
   // Store original data to detect changes
   const [originalData, setOriginalData] = useState<FormData | null>(null);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showWebcamDialogRef = useDialogA11y<HTMLDivElement>({
+    open: showWebcam,
+    onClose: () => stopWebcam(),
+  });
 
   // Fetch patient data
   const { data: patient, isLoading, error } = useQuery({
@@ -485,7 +493,12 @@ export default function PatientEditPage() {
               
               {/* Webcam Modal */}
               {showWebcam && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                <div
+                  className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+                  role="dialog"
+                  aria-modal="true"
+                  ref={showWebcamDialogRef}
+                >
                   <div className="bg-white rounded-lg p-4 max-w-md">
                     <div className="flex justify-between items-center mb-3">
                       <h3 className="font-semibold">Capture Photo</h3>

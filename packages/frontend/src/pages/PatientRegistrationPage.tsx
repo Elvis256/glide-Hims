@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import { useDialogA11y } from '../hooks/useDialogA11y';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -185,6 +186,13 @@ export default function PatientRegistrationPage() {
 
   // Countries (all countries via REST Countries API with offline fallback)
   const [countries, setCountries] = useState<{ value: string; label: string; prefix: string }[]>([]);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showWebcamDialogRef = useDialogA11y<HTMLDivElement>({
+    open: showWebcam,
+    onClose: () => stopWebcam(),
+  });
   useEffect(() => {
     fetchAllCountries().then(list =>
       setCountries(list.map(c => ({ value: c.name, label: c.name, prefix: c.flag })))
@@ -751,7 +759,12 @@ export default function PatientRegistrationPage() {
 
       {/* Webcam Modal */}
       {showWebcam && (
-        <div className="fixed inset-0 bg-surface-900/50 flex items-center justify-center z-50 p-4">
+        <div
+          className="fixed inset-0 bg-surface-900/50 flex items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={showWebcamDialogRef}
+        >
           <Card className="max-w-md w-full">
             <div className="flex justify-between items-center mb-3">
               <h3 className="font-semibold text-surface-900">Capture Photo</h3>
