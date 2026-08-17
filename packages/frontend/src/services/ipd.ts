@@ -5,8 +5,8 @@ export interface Ward {
   name: string;
   code: string;
   type: 'general' | 'pediatric' | 'maternity' | 'icu' | 'surgical' | 'private';
-  capacity: number;    // legacy alias
-  totalBeds?: number;  // actual backend field
+  capacity: number; // legacy alias
+  totalBeds?: number; // actual backend field
   occupiedBeds?: number;
   availableBeds?: number;
   description?: string;
@@ -47,7 +47,7 @@ export interface Admission {
   wardId: string;
   ward?: Ward;
   type: 'emergency' | 'elective' | 'transfer';
-  admittingDiagnosis: string;   // display alias for admissionDiagnosis
+  admittingDiagnosis: string; // display alias for admissionDiagnosis
   admissionDiagnosis?: string;
   admissionReason?: string;
   attendingDoctorId?: string;
@@ -88,9 +88,19 @@ export interface AdmissionQueryParams {
   limit?: number;
 }
 
+/**
+ * Shape of GET /ipd/wards/occupancy.
+ *
+ * The fields were `wardId`/`wardName`; the endpoint returns `id`/`name` and
+ * always has. Nothing failed loudly — TypeScript happily accepted reads of a
+ * declared field the payload never carried, and the value arrived undefined at
+ * runtime. The workload report printed "undefined Procedures" for every ward
+ * because of it.
+ */
 export interface WardOccupancy {
-  wardId: string;
-  wardName: string;
+  id: string;
+  name: string;
+  type?: string;
   totalBeds: number;
   occupiedBeds: number;
   availableBeds: number;
@@ -98,7 +108,13 @@ export interface WardOccupancy {
 }
 
 // Nursing Note Types
-export type NursingNoteType = 'assessment' | 'intervention' | 'observation' | 'progress' | 'handoff' | 'incident';
+export type NursingNoteType =
+  | 'assessment'
+  | 'intervention'
+  | 'observation'
+  | 'progress'
+  | 'handoff'
+  | 'incident';
 
 export interface Vitals {
   temperature?: number;
@@ -263,11 +279,17 @@ export const ipdService = {
       const response = await api.get<Admission>(`/ipd/patients/${patientId}/current-admission`);
       return response.data;
     },
-    discharge: async (id: string, data: { dischargeType: string; dischargeSummary: string }): Promise<Admission> => {
+    discharge: async (
+      id: string,
+      data: { dischargeType: string; dischargeSummary: string },
+    ): Promise<Admission> => {
       const response = await api.post<Admission>(`/ipd/admissions/${id}/discharge`, data);
       return response.data;
     },
-    transfer: async (id: string, data: { toWardId: string; toBedId: string; reason: string }): Promise<Admission> => {
+    transfer: async (
+      id: string,
+      data: { toWardId: string; toBedId: string; reason: string },
+    ): Promise<Admission> => {
       const response = await api.post<Admission>(`/ipd/admissions/${id}/transfer`, data);
       return response.data;
     },
@@ -288,21 +310,32 @@ export const ipdService = {
   // Medication Administration
   medications: {
     list: async (admissionId: string, date?: string): Promise<MedicationAdministration[]> => {
-      const response = await api.get<MedicationAdministration[]>(`/ipd/admissions/${admissionId}/medications`, { params: { date } });
+      const response = await api.get<MedicationAdministration[]>(
+        `/ipd/admissions/${admissionId}/medications`,
+        { params: { date } },
+      );
       return response.data;
     },
     schedule: async (data: ScheduleMedicationDto): Promise<MedicationAdministration> => {
       const response = await api.post<MedicationAdministration>('/ipd/medications', data);
       return response.data;
     },
-    administer: async (id: string, data: AdministerMedicationDto): Promise<MedicationAdministration> => {
-      const response = await api.put<MedicationAdministration>(`/ipd/medications/${id}/administer`, data);
+    administer: async (
+      id: string,
+      data: AdministerMedicationDto,
+    ): Promise<MedicationAdministration> => {
+      const response = await api.put<MedicationAdministration>(
+        `/ipd/medications/${id}/administer`,
+        data,
+      );
       return response.data;
     },
   },
 
   // Stats
-  getStats: async (facilityId?: string): Promise<{
+  getStats: async (
+    facilityId?: string,
+  ): Promise<{
     totalAdmissions: number;
     currentInpatients: number;
     dischargedToday: number;
@@ -328,11 +361,7 @@ export const ipdService = {
     const r = await api.get('/ipd/census', { params: { facilityId, dateFrom, dateTo } });
     return r.data;
   },
-  reserveBed: async (
-    bedId: string,
-    holdHours: number,
-    reason: string,
-  ): Promise<Bed> => {
+  reserveBed: async (bedId: string, holdHours: number, reason: string): Promise<Bed> => {
     const r = await api.post(`/ipd/beds/${bedId}/reserve`, { holdHours, reason });
     return r.data;
   },

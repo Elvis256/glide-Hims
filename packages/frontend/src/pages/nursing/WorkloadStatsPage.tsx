@@ -98,7 +98,8 @@ export default function WorkloadStatsPage() {
     const totalPatients = ipdStats?.currentInpatients || 0;
     const nurseCount = staffList.length || 1;
     return staffList.map((emp, i) => {
-      const patientsAssigned = Math.ceil(totalPatients / nurseCount) + (i < totalPatients % nurseCount ? 1 : 0);
+      const patientsAssigned =
+        Math.ceil(totalPatients / nurseCount) + (i < totalPatients % nurseCount ? 1 : 0);
       const proceduresCompleted = Math.floor(patientsAssigned * 0.5);
       const medicationsGiven = patientsAssigned * 3;
       let workloadScore: StaffWorkload['workloadScore'] = 'low';
@@ -121,8 +122,12 @@ export default function WorkloadStatsPage() {
   const procedureStats = useMemo((): ProcedureStats[] => {
     if (!occupancyData) return [];
     const colors = ['bg-blue-400', 'bg-green-400', 'bg-purple-400', 'bg-yellow-400', 'bg-pink-400'];
+    // The occupancy endpoint returns `name`, not `wardName`. Reading the wrong
+    // field gave every row the label "undefined Procedures" — which the chart
+    // printed, and which React then saw as the same key on every row, so it
+    // warned about duplicates and was free to drop or duplicate bars.
     return occupancyData.slice(0, 5).map((ward, idx) => ({
-      type: `${ward.wardName} Procedures`,
+      type: `${ward.name || 'Ward'} Procedures`,
       count: ward.occupiedBeds,
       color: colors[idx % colors.length],
     }));
@@ -150,10 +155,7 @@ export default function WorkloadStatsPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-4">
-          <button
-            onClick={() => navigate(-1)}
-            className="p-2 hover:bg-gray-100 rounded-lg"
-          >
+          <button onClick={() => navigate(-1)} className="p-2 hover:bg-gray-100 rounded-lg">
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div className="flex items-center gap-2">
@@ -173,7 +175,9 @@ export default function WorkloadStatsPage() {
               className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
             >
               {dateRanges.map((range) => (
-                <option key={range.value} value={range.value}>{range.label}</option>
+                <option key={range.value} value={range.value}>
+                  {range.label}
+                </option>
               ))}
             </select>
           </div>
@@ -289,51 +293,55 @@ export default function WorkloadStatsPage() {
                 <p className="text-sm">No staff workload data</p>
               </div>
             ) : (
-            <table className="w-full">
-              <thead className="sticky top-0 bg-white">
-                <tr className="text-left text-xs text-gray-500 border-b">
-                  <th className="pb-2 font-medium">Staff</th>
-                  <th className="pb-2 font-medium text-center">Patients</th>
-                  <th className="pb-2 font-medium text-center">Procedures</th>
-                  <th className="pb-2 font-medium text-center">Meds</th>
-                  <th className="pb-2 font-medium text-center">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {staffWorkload.map((staffMember) => {
-                  const config = workloadConfig[staffMember.workloadScore];
-                  return (
-                    <tr key={staffMember.id} className="hover:bg-gray-50">
-                      <td className="py-3">
-                        <div className="flex items-center gap-2">
-                          <div className="w-8 h-8 bg-teal-100 rounded-full flex items-center justify-center">
-                            <User className="w-4 h-4 text-teal-600" />
+              <table className="w-full">
+                <thead className="sticky top-0 bg-white">
+                  <tr className="text-left text-xs text-gray-500 border-b">
+                    <th className="pb-2 font-medium">Staff</th>
+                    <th className="pb-2 font-medium text-center">Patients</th>
+                    <th className="pb-2 font-medium text-center">Procedures</th>
+                    <th className="pb-2 font-medium text-center">Meds</th>
+                    <th className="pb-2 font-medium text-center">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {staffWorkload.map((staffMember) => {
+                    const config = workloadConfig[staffMember.workloadScore];
+                    return (
+                      <tr key={staffMember.id} className="hover:bg-gray-50">
+                        <td className="py-3">
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 bg-teal-100 rounded-full flex items-center justify-center">
+                              <User className="w-4 h-4 text-teal-600" />
+                            </div>
+                            <div>
+                              <p className="font-medium text-gray-900 text-sm">
+                                {staffMember.name}
+                              </p>
+                              <p className="text-xs text-gray-500">{staffMember.role}</p>
+                            </div>
                           </div>
-                          <div>
-                            <p className="font-medium text-gray-900 text-sm">{staffMember.name}</p>
-                            <p className="text-xs text-gray-500">{staffMember.role}</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="py-3 text-center text-sm font-medium text-gray-900">
-                        {staffMember.patientsAssigned}
-                      </td>
-                      <td className="py-3 text-center text-sm font-medium text-gray-900">
-                        {staffMember.proceduresCompleted}
-                      </td>
-                      <td className="py-3 text-center text-sm font-medium text-gray-900">
-                        {staffMember.medicationsGiven}
-                      </td>
-                      <td className="py-3 text-center">
-                        <span className={`px-2 py-1 rounded text-xs font-medium border ${config.color}`}>
-                          {config.label}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                        </td>
+                        <td className="py-3 text-center text-sm font-medium text-gray-900">
+                          {staffMember.patientsAssigned}
+                        </td>
+                        <td className="py-3 text-center text-sm font-medium text-gray-900">
+                          {staffMember.proceduresCompleted}
+                        </td>
+                        <td className="py-3 text-center text-sm font-medium text-gray-900">
+                          {staffMember.medicationsGiven}
+                        </td>
+                        <td className="py-3 text-center">
+                          <span
+                            className={`px-2 py-1 rounded text-xs font-medium border ${config.color}`}
+                          >
+                            {config.label}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             )}
           </div>
         </div>
@@ -347,20 +355,22 @@ export default function WorkloadStatsPage() {
                 <Stethoscope className="w-12 h-12 text-gray-300 mb-2" />
                 <p className="text-sm">No procedure data</p>
               </div>
-            ) : procedureStats.map((proc) => (
-              <div key={proc.type}>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-sm font-medium text-gray-700">{proc.type}</span>
-                  <span className="text-sm text-gray-500">{proc.count}</span>
+            ) : (
+              procedureStats.map((proc) => (
+                <div key={proc.type}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-sm font-medium text-gray-700">{proc.type}</span>
+                    <span className="text-sm text-gray-500">{proc.count}</span>
+                  </div>
+                  <div className="h-6 bg-gray-100 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full ${proc.color} rounded-full transition-all duration-500`}
+                      style={{ width: `${(proc.count / maxProcedureCount) * 100}%` }}
+                    />
+                  </div>
                 </div>
-                <div className="h-6 bg-gray-100 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full ${proc.color} rounded-full transition-all duration-500`}
-                    style={{ width: `${(proc.count / maxProcedureCount) * 100}%` }}
-                  />
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
 
           {/* Acuity Distribution */}
@@ -381,9 +391,13 @@ export default function WorkloadStatsPage() {
                     <span className="text-xs text-gray-600 mb-1">{acuity.count}</span>
                     <div
                       className={`w-full rounded-t transition-all duration-500 ${
-                        acuity.level <= 2 ? 'bg-green-400' :
-                        acuity.level === 3 ? 'bg-yellow-400' :
-                        acuity.level === 4 ? 'bg-orange-400' : 'bg-red-400'
+                        acuity.level <= 2
+                          ? 'bg-green-400'
+                          : acuity.level === 3
+                            ? 'bg-yellow-400'
+                            : acuity.level === 4
+                              ? 'bg-orange-400'
+                              : 'bg-red-400'
                       }`}
                       style={{ height: `${height}%` }}
                     />
