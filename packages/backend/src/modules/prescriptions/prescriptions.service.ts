@@ -580,7 +580,18 @@ export class PrescriptionsService {
     tenantId?: string,
   ): Promise<Prescription> {
     const tid = requireTenantId(tenantId);
-    return this.dataSource.transaction(async (manager) => {
+    // Collected inside the transaction, charged after it commits.
+    const billingIntents: {
+      encounterId: string;
+      patientId: string;
+      itemId: string;
+      serviceCode: string;
+      description: string;
+      quantity: number;
+      unitPrice: number;
+    }[] = [];
+
+    const dispensed = await this.dataSource.transaction(async (manager) => {
       const prescriptionRepo = manager.getRepository(Prescription);
       const itemRepo = manager.getRepository(PrescriptionItem);
       const dispensationRepo = manager.getRepository(Dispensation);
@@ -838,46 +849,27 @@ export class PrescriptionsService {
         }
         await itemRepo.save(item);
 
-        // Update invoice — update existing interim item or add new one
-        let billingSuccess = true;
-        let billingError: string | null = null;
-
+        // Queue the charge; it is raised after this transaction commits.
+        //
+        // Billing went through BillingService on its own connection, so the
+        // invoice line committed the moment it was written — while this
+        // transaction was still open and could still fail. It can: the
+        // controlled-substance check further down throws and rolls the whole
+        // dispensation back. That left the patient billed for drugs they were
+        // never given. Charging after the commit means the worst case is the
+        // reverse — dispensed but not yet billed — which this code already
+        // tolerated, since a billing failure here has always been logged
+        // rather than fatal.
         if (prescription.encounter) {
-          try {
-            // Try to update existing interim invoice item (created at prescription time)
-            const updated = await this.billingService.updateBillableItem({
-              referenceType: 'prescription_item',
-              referenceId: item.id,
-              description: `${item.drugName} x ${itemDto.quantity}`,
-              quantity: itemDto.quantity,
-              unitPrice: resolvedPrice,
-            });
-            if (!updated) {
-              // No existing item — add new one
-              await this.billingService.addBillableItem(
-                {
-                  encounterId: prescription.encounter.id,
-                  patientId: prescription.encounter.patientId,
-                  serviceCode: item.drugCode || `DRUG-${item.id.slice(0, 8)}`,
-                  description: `${item.drugName} x ${itemDto.quantity}`,
-                  quantity: itemDto.quantity,
-                  unitPrice: resolvedPrice,
-                  chargeType: 'pharmacy',
-                  referenceType: 'prescription_item',
-                  referenceId: item.id,
-                },
-                userId,
-                tenantId,
-              );
-            }
-          } catch (err) {
-            billingSuccess = false;
-            billingError = err.message;
-            this.logger.error(`Failed to add pharmacy item to invoice: ${err.message}`);
-          }
-        }
-        if (!billingSuccess) {
-          this.logger.warn('Dispensation billing failed');
+          billingIntents.push({
+            encounterId: prescription.encounter.id,
+            patientId: prescription.encounter.patientId,
+            itemId: item.id,
+            serviceCode: item.drugCode || `DRUG-${item.id.slice(0, 8)}`,
+            description: `${item.drugName} x ${itemDto.quantity}`,
+            quantity: itemDto.quantity,
+            unitPrice: resolvedPrice,
+          });
         }
 
         // Deduct stock — convert reservation to actual deduction
@@ -1049,6 +1041,48 @@ export class PrescriptionsService {
       // this transaction loaded rather than widening the return type.
       return updatedRx ?? prescription;
     });
+
+    // Raise the pharmacy charges now the dispensation is real.
+    //
+    // Each goes through BillingService on its own connection: an interim
+    // invoice line was created when the prescription was written, so try to
+    // update that first and only add a new line if there is none. A failure
+    // is logged rather than fatal, exactly as it was before — the drugs are
+    // already handed over and refusing here would not take them back.
+    for (const intent of billingIntents) {
+      try {
+        const updated = await this.billingService.updateBillableItem({
+          referenceType: 'prescription_item',
+          referenceId: intent.itemId,
+          description: intent.description,
+          quantity: intent.quantity,
+          unitPrice: intent.unitPrice,
+        });
+        if (!updated) {
+          await this.billingService.addBillableItem(
+            {
+              encounterId: intent.encounterId,
+              patientId: intent.patientId,
+              serviceCode: intent.serviceCode,
+              description: intent.description,
+              quantity: intent.quantity,
+              unitPrice: intent.unitPrice,
+              chargeType: 'pharmacy',
+              referenceType: 'prescription_item',
+              referenceId: intent.itemId,
+            },
+            userId,
+            tenantId,
+          );
+        }
+      } catch (err: any) {
+        this.logger.error(
+          `Dispensation billing failed for prescription item ${intent.itemId}: ${err?.message || err}`,
+        );
+      }
+    }
+
+    return dispensed;
   }
 
   async cancelPrescription(id: string, tenantId?: string): Promise<Prescription> {

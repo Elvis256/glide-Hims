@@ -121,7 +121,8 @@ for f in files:
             args, _ = block(cb, call.end()-1, '(', ')')
             if re.search(r'\bmanager\b', args): continue
             head = text[max(0, text.rfind('\n\n', 0, tm.start())):tm.start()]
-            direct.append((str(f).replace('modules/',''), f'{recv}.{meth}', 'txn-connection-ok' in head))
+            line = text[:tm.end() + call.start()].count('\n') + 1
+            direct.append((str(f).replace('modules/',''), f'{recv}.{meth}', 'txn-connection-ok' in head, line))
 
 seen=set()
 print('AFTER a write, inside the transaction, on a different connection:\n')
@@ -137,9 +138,9 @@ if waived:
     print(f"\n({len(set(waived))} reviewed sites waived via txn-connection-ok)")
 
 dseen = set()
-rows2 = [(f, c) for f, c, w in direct if not w and (f, c) not in dseen and not dseen.add((f, c))]
+rows2 = [(f, c, ln) for f, c, w, ln in direct if not w and (f, c) not in dseen and not dseen.add((f, c))]
 print('\nSibling service / injected repo called inside a transaction after a write')
 print('(on its own connection by construction — check each is deliberate):\n')
-for f, c in sorted(rows2):
-    print(f"  {f:44} -> {c}()")
+for f, c, ln in sorted(rows2):
+    print(f"  {f}:{ln}".ljust(52) + f"-> {c}()")
 print(f"\n{len(rows2)} sites")

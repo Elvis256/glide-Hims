@@ -1073,7 +1073,13 @@ export class LabService {
     // concurrent release calls could both observe status=VALIDATED, both
     // pass the guard, and both fire patient SMS + encounter return-to-doctor
     // side effects. We also keep the sample lock for the cascade write.
-    return this.dataSource.transaction(async (manager) => {
+    // Filled inside the transaction, acted on after it commits.
+    const followUps: {
+      sms: { patient: any; facilityId: string; message: string } | null;
+      encounterId: string | null;
+    } = { sms: null, encounterId: null };
+
+    const released = await this.dataSource.transaction(async (manager) => {
       const resultQb = manager
         .getRepository(LabResult)
         .createQueryBuilder('lr')
@@ -1145,7 +1151,7 @@ export class LabService {
         });
         this.logger.log(`Sample completed: ${lockedSample.sampleNumber}`);
 
-        // Notify patient via SMS that lab results are ready (fire-and-forget)
+        // Gather what the follow-ups need; they run after the commit below.
         try {
           const fullSample = await manager.findOne(LabSample, {
             where: { id: result.sampleId },
@@ -1162,49 +1168,57 @@ export class LabService {
           if (patient && facilityId) {
             const fname = String(patient.fullName || 'patient').split(' ')[0];
             const facName = facility?.name || 'the facility';
-            const msg =
-              `Hello ${fname}, your lab results from ${facName} are ready. ` +
-              `Please visit the facility or log in to your patient portal to view them.`;
-            this.notificationsService
-              .sendSmsToPatient({
-                patient,
-                facilityId,
-                message: msg,
-                tenantId,
-              })
-              .catch((e) => this.logger.warn(`Patient lab-ready SMS failed: ${e.message}`));
+            followUps.sms = {
+              patient,
+              facilityId,
+              message:
+                `Hello ${fname}, your lab results from ${facName} are ready. ` +
+                `Please visit the facility or log in to your patient portal to view them.`,
+            };
           }
+          followUps.encounterId = fullSample?.order?.encounterId || null;
         } catch (e) {
-          this.logger.warn(`Patient lab-ready SMS lookup failed: ${(e as Error).message}`);
+          this.logger.warn(`Patient lab-ready follow-up lookup failed: ${(e as Error).message}`);
         }
 
         // Billing is handled at order-creation time in orders.service.ts.
         // Do NOT bill again here to avoid duplicate invoice items.
-
-        // Return patient to doctor for results review
-        const fullSampleForOrder = await manager.findOne(LabSample, {
-          where: { id: result.sampleId },
-          relations: ['order'],
-        });
-        if (fullSampleForOrder?.order?.encounterId) {
-          try {
-            await this.encountersService.returnToDoctor(
-              fullSampleForOrder.order.encounterId,
-              'Lab results ready for review',
-              userId,
-            );
-            this.logger.log(
-              `Encounter ${fullSampleForOrder.order.encounterId} returned to doctor for lab results review`,
-            );
-          } catch (e) {
-            this.logger.warn(`Failed to return encounter to doctor: ${e.message}`);
-          }
-        }
       }
 
       this.logger.log(`Lab result released: ${id} by user ${userId}`);
       return savedResult;
     });
+
+    // Both of these used to run inside the transaction, on their own
+    // connections, before the release had committed.
+    //
+    // The SMS is the one that cannot be taken back: if the release then
+    // rolled back, the patient had already been told their results were
+    // ready for a result that was not released. returnToDoctor writes
+    // encounter state through another service, so it had the same problem in
+    // a recoverable form. Neither failure blocks the release, as before.
+    if (followUps.sms) {
+      this.notificationsService
+        .sendSmsToPatient({ ...followUps.sms, tenantId })
+        .catch((e) => this.logger.warn(`Patient lab-ready SMS failed: ${e.message}`));
+    }
+
+    if (followUps.encounterId) {
+      try {
+        await this.encountersService.returnToDoctor(
+          followUps.encounterId,
+          'Lab results ready for review',
+          userId,
+        );
+        this.logger.log(
+          `Encounter ${followUps.encounterId} returned to doctor for lab results review`,
+        );
+      } catch (e) {
+        this.logger.warn(`Failed to return encounter to doctor: ${e.message}`);
+      }
+    }
+
+    return released;
   }
 
   async amendResult(
