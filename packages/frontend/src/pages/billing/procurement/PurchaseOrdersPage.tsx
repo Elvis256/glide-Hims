@@ -19,7 +19,6 @@ import {
   CheckCircle,
   XCircle,
   Clock,
-  Truck,
   Calendar,
   DollarSign,
   Package,
@@ -43,25 +42,42 @@ type BackendPOStatus =
   | 'fully_received'
   | 'cancelled'
   | 'closed';
-type POStatus = 'Draft' | 'Sent' | 'Partial' | 'Received' | 'Closed';
+/**
+ * Cancelled used to display as "Closed" and both pending_approval and
+ * approved displayed as "Draft". So a cancelled order was indistinguishable
+ * from a fulfilled one, and an order sitting on the CFO's desk looked like
+ * nobody had finished writing it. All three are now their own state.
+ */
+type POStatus =
+  | 'Draft'
+  | 'Awaiting Approval'
+  | 'Approved'
+  | 'Sent'
+  | 'Partial'
+  | 'Received'
+  | 'Closed'
+  | 'Cancelled';
 
 const statusMap: Record<BackendPOStatus, POStatus> = {
   draft: 'Draft',
-  pending_approval: 'Draft',
-  approved: 'Draft',
+  pending_approval: 'Awaiting Approval',
+  approved: 'Approved',
   sent: 'Sent',
   partially_received: 'Partial',
   fully_received: 'Received',
-  cancelled: 'Closed',
+  cancelled: 'Cancelled',
   closed: 'Closed',
 };
 
 const reverseStatusMap: Record<POStatus, BackendPOStatus[]> = {
-  Draft: ['draft', 'pending_approval', 'approved'],
+  Draft: ['draft'],
+  'Awaiting Approval': ['pending_approval'],
+  Approved: ['approved'],
   Sent: ['sent'],
   Partial: ['partially_received'],
   Received: ['fully_received'],
-  Closed: ['cancelled', 'closed'],
+  Closed: ['closed'],
+  Cancelled: ['cancelled'],
 };
 
 interface POItem {
@@ -179,10 +195,17 @@ const transformBackendPO = (po: BackendPurchaseOrder): PurchaseOrder => ({
 
 const statusConfig: Record<POStatus, { color: string; bg: string; icon: React.ReactNode }> = {
   Draft: { color: 'text-gray-600', bg: 'bg-gray-100', icon: <Edit className="w-3 h-3" /> },
+  'Awaiting Approval': {
+    color: 'text-amber-700',
+    bg: 'bg-amber-100',
+    icon: <Clock className="w-3 h-3" />,
+  },
+  Approved: { color: 'text-teal-700', bg: 'bg-teal-100', icon: <CheckCircle className="w-3 h-3" /> },
   Sent: { color: 'text-blue-600', bg: 'bg-blue-100', icon: <Send className="w-3 h-3" /> },
   Partial: { color: 'text-yellow-600', bg: 'bg-yellow-100', icon: <Package className="w-3 h-3" /> },
   Received: { color: 'text-green-600', bg: 'bg-green-100', icon: <CheckCircle className="w-3 h-3" /> },
   Closed: { color: 'text-purple-600', bg: 'bg-purple-100', icon: <CheckCircle className="w-3 h-3" /> },
+  Cancelled: { color: 'text-red-700', bg: 'bg-red-100', icon: <XCircle className="w-3 h-3" /> },
 };
 
 export default function PurchaseOrdersPage() {
@@ -193,6 +216,7 @@ export default function PurchaseOrdersPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<POStatus | 'All'>('All');
   const [selectedPO, setSelectedPO] = useState<PurchaseOrder | null>(null);
+  const [cancellingPO, setCancellingPO] = useState<PurchaseOrder | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showFromQuoteModal, setShowFromQuoteModal] = useState(false);
   const [fromQuoteSelectedId, setFromQuoteSelectedId] = useState<string | null>(null);
@@ -289,8 +313,12 @@ export default function PurchaseOrdersPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['purchase-orders'] });
-      setSelectedPO(null);
     },
+    // Approval genuinely refuses above the single-approver cap when no
+    // approval chain is configured. With no onError that refusal was
+    // invisible and the button just appeared not to work.
+    onError: (err: any) =>
+      toast.error(err?.response?.data?.message || 'Failed to approve purchase order'),
   });
 
   // Send to supplier mutation
@@ -301,20 +329,33 @@ export default function PurchaseOrdersPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['purchase-orders'] });
+      toast.success('Purchase order sent to supplier');
       setSelectedPO(null);
     },
+    onError: (err: any) =>
+      toast.error(err?.response?.data?.message || 'Failed to send purchase order'),
   });
 
-  // Cancel purchase order mutation
+  // Cancel purchase order mutation.
+  //
+  // The endpoint has always taken a reason and the page never sent one, so
+  // every cancellation was recorded as unexplained — and cancelling now also
+  // hands the quantities back to the requisition and releases the budget it
+  // was holding, which is exactly the kind of thing an auditor asks "why" of.
   const cancelMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const response = await api.put(`/procurement/purchase-orders/${id}/cancel`);
+    mutationFn: async ({ id, reason }: { id: string; reason: string }) => {
+      const response = await api.put(`/procurement/purchase-orders/${id}/cancel`, { reason });
       return response.data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['purchase-orders'] });
+      queryClient.invalidateQueries({ queryKey: ['purchase-requests'] });
+      toast.success('Purchase order cancelled');
+      setCancellingPO(null);
       setSelectedPO(null);
     },
+    onError: (err: any) =>
+      toast.error(err?.response?.data?.message || 'Failed to cancel purchase order'),
   });
 
   const isActionLoading = createMutation.isPending || approveMutation.isPending || sendMutation.isPending || cancelMutation.isPending;
@@ -335,11 +376,6 @@ export default function PurchaseOrdersPage() {
     }
   };
 
-  const handleCancelPO = () => {
-    if (selectedPO && window.confirm('Are you sure you want to cancel this purchase order?')) {
-      cancelMutation.mutate(selectedPO.id);
-    }
-  };
 
   const handleCreatePO = (sendImmediately: boolean) => {
     if (!facilityId) {
@@ -443,7 +479,18 @@ export default function PurchaseOrdersPage() {
 
         {/* Status Summary */}
         <div className="grid grid-cols-5 gap-3 mb-4">
-          {(['Draft', 'Sent', 'Partial', 'Received', 'Closed'] as POStatus[]).map((status) => (
+          {(
+            [
+              'Draft',
+              'Awaiting Approval',
+              'Approved',
+              'Sent',
+              'Partial',
+              'Received',
+              'Closed',
+              'Cancelled',
+            ] as POStatus[]
+          ).map((status) => (
             <div
               key={status}
               onClick={() => setStatusFilter(status)}
@@ -511,7 +558,9 @@ export default function PurchaseOrdersPage() {
           <div className="space-y-3">
             {filteredPOs.map((po) => {
               const progress = getDeliveryProgress(po);
-              const isOverdue = new Date(po.expectedDelivery) < new Date() && po.status !== 'Received' && po.status !== 'Closed';
+              const isOverdue =
+                new Date(po.expectedDelivery) < new Date() &&
+                !['Received', 'Closed', 'Cancelled'].includes(po.status);
               
               return (
                 <div
@@ -696,7 +745,7 @@ export default function PurchaseOrdersPage() {
 
               {/* Actions */}
               <div className="pt-4 space-y-2">
-                {selectedPO.status === 'Draft' && (
+                {['draft', 'pending_approval', 'approved'].includes(selectedPO.backendStatus) && (
                   <>
                     <button
                       onClick={handleSendToVendor}
@@ -710,12 +759,8 @@ export default function PurchaseOrdersPage() {
                       )}
                       Send to Vendor
                     </button>
-                    <button className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
-                      <Edit className="w-4 h-4" />
-                      Edit PO
-                    </button>
                     <button
-                      onClick={handleCancelPO}
+                      onClick={() => setCancellingPO(selectedPO)}
                       disabled={isActionLoading}
                       className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
@@ -731,7 +776,7 @@ export default function PurchaseOrdersPage() {
                 {(selectedPO.status === 'Sent' || selectedPO.status === 'Partial') && (
                   <>
                     <button
-                      onClick={handleCancelPO}
+                      onClick={() => setCancellingPO(selectedPO)}
                       disabled={isActionLoading}
                       className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
@@ -744,16 +789,6 @@ export default function PurchaseOrdersPage() {
                     </button>
                   </>
                 )}
-                {selectedPO.status === 'Received' && (
-                  <button className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">
-                    <CheckCircle className="w-4 h-4" />
-                    Close PO
-                  </button>
-                )}
-                <button className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
-                  <Truck className="w-4 h-4" />
-                  Track Delivery
-                </button>
               </div>
             </div>
           </div>
@@ -1170,6 +1205,108 @@ export default function PurchaseOrdersPage() {
           </div>
         </div>
       )}
+
+      {cancellingPO && (
+        <CancelPOModal
+          po={cancellingPO}
+          isSubmitting={cancelMutation.isPending}
+          onClose={() => setCancellingPO(null)}
+          onConfirm={(reason) => cancelMutation.mutate({ id: cancellingPO.id, reason })}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Cancelling is not a yes/no question.
+ *
+ * It used to be a window.confirm with no reason field, which meant the audit
+ * record said only that someone cancelled. Cancelling also returns the
+ * outstanding quantity to the originating requisition and releases the budget
+ * the order was holding, so this spells out what is about to happen and makes
+ * the reason a requirement rather than an afterthought.
+ */
+export function CancelPOModal({
+  po,
+  isSubmitting,
+  onClose,
+  onConfirm,
+}: {
+  po: PurchaseOrder;
+  isSubmitting: boolean;
+  onClose: () => void;
+  onConfirm: (reason: string) => void;
+}) {
+  const [reason, setReason] = useState('');
+  const dialogRef = useDialogA11y<HTMLDivElement>({ open: true, onClose });
+  const canSubmit = reason.trim().length >= 3 && !isSubmitting;
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="cancel-po-title"
+      ref={dialogRef}
+    >
+      <div className="bg-white rounded-lg shadow-xl max-w-lg w-full">
+        <div className="px-5 py-3 border-b">
+          <h3 id="cancel-po-title" className="font-semibold text-gray-900">
+            Cancel {po.poNumber}?
+          </h3>
+          <p className="text-sm text-gray-500">
+            {po.supplier} · {po.items?.length || 0} line
+            {(po.items?.length || 0) === 1 ? '' : 's'}
+          </p>
+        </div>
+
+        <div className="p-5 space-y-4">
+          <ul className="text-sm text-gray-700 space-y-1 list-disc pl-5">
+            <li>The supplier will no longer be expected to deliver.</li>
+            <li>Anything not yet received goes back to the requisition to be re-ordered.</li>
+            <li>Budget held for this order is released.</li>
+            <li>Goods already received stay received — this does not reverse them.</li>
+          </ul>
+
+          <div>
+            <label htmlFor="cancel-reason" className="block text-sm text-gray-700 mb-1">
+              Reason for cancelling <span className="text-red-600">required</span>
+            </label>
+            <textarea
+              id="cancel-reason"
+              rows={3}
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="e.g. supplier out of stock, price increased beyond quotation, duplicate order"
+              className="w-full px-3 py-2 border rounded-lg text-sm"
+            />
+          </div>
+        </div>
+
+        <div className="px-5 py-3 border-t flex gap-2 justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+          >
+            Keep order
+          </button>
+          <button
+            type="button"
+            onClick={() => canSubmit && onConfirm(reason.trim())}
+            disabled={!canSubmit}
+            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 flex items-center gap-2"
+          >
+            {isSubmitting ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <XCircle className="w-4 h-4" />
+            )}
+            Cancel order
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
