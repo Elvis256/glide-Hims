@@ -65,7 +65,11 @@ for f in files:
         w = WRITE.search(cb)
         first_write = w.start() if w else None
         if first_write is None: continue
-        for call in re.finditer(r'await this\.([A-Za-z0-9_]+)\s*\(', cb):
+        # Unawaited calls count too. postGoodsReceipt fired both its GL post
+        # and its PR auto-complete as bare `this.foo(...).catch(...)` inside
+        # the transaction; being unawaited makes the connection mismatch
+        # worse, not better, so matching only `await this.` hid them.
+        for call in re.finditer(r'this\.([A-Za-z0-9_]+)\s*\(', cb):
             callee = call.group(1)
             if callee not in methods: continue
             args, _ = block(cb, call.end()-1, '(', ')')     # full balanced args

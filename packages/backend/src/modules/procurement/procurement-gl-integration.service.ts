@@ -209,7 +209,7 @@ export class ProcurementGLIntegrationService {
     if (!po) throw new BadRequestException(`GRN ${grnId} has no purchase order`);
     const totalAmount = Number(grn.totalValue || 0);
 
-    await this.budgetService.markReservationSpent(po.id);
+    await this.budgetService.markReservationSpent(po.id, tid);
 
     this.logger.log(
       `Marked budget as spent for GRN ${grnId}. PO: ${po.orderNumber}, Amount: ${totalAmount}`,

@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, ILike, DataSource } from 'typeorm';
+import { Repository, ILike, DataSource, EntityManager } from 'typeorm';
 import { randomBytes } from 'crypto';
 import { requireTenantId } from '../../common/utils/tenant.util';
 import { Store } from '../../database/entities/store.entity';
@@ -183,15 +183,25 @@ export class StoresService {
     return query.orderBy('t.createdAt', 'DESC').take(limit).getMany();
   }
 
-  async findTransfer(id: string, tenantId?: string) {
+  /**
+   * Pass `manager` when reading back a transfer the caller's own transaction
+   * has just written. approveTransfer and receiveTransfer both ended with a
+   * bare `return this.findTransfer(...)` from inside their transaction, which
+   * read on a different connection and so saw the row as it was before the
+   * update: approving a transfer answered with it still REQUESTED, and the
+   * board only showed IN_TRANSIT after a manual refresh.
+   */
+  async findTransfer(id: string, tenantId?: string, manager?: EntityManager) {
     const tid = requireTenantId(tenantId);
     const where: any = { id, tenantId: tid };
-    const transfer = await this.transferRepo.findOne({
+    const transferRepo = manager ? manager.getRepository(StockTransfer) : this.transferRepo;
+    const itemRepo = manager ? manager.getRepository(StockTransferItem) : this.transferItemRepo;
+    const transfer = await transferRepo.findOne({
       where,
       relations: ['fromStore', 'toStore', 'requestedBy'],
     });
     if (!transfer) throw new NotFoundException('Transfer not found');
-    const items = await this.transferItemRepo.find({ where: { transferId: id } });
+    const items = await itemRepo.find({ where: { transferId: id } });
     return { ...transfer, items };
   }
 
@@ -296,7 +306,7 @@ export class StoresService {
         shippedAt: new Date(),
       });
 
-      return this.findTransfer(id, tid);
+      return this.findTransfer(id, tid, manager);
     });
   }
 
@@ -409,7 +419,7 @@ export class StoresService {
         receivedAt: new Date(),
       });
 
-      return this.findTransfer(id, tid);
+      return this.findTransfer(id, tid, manager);
     });
   }
 
