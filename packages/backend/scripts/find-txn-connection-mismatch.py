@@ -96,6 +96,33 @@ for f in files:
                 continue
             rows.append((str(f).replace('modules/',''), callee, writes, opens, takes_mgr))
 
+# Second pass: calls that are on another connection BY CONSTRUCTION, with no
+# need to resolve a callee body — a sibling service uses its own repositories,
+# and this.fooRepo is the injected repository rather than the manager's. The
+# first pass cannot see either: its regex is `this.name(`, so `this.x.y(` never
+# matches. That is how supplier-finance's payment journal and procurement's GRN
+# journal both stayed hidden.
+direct = []
+for f in files:
+    text = f.read_text()
+    for tm in re.finditer(r'dataSource\.transaction\(\s*async\s*\(\s*manager', text):
+        cb, _ = block(text, tm.end())
+        w = WRITE.search(cb)
+        if not w: continue
+        for call in re.finditer(
+            r'this\.([A-Za-z0-9_]*(?:[Rr]epo(?:sitory)?|Service))\s*\.\s*([A-Za-z0-9_]+)\s*\(', cb):
+            if call.start() < w.start(): continue
+            recv, meth = call.group(1), call.group(2)
+            # logger/config and the like are not database work
+            if recv in ('logger', 'configService', 'eventEmitter'): continue
+            # repo.create() only instantiates an entity; it issues no query
+            if meth == 'create': continue
+            # already handed the transaction's manager
+            args, _ = block(cb, call.end()-1, '(', ')')
+            if re.search(r'\bmanager\b', args): continue
+            head = text[max(0, text.rfind('\n\n', 0, tm.start())):tm.start()]
+            direct.append((str(f).replace('modules/',''), f'{recv}.{meth}', 'txn-connection-ok' in head))
+
 seen=set()
 print('AFTER a write, inside the transaction, on a different connection:\n')
 for f,callee,writes,opens,takes in sorted(rows):
@@ -108,3 +135,11 @@ for f,callee,writes,opens,takes in sorted(rows):
 print(f"\n{len(seen)} sites")
 if waived:
     print(f"\n({len(set(waived))} reviewed sites waived via txn-connection-ok)")
+
+dseen = set()
+rows2 = [(f, c) for f, c, w in direct if not w and (f, c) not in dseen and not dseen.add((f, c))]
+print('\nSibling service / injected repo called inside a transaction after a write')
+print('(on its own connection by construction — check each is deliberate):\n')
+for f, c in sorted(rows2):
+    print(f"  {f:44} -> {c}()")
+print(f"\n{len(rows2)} sites")
