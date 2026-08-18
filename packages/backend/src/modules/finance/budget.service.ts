@@ -536,7 +536,15 @@ export class BudgetService {
    * Mark reservation as spent when GRN is posted
    */
   async markReservationSpent(documentId: string, tenantId?: string): Promise<void> {
-    const where: any = { documentId, status: ReservationStatus.APPROVED };
+    // PENDING counts too. reserveBudget creates reservations as PENDING and
+    // nothing ever promotes them (approveReservation has no callers), so
+    // matching only APPROVED meant this never marked anything spent and the
+    // encumbrance stayed against the budget for the life of the fiscal year.
+    // calculateBudgetReserved already treats PENDING and APPROVED alike.
+    const where: any = {
+      documentId,
+      status: In([ReservationStatus.PENDING, ReservationStatus.APPROVED]),
+    };
     where.tenantId = requireTenantId(tenantId);
 
     const reservations = await this.reservationRepo.find({ where });
@@ -544,6 +552,36 @@ export class BudgetService {
       res.status = ReservationStatus.SPENT;
       await this.reservationRepo.save(res);
     }
+  }
+
+  /**
+   * Release every live reservation held against a document — used when the
+   * PR or PO that raised them is cancelled. Returns the amount handed back.
+   *
+   * releaseReservation() takes a reservation id, which no caller upstream
+   * has; without this, cancelling a document left its encumbrance standing
+   * and the department's available budget never recovered.
+   */
+  async releaseReservationsForDocument(documentId: string, tenantId?: string): Promise<number> {
+    const where: any = {
+      documentId,
+      status: In([ReservationStatus.PENDING, ReservationStatus.APPROVED]),
+    };
+    where.tenantId = requireTenantId(tenantId);
+
+    const reservations = await this.reservationRepo.find({ where });
+    let releasedCents = 0;
+    for (const res of reservations) {
+      res.status = ReservationStatus.RELEASED;
+      releasedCents += toCents(res.reservedAmount);
+      await this.reservationRepo.save(res);
+    }
+    if (reservations.length > 0) {
+      this.logger.log(
+        `Released ${reservations.length} budget reservation(s) for document ${documentId}`,
+      );
+    }
+    return fromCents(releasedCents);
   }
 
   /**

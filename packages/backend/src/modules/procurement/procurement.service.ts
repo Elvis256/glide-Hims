@@ -8,7 +8,7 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In, Between, DataSource, IsNull } from 'typeorm';
+import { Repository, In, Between, DataSource, IsNull, EntityManager } from 'typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import {
   PurchaseRequest,
@@ -780,10 +780,18 @@ export class ProcurementService {
           }
         }
       } else {
-        // Default: approve all requested quantities
+        // Default: carry forward whatever the previous level authorised,
+        // falling back to the requested quantity on the first approval.
+        //
+        // This used to reset quantityApproved to quantityRequested every
+        // time. On a multi-level chain that silently undid the level below:
+        // a manager cutting 100 units to 50 had the cut reversed the moment
+        // the director approved, because the director's approval carries no
+        // item list and took this branch.
         for (const item of pr.items) {
-          item.quantityApproved = item.quantityRequested;
-          totalEstimatedApproved += item.quantityRequested * Number(item.unitPriceEstimated || 0);
+          const carried = item.quantityApproved ?? item.quantityRequested;
+          item.quantityApproved = carried;
+          totalEstimatedApproved += carried * Number(item.unitPriceEstimated || 0);
         }
       }
 
@@ -807,7 +815,7 @@ export class ProcurementService {
 
       // Check if approval chain is complete
       const pendingChains = await chainRepo.find({
-        where: { documentId: id, status: ApprovalChainStatus.PENDING },
+        where: { documentId: id, status: ApprovalChainStatus.PENDING, tenantId: tid },
       });
 
       if (pendingChains.length === 0) {
@@ -1106,12 +1114,20 @@ export class ProcurementService {
     userId: string,
     tenantId?: string,
   ): Promise<PurchaseOrder> {
-    const pr = await this.getPurchaseRequest(dto.purchaseRequestId, tenantId);
-    if (pr.status !== PRStatus.APPROVED) {
-      throw new BadRequestException('PR must be approved to create PO');
-    }
-
     const tidFromPR = requireTenantId(tenantId);
+    const pr = await this.getPurchaseRequest(dto.purchaseRequestId, tenantId);
+
+    // PARTIALLY_ORDERED is accepted, not just APPROVED. The conversion below
+    // has always computed a per-line remainder and set PARTIALLY_ORDERED when
+    // it could not order everything — but nothing ever accepted that status
+    // back, so the second PO could not be raised and the remainder was
+    // unreachable. Splitting a requisition across suppliers, or ordering the
+    // rest after one supplier short-supplies, is ordinary procurement.
+    if (![PRStatus.APPROVED, PRStatus.PARTIALLY_ORDERED].includes(pr.status)) {
+      throw new BadRequestException(
+        `PR must be approved or partially ordered to create a PO (currently ${pr.status})`,
+      );
+    }
     const supplier = await this.supplierRepo.findOne({
       where: { id: dto.supplierId, tenantId: tidFromPR },
     });
@@ -1125,59 +1141,124 @@ export class ProcurementService {
     // Map prices
     const priceMap = new Map(dto.itemPrices?.map((p) => [p.itemId, p.unitPrice]) || []);
 
+    // Claim the quantities under a row lock BEFORE building the PO.
+    //
+    // This used to read the PR unlocked, create the PO, then increment
+    // quantityOrdered in a second transaction. Two officers converting the
+    // same requisition at once both read quantityOrdered = 0, both ordered
+    // the full approved quantity, and the hospital received (and owed for)
+    // twice what it asked for. Claiming first means the loser sees the
+    // updated remainder and orders only what is genuinely left — which now
+    // matters more, since a PR can legitimately be converted more than once.
+    const claimed = await this.dataSource.transaction(async (manager) => {
+      const prRepo = manager.getRepository(PurchaseRequest);
+      const prItemRepo = manager.getRepository(PurchaseRequestItem);
+
+      const lockedPR = await prRepo.findOne({
+        where: { id: pr.id, tenantId: tidFromPR, deletedAt: IsNull() },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!lockedPR) throw new NotFoundException('Purchase request not found');
+      if (![PRStatus.APPROVED, PRStatus.PARTIALLY_ORDERED].includes(lockedPR.status)) {
+        throw new BadRequestException(
+          `PR must be approved or partially ordered to create a PO (currently ${lockedPR.status})`,
+        );
+      }
+
+      const prItems = await prItemRepo.find({ where: { purchaseRequestId: lockedPR.id } });
+
+      const lines: { item: PurchaseRequestItem; quantity: number }[] = [];
+      for (const item of prItems) {
+        const authorised = Number(item.quantityApproved) || Number(item.quantityRequested) || 0;
+        const remaining = authorised - (Number(item.quantityOrdered) || 0);
+        if (remaining > 0) lines.push({ item, quantity: remaining });
+      }
+
+      if (lines.length === 0) {
+        throw new BadRequestException('No items available to order');
+      }
+
+      for (const line of lines) {
+        line.item.quantityOrdered = (Number(line.item.quantityOrdered) || 0) + line.quantity;
+        await prItemRepo.save(line.item);
+      }
+
+      const allOrdered = prItems.every(
+        (i) =>
+          (Number(i.quantityOrdered) || 0) >=
+          (Number(i.quantityApproved) || Number(i.quantityRequested) || 0),
+      );
+      lockedPR.status = allOrdered ? PRStatus.FULLY_ORDERED : PRStatus.PARTIALLY_ORDERED;
+      await prRepo.save(lockedPR);
+
+      return lines.map((l) => ({
+        itemId: l.item.itemId,
+        itemCode: l.item.itemCode,
+        itemName: l.item.itemName,
+        itemUnit: l.item.itemUnit,
+        quantityOrdered: l.quantity,
+        unitPrice: priceMap.get(l.item.itemId) || l.item.unitPriceEstimated,
+      }));
+    });
+
     const poDto: CreatePurchaseOrderDto = {
       facilityId: pr.facilityId,
       supplierId: dto.supplierId,
       purchaseRequestId: pr.id,
       expectedDelivery: dto.expectedDelivery,
       paymentTerms: dto.paymentTerms || supplier.paymentTerms,
-      items: pr.items
-        .filter(
-          (item) =>
-            (item.quantityApproved || item.quantityRequested) >= item.quantityOrdered &&
-            (item.quantityApproved || item.quantityRequested) - item.quantityOrdered > 0,
-        )
-        .map((item) => ({
-          itemId: item.itemId,
-          itemCode: item.itemCode,
-          itemName: item.itemName,
-          itemUnit: item.itemUnit,
-          quantityOrdered: (item.quantityApproved || item.quantityRequested) - item.quantityOrdered,
-          unitPrice: priceMap.get(item.itemId) || item.unitPriceEstimated,
-        })),
+      items: claimed,
     };
 
-    if (poDto.items.length === 0) {
-      throw new BadRequestException('No items available to order');
+    try {
+      return await this.createPurchaseOrder(poDto, userId, tenantId);
+    } catch (error) {
+      // The claim is committed but the PO it was for does not exist. Give the
+      // quantities back, or the requisition is short by the failed attempt.
+      await this.unclaimPRQuantities(pr.id, claimed, tidFromPR).catch((err) =>
+        this.logger.error(
+          `PR ${pr.id}: PO creation failed and releasing the claimed quantities also failed. ` +
+            `The PR is now understated by the claim. ${err?.message || err}`,
+        ),
+      );
+      throw error;
     }
+  }
 
-    const po = await this.createPurchaseOrder(poDto, userId, tenantId);
-
-    // Wrap PR item-quantity backfill + PR status update so we never end up
-    // with PR.quantityOrdered drift if one of the saves fails (audit
-    // BUG-005). createPurchaseOrder itself is already transactional and
-    // committed at this point — we open a second transaction for the PR
-    // mutations so they atomically reflect the new PO.
+  /**
+   * Compensating write for createPOFromPR: hands back quantities claimed for
+   * a PO that then failed to be created.
+   */
+  private async unclaimPRQuantities(
+    prId: string,
+    claimed: { itemId: string; quantityOrdered: number }[],
+    tid: string,
+  ): Promise<void> {
     await this.dataSource.transaction(async (manager) => {
       const prRepo = manager.getRepository(PurchaseRequest);
       const prItemRepo = manager.getRepository(PurchaseRequestItem);
 
-      for (const poItem of po.items) {
-        const prItem = pr.items.find((i) => i.itemId === poItem.itemId);
-        if (prItem) {
-          prItem.quantityOrdered += poItem.quantityOrdered;
-          await prItemRepo.save(prItem);
-        }
+      const lockedPR = await prRepo.findOne({
+        where: { id: prId, tenantId: tid },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!lockedPR) return;
+
+      const prItems = await prItemRepo.find({ where: { purchaseRequestId: prId } });
+      for (const line of claimed) {
+        const prItem = prItems.find((i) => i.itemId === line.itemId);
+        if (!prItem) continue;
+        prItem.quantityOrdered = Math.max(
+          0,
+          (Number(prItem.quantityOrdered) || 0) - line.quantityOrdered,
+        );
+        await prItemRepo.save(prItem);
       }
 
-      const allOrdered = pr.items.every(
-        (i) => i.quantityOrdered >= (i.quantityApproved || i.quantityRequested),
-      );
-      pr.status = allOrdered ? PRStatus.FULLY_ORDERED : PRStatus.PARTIALLY_ORDERED;
-      await prRepo.save(pr);
+      const anyOrdered = prItems.some((i) => (Number(i.quantityOrdered) || 0) > 0);
+      lockedPR.status = anyOrdered ? PRStatus.PARTIALLY_ORDERED : PRStatus.APPROVED;
+      await prRepo.save(lockedPR);
     });
-
-    return po;
   }
 
   async getPurchaseOrder(id: string, tenantId?: string): Promise<PurchaseOrder> {
@@ -1535,7 +1616,7 @@ export class ProcurementService {
     reason?: string,
   ): Promise<PurchaseOrder> {
     const tid = requireTenantId(tenantId);
-    return this.dataSource.transaction(async (manager) => {
+    const cancelled = await this.dataSource.transaction(async (manager) => {
       const poRepo = manager.getRepository(PurchaseOrder);
       const po = await poRepo.findOne({
         where: { id, deletedAt: IsNull(), tenantId: tid },
@@ -1555,6 +1636,19 @@ export class ProcurementService {
 
       const saved = await poRepo.save(po);
 
+      // Hand the un-received quantity back to the requisition.
+      //
+      // Cancelling used to change nothing but this PO's own status, so the
+      // PR it came from kept counting the cancelled units as ordered and
+      // stayed PARTIALLY_ORDERED / FULLY_ORDERED forever. Combined with
+      // createPOFromPR only accepting an APPROVED PR, that stranded the
+      // requisition: a supplier who could not deliver cost the department
+      // its whole requisition and it had to be raised again from scratch.
+      //
+      // Only the outstanding quantity comes back. Anything already received
+      // stays ordered, because it was.
+      const releasedByItem = await this.releasePRQuantitiesForCancelledPO(manager, po, tid);
+
       await manager.getRepository(AuditLog).save(
         manager.getRepository(AuditLog).create({
           action: 'PO_CANCELLED',
@@ -1562,13 +1656,102 @@ export class ProcurementService {
           entityId: id,
           userId,
           oldValue: { status: oldStatus },
-          newValue: { status: POStatus.CANCELLED, reason: reason || null },
+          newValue: {
+            status: POStatus.CANCELLED,
+            reason: reason || null,
+            releasedToPR: releasedByItem,
+          },
           tenantId: tid,
         }),
       );
 
       return saved;
     });
+
+    // Hand the budget back, after the cancellation commits.
+    //
+    // encumberBudgetForPO reserved against the department budget and nothing
+    // ever released it: releaseReservation had no callers at all, so every
+    // cancelled PO permanently shrank the budget it was drawn on. Best
+    // effort — a failure here must not un-cancel the order.
+    await this.budgetService
+      .releaseReservationsForDocument(cancelled.id, tid)
+      .then((amount) => {
+        if (amount > 0) {
+          this.logger.log(`Released ${amount} of budget reserved for cancelled PO ${cancelled.orderNumber}`);
+        }
+      })
+      .catch((err) =>
+        this.logger.warn(
+          `Failed to release budget reservation for cancelled PO ${cancelled.orderNumber}: ${err?.message || err}`,
+        ),
+      );
+
+    return cancelled;
+  }
+
+  /**
+   * Returns a cancelled PO's outstanding quantities to its purchase request
+   * and re-derives the PR's status. Returns what was released, per item, for
+   * the audit record. No-op for a direct PO with no originating PR.
+   */
+  private async releasePRQuantitiesForCancelledPO(
+    manager: EntityManager,
+    po: PurchaseOrder,
+    tid: string,
+  ): Promise<Record<string, number>> {
+    if (!po.purchaseRequestId) return {};
+
+    const prRepo = manager.getRepository(PurchaseRequest);
+    const prItemRepo = manager.getRepository(PurchaseRequestItem);
+
+    const pr = await prRepo.findOne({
+      where: { id: po.purchaseRequestId, tenantId: tid },
+      lock: { mode: 'pessimistic_write' },
+    });
+    if (!pr) return {};
+
+    const poItems = await manager
+      .getRepository(PurchaseOrderItem)
+      .find({ where: { purchaseOrderId: po.id } });
+    const prItems = await prItemRepo.find({ where: { purchaseRequestId: pr.id } });
+
+    const released: Record<string, number> = {};
+    for (const poItem of poItems) {
+      const outstanding =
+        (Number(poItem.quantityOrdered) || 0) - (Number(poItem.quantityReceived) || 0);
+      if (outstanding <= 0) continue;
+
+      const prItem = prItems.find((i) => i.itemId === poItem.itemId);
+      if (!prItem) continue;
+
+      // Never below zero: a direct PO line could exceed what the PR asked for.
+      const giveBack = Math.min(outstanding, Number(prItem.quantityOrdered) || 0);
+      if (giveBack <= 0) continue;
+
+      prItem.quantityOrdered -= giveBack;
+      released[poItem.itemName || poItem.itemId] = giveBack;
+      await prItemRepo.save(prItem);
+    }
+
+    // Re-derive rather than assume: other live POs may still cover part of it.
+    const anyOrdered = prItems.some((i) => (Number(i.quantityOrdered) || 0) > 0);
+    const allOrdered = prItems.every(
+      (i) =>
+        (Number(i.quantityOrdered) || 0) >=
+        (Number(i.quantityApproved) || Number(i.quantityRequested) || 0),
+    );
+
+    if (!pr.deletedAt && [PRStatus.PARTIALLY_ORDERED, PRStatus.FULLY_ORDERED].includes(pr.status)) {
+      pr.status = allOrdered
+        ? PRStatus.FULLY_ORDERED
+        : anyOrdered
+          ? PRStatus.PARTIALLY_ORDERED
+          : PRStatus.APPROVED;
+      await prRepo.save(pr);
+    }
+
+    return released;
   }
 
   // ============ GOODS RECEIPT NOTE ============
@@ -1851,17 +2034,39 @@ export class ProcurementService {
         throw new BadRequestException('GRN is not available for inspection');
       }
 
-      // Update items with inspection results
+      // Update items with inspection results.
+      //
+      // createGoodsReceipt caps quantityReceived at the PO's outstanding
+      // quantity, but nothing capped what inspection then *accepted*, and
+      // postGoodsReceipt posts quantityAccepted (not quantityReceived) to
+      // stock. So an inspector could accept 500 on a line that received 100
+      // and walk 400 units past the PO ceiling and into the ledger, with the
+      // GRN's totalValue — computed at creation from quantityReceived —
+      // still reading the honest figure.
       for (const inspected of dto.inspectedItems) {
         const item = grn.items.find((i) => i.itemId === inspected.itemId);
-        if (item) {
-          item.quantityAccepted = inspected.quantityAccepted;
-          item.quantityRejected = inspected.quantityRejected;
-          if (inspected.rejectionReason) {
-            item.rejectionReason = inspected.rejectionReason;
-          }
-          await grnItemRepo.save(item);
+        if (!item) {
+          throw new BadRequestException(
+            `Inspected item ${inspected.itemId} is not on GRN ${grn.grnNumber}`,
+          );
         }
+
+        const received = Number(item.quantityReceived) || 0;
+        const accepted = Number(inspected.quantityAccepted) || 0;
+        const rejected = Number(inspected.quantityRejected) || 0;
+
+        if (accepted + rejected > received) {
+          throw new BadRequestException(
+            `Cannot account for ${accepted + rejected} units of "${item.itemName}" — only ${received} were received (accepted: ${accepted}, rejected: ${rejected}).`,
+          );
+        }
+
+        item.quantityAccepted = accepted;
+        item.quantityRejected = rejected;
+        if (inspected.rejectionReason) {
+          item.rejectionReason = inspected.rejectionReason;
+        }
+        await grnItemRepo.save(item);
       }
 
       grn.status = GRNStatus.INSPECTED;
@@ -1959,7 +2164,7 @@ export class ProcurementService {
 
   async postGoodsReceipt(id: string, userId: string, tenantId?: string): Promise<GoodsReceiptNote> {
     const tid = requireTenantId(tenantId);
-    return this.dataSource.transaction(async (manager) => {
+    const posted = await this.dataSource.transaction(async (manager) => {
       const grnRepo = manager.getRepository(GoodsReceiptNote);
       const grnItemRepo = manager.getRepository(GoodsReceiptItem);
       const stockLedgerRepo = manager.getRepository(StockLedger);
@@ -2089,37 +2294,69 @@ export class ProcurementService {
 
       const saved = await grnRepo.save(grn);
 
-      // Auto-post journal entry: Inventory DR, AP CR (outside transaction is fine — non-critical)
-      this.financeService
-        .autoPostGRNJournal(
-          {
-            facilityId: grn.facilityId,
-            grnNumber: grn.grnNumber,
-            totalValue: Number(grn.totalValue) || 0,
-            supplierId: grn.supplierId,
-            userId,
-          },
-          tenantId,
-        )
-        .catch((err) =>
-          this.logger.warn(`GL auto-post failed for GRN ${grn.grnNumber}: ${err.message}`),
-        );
-
-      // Try auto-completing the originating PR (best effort)
+      let originatingPRId: string | null = null;
       if (grn.purchaseOrderId) {
         const po = await poRepo.findOne({
           where: { id: grn.purchaseOrderId, tenantId: tid },
           select: ['id', 'purchaseRequestId'],
         });
-        if (po?.purchaseRequestId) {
-          this.tryAutoCompletePR(po.purchaseRequestId, tenantId).catch((err) =>
-            this.logger.warn(`Auto-complete PR failed: ${err.message}`),
-          );
-        }
+        originatingPRId = po?.purchaseRequestId || null;
       }
 
-      return saved;
+      return { saved, originatingPRId };
     });
+
+    const { saved, originatingPRId } = posted;
+
+    // Both of the follow-ups below used to be fired inside the transaction
+    // without an await, on their own connections.
+    //
+    // The GL journal therefore committed independently of the receipt it
+    // recorded: roll the posting back and the ledger still carried the stock
+    // as received and the supplier as owed.
+    //
+    // The PR auto-complete was worse — it read the PO status this very
+    // transaction had just set to FULLY_RECEIVED, but from outside it, so it
+    // saw the pre-commit value, concluded the POs were still open, and
+    // returned false. It could only ever succeed by winning a race against
+    // the commit it depended on, which is why requisitions sat at
+    // FULLY_ORDERED after their goods had arrived.
+    this.financeService
+      .autoPostGRNJournal(
+        {
+          facilityId: saved.facilityId,
+          grnNumber: saved.grnNumber,
+          totalValue: Number(saved.totalValue) || 0,
+          supplierId: saved.supplierId,
+          userId,
+        },
+        tenantId,
+      )
+      .catch((err) =>
+        this.logger.warn(`GL auto-post failed for GRN ${saved.grnNumber}: ${err.message}`),
+      );
+
+    // Turn the PO's encumbrance into actual spend now the goods are in.
+    // Without this the reservation stayed live for the rest of the fiscal
+    // year and the department was charged twice over: once as reserved,
+    // once as the posted expense. A no-op when the PO was never encumbered.
+    if (saved.purchaseOrderId) {
+      await this.budgetService
+        .markReservationSpent(saved.purchaseOrderId, tenantId)
+        .catch((err) =>
+          this.logger.warn(
+            `Failed to mark budget spent for GRN ${saved.grnNumber}: ${err?.message || err}`,
+          ),
+        );
+    }
+
+    if (originatingPRId) {
+      await this.tryAutoCompletePR(originatingPRId, tenantId).catch((err) =>
+        this.logger.warn(`Auto-complete PR failed: ${err.message}`),
+      );
+    }
+
+    return saved;
   }
 
   /**
