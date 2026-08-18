@@ -494,6 +494,12 @@ export class LabService {
     return { data, total, limit: take, offset: skip };
   }
 
+  /**
+   * txn-connection-ok: called after a write from inside amendResult's
+   * transaction, but it only re-reads the sample and its relations — rows
+   * that transaction never touches — so its own connection sees the same
+   * committed state the transaction would.
+   */
   async getSample(id: string, tenantId?: string): Promise<LabSample> {
     const tid = requireTenantId(tenantId);
     const where: any = { id, tenantId: tid };

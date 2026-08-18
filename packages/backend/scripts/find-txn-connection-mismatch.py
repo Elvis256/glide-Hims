@@ -51,6 +51,7 @@ def block(text, i, open_c='{', close_c='}'):
     return text[i:], i
 
 rows = []
+waived = []
 for f in files:
     text = f.read_text()
     methods = {}
@@ -70,11 +71,25 @@ for f in files:
             args, _ = block(cb, call.end()-1, '(', ')')     # full balanced args
             if re.search(r'\bmanager\b', args): continue     # manager threaded through
             cbody = methods[callee]
-            if not re.search(r'this\.[A-Za-z0-9_]*[Rr]epo(sitory)?\.|this\.dataSource\.', cbody): continue
+            # No trailing dot required: the manager-aware helpers assign the
+            # repo to a local first (`const repo = manager ? ... : this.fooRepo`),
+            # and requiring `.` made every one of them invisible here.
+            if not re.search(r'this\.[A-Za-z0-9_]*[Rr]epo(sitory)?\b|this\.dataSource\.', cbody): continue
             if call.start() < first_write: continue          # reads committed state, fine
             writes = bool(re.search(r'\.(save|update|insert|delete|increment)\(', cbody))
             opens = 'dataSource.transaction' in cbody
             takes_mgr = 'manager' in methods[callee][:0] or bool(re.search(r'manager\?:\s*EntityManager', text[text.find(f'{callee}('):text.find(f'{callee}(')+400]))
+            # Reviewed-and-deliberate sites opt out with a `txn-connection-ok:`
+            # comment in the 6 lines above the helper's declaration, so a
+            # clean run means zero and any new hit is genuinely new.
+            # Anchor on the declaration, not the first mention: a call site
+            # earlier in the file would otherwise be searched for the waiver.
+            dm = re.search(r'(?:private|public|protected|async)\s+(?:async\s+)?' + re.escape(callee) + r'\s*\(', text)
+            decl = dm.start() if dm else text.find(f'{callee}(')
+            head = text[max(0, decl - 500):decl]
+            if 'txn-connection-ok' in head:
+                waived.append((str(f).replace('modules/',''), callee))
+                continue
             rows.append((str(f).replace('modules/',''), callee, writes, opens, takes_mgr))
 
 seen=set()
@@ -87,3 +102,5 @@ for f,callee,writes,opens,takes in sorted(rows):
     note = ' (helper accepts a manager — just not given one)' if takes else ''
     print(f"  {tag:14} {f:44} -> {callee}(){note}")
 print(f"\n{len(seen)} sites")
+if waived:
+    print(f"\n({len(set(waived))} reviewed sites waived via txn-connection-ok)")

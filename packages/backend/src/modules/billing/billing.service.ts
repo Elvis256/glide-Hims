@@ -1912,7 +1912,7 @@ export class BillingService {
     }
 
     // P1: Wrap in transaction with pessimistic lock to prevent race with recordPayment()
-    return this.dataSource.transaction(async (manager) => {
+    const cancelled = await this.dataSource.transaction(async (manager) => {
       const invoice = await manager.findOne(Invoice, {
         where: { id, tenantId: requireTenantId(tenantId) },
         lock: { mode: 'pessimistic_write' },
@@ -1972,15 +1972,6 @@ export class BillingService {
 
       const saved = await manager.save(Invoice, invoice);
 
-      // Enhancement B: Reverse consumable inventory deductions for cancelled invoice
-      await this.autoReverseServiceConsumables(invoice, userId || 'system', tenantId).catch(
-        (err) => {
-          this.logger.warn(
-            `Auto-reverse consumables failed for cancelled ${invoice.invoiceNumber}: ${err?.message || err}`,
-          );
-        },
-      );
-
       // Post GL reversal: CR Accounts Receivable, DR Revenue (reverses the original posting)
       if (invoice.encounter?.facilityId && Number(invoice.totalAmount) > 0) {
         this.financeService
@@ -2029,6 +2020,24 @@ export class BillingService {
 
       return saved;
     });
+
+    // Enhancement B: put the consumables back, AFTER the cancellation commits.
+    //
+    // The reversal goes through InventoryService on its own connection, so
+    // from inside the transaction the stock movement committed independently:
+    // if the cancellation then rolled back, the consumables had been returned
+    // to the shelf for an invoice that was never cancelled. Out here it only
+    // runs once the cancellation is real. Failure still does not undo the
+    // cancellation, as before.
+    await this.autoReverseServiceConsumables(cancelled, userId || 'system', tenantId).catch(
+      (err) => {
+        this.logger.warn(
+          `Auto-reverse consumables failed for cancelled ${cancelled.invoiceNumber}: ${err?.message || err}`,
+        );
+      },
+    );
+
+    return cancelled;
   }
 
   async refundInvoice(

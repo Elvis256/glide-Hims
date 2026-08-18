@@ -2072,6 +2072,12 @@ export class QueueManagementService {
    * Smart wait time: prefer actual_wait_minutes (real measured wait) over
    * service_duration_minutes (consultation time only, which underestimates).
    * Rolling 7-day average for the service point, fallback to 15 min.
+   *
+   * txn-connection-ok: called from inside createQueueEntry's transaction on
+   * its own connection. That transaction has only written Encounter rows by
+   * this point, and the new queue row is saved *after* this returns, so
+   * there is nothing uncommitted for this rolling average over other
+   * patients' historical entries to miss.
    */
   private async calculateSmartWaitTime(
     facilityId: string,
@@ -2282,6 +2288,10 @@ export class QueueManagementService {
    *
    * Returns the doctorId or null if nobody is available — in which case the
    * queue entry stays unassigned and is visible to the whole pool.
+   *
+   * txn-connection-ok: reads the doctor duty roster, which the calling
+   * queue transaction never writes, so its own connection sees the same
+   * committed state.
    */
   private async pickAvailableDoctor(
     facilityId: string,
