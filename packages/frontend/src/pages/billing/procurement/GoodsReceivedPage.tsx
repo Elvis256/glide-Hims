@@ -58,6 +58,13 @@ export default function GoodsReceivedPage() {
   const [statusFilter, setStatusFilter] = useState<GRNStatus | 'all'>('all');
   const [selectedGRN, setSelectedGRN] = useState<GoodsReceipt | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  // Inspection used to be a single button that accepted every line in full
+  // with a canned note, so a short, damaged or expired delivery could only be
+  // recorded as if it had arrived perfect — and the debit-note flow further
+  // down this page, which bills the supplier for rejected items, had nothing
+  // to work from. The dialog below lets the storekeeper record what actually
+  // turned up.
+  const [inspectingGRN, setInspectingGRN] = useState<GoodsReceipt | null>(null);
   const [expandedItems, setExpandedItems] = useState<string | null>(null);
 
   const facilityId = useFacilityId();
@@ -123,29 +130,42 @@ export default function GoodsReceivedPage() {
     },
   });
 
+  // Every one of these used to fail silently: no onError, so a rejected
+  // inspection or a posting that hit a locked stock row simply did nothing
+  // and the storekeeper clicked again.
+  const showError = (fallback: string) => (e: any) =>
+    toast.error(e?.response?.data?.message || fallback);
+
   const inspectMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: InspectGRNDto }) => 
       procurementService.goodsReceipts.inspect(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['goods-receipts'] });
+      toast.success('Inspection recorded');
+      setInspectingGRN(null);
       setSelectedGRN(null);
     },
+    onError: showError('Failed to record inspection'),
   });
 
   const approveMutation = useMutation({
     mutationFn: (id: string) => procurementService.goodsReceipts.approve(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['goods-receipts'] });
+      toast.success('GRN approved');
       setSelectedGRN(null);
     },
+    onError: showError('Failed to approve GRN'),
   });
 
   const postMutation = useMutation({
     mutationFn: (id: string) => procurementService.goodsReceipts.post(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['goods-receipts'] });
+      toast.success('GRN posted — stock updated');
       setSelectedGRN(null);
     },
+    onError: showError('Failed to post GRN'),
   });
 
   const isAnyMutationLoading = createMutation.isPending || createFromPOMutation.isPending || 
@@ -172,18 +192,6 @@ export default function GoodsReceivedPage() {
     return Math.round((totalReceived / totalExpected) * 100);
   };
 
-  const handleInspect = (grn: GoodsReceipt) => {
-    // Auto-accept all items for simple inspection
-    const inspectData: InspectGRNDto = {
-      inspectedItems: grn.items.map(item => ({
-        itemId: item.itemId,
-        quantityAccepted: item.quantityReceived,
-        quantityRejected: 0,
-      })),
-      inspectionNotes: 'Items inspected and accepted',
-    };
-    inspectMutation.mutate({ id: grn.id, data: inspectData });
-  };
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col bg-gray-50">
@@ -517,7 +525,7 @@ export default function GoodsReceivedPage() {
               <div className="pt-4 space-y-2">
                 {selectedGRN.status === 'pending_inspection' && (
                   <button 
-                    onClick={() => handleInspect(selectedGRN)}
+                    onClick={() => setInspectingGRN(selectedGRN)}
                     disabled={isAnyMutationLoading}
                     className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
                   >
@@ -574,6 +582,16 @@ export default function GoodsReceivedPage() {
         )}
       </div>
 
+      {/* Inspection */}
+      {inspectingGRN && (
+        <InspectGRNModal
+          grn={inspectingGRN}
+          isSubmitting={inspectMutation.isPending}
+          onClose={() => setInspectingGRN(null)}
+          onSubmit={(data) => inspectMutation.mutate({ id: inspectingGRN.id, data })}
+        />
+      )}
+
       {/* Create Modal */}
       {showCreateModal && (
         <CreateGRNModal
@@ -590,6 +608,251 @@ export default function GoodsReceivedPage() {
           }}
         />
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Inspection
+// ---------------------------------------------------------------------------
+
+/**
+ * Records what actually arrived, line by line.
+ *
+ * Deliveries turn up short, damaged, or too close to expiry, and the GRN
+ * schema has always carried quantityRejected and rejectionReason to say so —
+ * the page just never offered anywhere to enter them, so every delivery was
+ * inspected as perfect. Accepted quantity is what posts to stock, so this is
+ * also the last point at which a discrepancy can be caught before the ledger
+ * takes the supplier's word for it.
+ */
+interface InspectGRNModalProps {
+  grn: GoodsReceipt;
+  isSubmitting: boolean;
+  onClose: () => void;
+  onSubmit: (data: InspectGRNDto) => void;
+}
+
+export function InspectGRNModal({ grn, isSubmitting, onClose, onSubmit }: InspectGRNModalProps) {
+  const dialogRef = useDialogA11y<HTMLDivElement>({ open: true, onClose });
+
+  const [lines, setLines] = useState(() =>
+    grn.items.map((item) => ({
+      itemId: item.itemId,
+      itemName: item.itemName,
+      itemUnit: item.itemUnit,
+      batchNumber: item.batchNumber,
+      expiryDate: item.expiryDate,
+      quantityReceived: item.quantityReceived,
+      accepted: item.quantityReceived,
+      rejected: 0,
+      rejectionReason: '',
+    })),
+  );
+  const [notes, setNotes] = useState('');
+
+  const update = (itemId: string, patch: Partial<(typeof lines)[number]>) =>
+    setLines((prev) => prev.map((l) => (l.itemId === itemId ? { ...l, ...patch } : l)));
+
+  // Typing in one box implies the other: the two must account for the
+  // delivery between them, and making the storekeeper do that arithmetic
+  // twice is how lines end up not adding up. Both derive from the previous
+  // state rather than the render closure, so holding a key down cannot
+  // compute from a value that has already been superseded.
+  const setSplit = (itemId: string, value: number, edited: 'accepted' | 'rejected') =>
+    setLines((prev) =>
+      prev.map((l) => {
+        if (l.itemId !== itemId) return l;
+        const entered = Math.max(0, Math.min(Number.isFinite(value) ? value : 0, l.quantityReceived));
+        const other = l.quantityReceived - entered;
+        return edited === 'accepted'
+          ? { ...l, accepted: entered, rejected: other, rejectionReason: other > 0 ? l.rejectionReason : '' }
+          : { ...l, rejected: entered, accepted: other, rejectionReason: entered > 0 ? l.rejectionReason : '' };
+      }),
+    );
+
+  const setAccepted = (itemId: string, value: number) => setSplit(itemId, value, 'accepted');
+  const setRejected = (itemId: string, value: number) => setSplit(itemId, value, 'rejected');
+
+  const acceptAll = () =>
+    setLines((prev) =>
+      prev.map((l) => ({ ...l, accepted: l.quantityReceived, rejected: 0, rejectionReason: '' })),
+    );
+
+  const totalRejected = lines.reduce((sum, l) => sum + l.rejected, 0);
+  const missingReason = lines.filter((l) => l.rejected > 0 && !l.rejectionReason.trim());
+  const overAccounted = lines.filter((l) => l.accepted + l.rejected > l.quantityReceived);
+  const canSubmit = !isSubmitting && missingReason.length === 0 && overAccounted.length === 0;
+
+  const submit = () => {
+    if (!canSubmit) return;
+    onSubmit({
+      inspectedItems: lines.map((l) => ({
+        itemId: l.itemId,
+        quantityAccepted: l.accepted,
+        quantityRejected: l.rejected,
+        rejectionReason: l.rejected > 0 ? l.rejectionReason.trim() : undefined,
+      })),
+      inspectionNotes: notes.trim() || undefined,
+    });
+  };
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="inspect-grn-title"
+      ref={dialogRef}
+    >
+      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] flex flex-col">
+        <div className="px-5 py-3 border-b flex items-center justify-between flex-shrink-0">
+          <div>
+            <h3 id="inspect-grn-title" className="font-semibold text-gray-900">
+              Inspect {grn.grnNumber}
+            </h3>
+            <p className="text-sm text-gray-500">
+              {grn.supplier?.name || 'Supplier'} · {lines.length} line
+              {lines.length === 1 ? '' : 's'}
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close inspection"
+            className="text-gray-400 hover:text-gray-600"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="px-5 py-3 border-b bg-gray-50 flex items-center justify-between flex-shrink-0">
+          <p className="text-sm text-gray-600">
+            Accepted quantities are what post to stock. Reject anything short, damaged or
+            near expiry.
+          </p>
+          <button
+            type="button"
+            onClick={acceptAll}
+            className="text-sm px-3 py-1.5 border border-gray-300 rounded-lg hover:bg-white whitespace-nowrap"
+          >
+            Accept all in full
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5 space-y-3">
+          {lines.map((line) => (
+            <div key={line.itemId} className="border rounded-lg p-3">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="font-medium text-gray-900 truncate">{line.itemName}</p>
+                  <p className="text-xs text-gray-500">
+                    Received {line.quantityReceived}
+                    {line.itemUnit ? ` ${line.itemUnit}` : ''}
+                    {line.batchNumber ? ` · batch ${line.batchNumber}` : ''}
+                    {line.expiryDate
+                      ? ` · expires ${new Date(line.expiryDate).toLocaleDateString()}`
+                      : ''}
+                  </p>
+                </div>
+                <div className="flex items-end gap-3 flex-shrink-0">
+                  <label className="text-xs text-gray-600">
+                    <span className="block mb-1">Accepted</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={line.quantityReceived}
+                      value={line.accepted}
+                      onChange={(e) => setAccepted(line.itemId, Number(e.target.value))}
+                      className="w-24 px-2 py-1.5 border rounded-lg text-right font-mono"
+                    />
+                  </label>
+                  <label className="text-xs text-gray-600">
+                    <span className="block mb-1">Rejected</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={line.quantityReceived}
+                      value={line.rejected}
+                      onChange={(e) => setRejected(line.itemId, Number(e.target.value))}
+                      className={`w-24 px-2 py-1.5 border rounded-lg text-right font-mono ${
+                        line.rejected > 0 ? 'border-red-300 bg-red-50 text-red-700' : ''
+                      }`}
+                    />
+                  </label>
+                </div>
+              </div>
+
+              {line.rejected > 0 && (
+                <div className="mt-3">
+                  <label className="block text-xs text-gray-600 mb-1">
+                    Why were {line.rejected} rejected?{' '}
+                    <span className="text-red-600">required</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={line.rejectionReason}
+                    onChange={(e) => update(line.itemId, { rejectionReason: e.target.value })}
+                    placeholder="e.g. damaged in transit, expires within 3 months, wrong strength"
+                    className="w-full px-3 py-1.5 border rounded-lg text-sm"
+                  />
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div className="border-t p-5 space-y-3 flex-shrink-0">
+          <div>
+            <label htmlFor="inspection-notes" className="block text-sm text-gray-700 mb-1">
+              Inspection notes <span className="text-gray-400">(optional)</span>
+            </label>
+            <textarea
+              id="inspection-notes"
+              rows={2}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Anything the approver should know about this delivery"
+              className="w-full px-3 py-2 border rounded-lg text-sm"
+            />
+          </div>
+
+          {totalRejected > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
+              {totalRejected} unit{totalRejected === 1 ? '' : 's'} will be rejected and will not
+              enter stock. You can raise a debit note for them once this GRN is posted.
+            </div>
+          )}
+
+          {missingReason.length > 0 && (
+            <p className="text-sm text-red-600">
+              Give a reason for every rejected line before recording the inspection.
+            </p>
+          )}
+
+          <div className="flex gap-2 justify-end">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={submit}
+              disabled={!canSubmit}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+            >
+              {isSubmitting ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <ClipboardCheck className="w-4 h-4" />
+              )}
+              Record inspection
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

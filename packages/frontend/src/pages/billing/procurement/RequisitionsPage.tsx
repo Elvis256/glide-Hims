@@ -119,6 +119,7 @@ export default function RequisitionsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<RequisitionStatus | 'all'>('all');
   const [selectedRequisition, setSelectedRequisition] = useState<PurchaseRequest | null>(null);
+  const [rejectingRequisition, setRejectingRequisition] = useState<PurchaseRequest | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [viewingId, setViewingId] = useState<string | null>(null);
@@ -252,13 +253,23 @@ export default function RequisitionsPage() {
     enabled: !!detailId,
   });
 
+  // None of these reported failure, and all three refuse for reasons the
+  // approver needs to read: a requester cannot approve their own requisition,
+  // a role that is not next in the approval chain cannot approve at all, and
+  // an empty draft cannot be submitted. Silence made every one of those look
+  // like a dead button.
+  const showError = (fallback: string) => (err: any) =>
+    toast.error(err?.response?.data?.message || fallback);
+
   // Submit mutation
   const submitMutation = useMutation({
     mutationFn: (id: string) => api.put(`/procurement/purchase-requests/${id}/submit`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['purchase-requests'] });
+      toast.success('Requisition submitted for approval');
       setSelectedRequisition(null);
     },
+    onError: showError('Failed to submit requisition'),
   });
 
   // Approve mutation
@@ -266,17 +277,28 @@ export default function RequisitionsPage() {
     mutationFn: (id: string) => api.put(`/procurement/purchase-requests/${id}/approve`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['purchase-requests'] });
+      toast.success('Requisition approved');
       setSelectedRequisition(null);
     },
+    onError: showError('Failed to approve requisition'),
   });
 
-  // Reject mutation
+  // Reject mutation.
+  //
+  // This sent no body at all, while the endpoint requires a rejectionReason —
+  // so with the global whitelisting ValidationPipe every rejection came back
+  // 400 and, with no onError, the button silently did nothing. Rejecting a
+  // requisition was impossible from this screen.
   const rejectMutation = useMutation({
-    mutationFn: (id: string) => api.put(`/procurement/purchase-requests/${id}/reject`),
+    mutationFn: ({ id, rejectionReason }: { id: string; rejectionReason: string }) =>
+      api.put(`/procurement/purchase-requests/${id}/reject`, { rejectionReason }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['purchase-requests'] });
+      toast.success('Requisition rejected');
+      setRejectingRequisition(null);
       setSelectedRequisition(null);
     },
+    onError: showError('Failed to reject requisition'),
   });
 
   // Convert approved requisition → RFQ
@@ -716,7 +738,7 @@ export default function RequisitionsPage() {
                       Approve
                     </button>
                     <button
-                      onClick={() => rejectMutation.mutate(selectedRequisition.id)}
+                      onClick={() => setRejectingRequisition(selectedRequisition)}
                       disabled={rejectMutation.isPending}
                       className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
                     >
@@ -1166,6 +1188,100 @@ export default function RequisitionsPage() {
           </div>
         </div>
       )}
+
+      {rejectingRequisition && (
+        <RejectRequisitionModal
+          requisition={rejectingRequisition}
+          isSubmitting={rejectMutation.isPending}
+          onClose={() => setRejectingRequisition(null)}
+          onConfirm={(rejectionReason) =>
+            rejectMutation.mutate({ id: rejectingRequisition.id, rejectionReason })
+          }
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Rejection needs a reason — the endpoint requires one, and the department
+ * that raised the requisition has to be told something more useful than that
+ * it was refused.
+ */
+export function RejectRequisitionModal({
+  requisition,
+  isSubmitting,
+  onClose,
+  onConfirm,
+}: {
+  requisition: PurchaseRequest;
+  isSubmitting: boolean;
+  onClose: () => void;
+  onConfirm: (reason: string) => void;
+}) {
+  const [reason, setReason] = useState('');
+  const dialogRef = useDialogA11y<HTMLDivElement>({ open: true, onClose });
+  const canSubmit = reason.trim().length >= 3 && !isSubmitting;
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="reject-pr-title"
+      ref={dialogRef}
+    >
+      <div className="bg-white rounded-lg shadow-xl max-w-lg w-full">
+        <div className="px-5 py-3 border-b">
+          <h3 id="reject-pr-title" className="font-semibold text-gray-900">
+            Reject {requisition.requestNumber}?
+          </h3>
+          <p className="text-sm text-gray-500">
+            {requisition.department || 'Department'} · raised by{' '}
+            {requisition.requestedBy || 'unknown'}
+          </p>
+        </div>
+
+        <div className="p-5">
+          <label htmlFor="reject-reason" className="block text-sm text-gray-700 mb-1">
+            Reason for rejection <span className="text-red-600">required</span>
+          </label>
+          <textarea
+            id="reject-reason"
+            rows={3}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="e.g. not in this quarter's budget, order from existing stock first, specify the strength required"
+            className="w-full px-3 py-2 border rounded-lg text-sm"
+          />
+          <p className="mt-2 text-xs text-gray-500">
+            The requesting department sees this, so say what would need to change.
+          </p>
+        </div>
+
+        <div className="px-5 py-3 border-t flex gap-2 justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+          >
+            Go back
+          </button>
+          <button
+            type="button"
+            onClick={() => canSubmit && onConfirm(reason.trim())}
+            disabled={!canSubmit}
+            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 flex items-center gap-2"
+          >
+            {isSubmitting ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <XCircle className="w-4 h-4" />
+            )}
+            Reject requisition
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
