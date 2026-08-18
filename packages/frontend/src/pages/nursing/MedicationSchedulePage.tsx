@@ -34,7 +34,13 @@ import {
   PauseCircle,
   Ban,
 } from 'lucide-react';
-import { ipdService, type MedicationAdministration, type Ward, type Admission, type AdministerMedicationDto } from '../../services/ipd';
+import {
+  ipdService,
+  type MedicationAdministration,
+  type Ward,
+  type Admission,
+  type AdministerMedicationDto,
+} from '../../services/ipd';
 import { allergiesService } from '../../services/allergies';
 import PermissionGate, { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
@@ -56,7 +62,7 @@ interface ScheduledMed {
   route: string;
   frequency?: string;
   scheduledTime: string;
-  status: 'scheduled' | 'given' | 'missed' | 'held' | 'refused';
+  status: 'scheduled' | 'administered' | 'missed' | 'held' | 'refused';
   priority: 'routine' | 'urgent' | 'stat';
   prescribedBy?: string;
   startDate?: string;
@@ -77,7 +83,18 @@ interface ScheduledMed {
 type ViewMode = 'patient' | 'ward' | 'time';
 type QuickFilter = 'all' | 'due-now' | 'overdue' | 'iv' | 'controlled' | 'prn';
 
-const TIME_SLOTS = ['06:00', '08:00', '10:00', '12:00', '14:00', '16:00', '18:00', '20:00', '22:00', '00:00'];
+const TIME_SLOTS = [
+  '06:00',
+  '08:00',
+  '10:00',
+  '12:00',
+  '14:00',
+  '16:00',
+  '18:00',
+  '20:00',
+  '22:00',
+  '00:00',
+];
 const TIME_SLOT_LABELS = ['6AM', '8AM', '10AM', '12PM', '2PM', '4PM', '6PM', '8PM', '10PM', '12AM'];
 
 // Auto-refresh interval in milliseconds
@@ -113,7 +130,7 @@ const getTimeSlotForTime = (scheduledTime: string): string => {
   const hours = date.getHours();
   const mins = date.getMinutes();
   const totalMins = hours * 60 + mins;
-  
+
   // Find closest time slot
   for (let i = 0; i < TIME_SLOTS.length; i++) {
     const [slotHours, slotMins] = TIME_SLOTS[i].split(':').map(Number);
@@ -130,7 +147,7 @@ export default function MedicationSchedulePage() {
   const queryClient = useQueryClient();
   const { hasAnyPermission } = usePermissions();
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  
+
   // View mode and filters
   const [viewMode, setViewMode] = useState<ViewMode>('ward');
   const [quickFilter, setQuickFilter] = useState<QuickFilter>('all');
@@ -138,7 +155,7 @@ export default function MedicationSchedulePage() {
   const [selectedPatient, setSelectedPatient] = useState<string | null>(null);
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  
+
   // UI state
   const [selectedMed, setSelectedMed] = useState<ScheduledMed | null>(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
@@ -163,7 +180,11 @@ export default function MedicationSchedulePage() {
   });
 
   // Fetch current admissions with auto-refresh
-  const { data: admissionsData, isLoading: admissionsLoading, refetch: refetchAdmissions } = useQuery({
+  const {
+    data: admissionsData,
+    isLoading: admissionsLoading,
+    refetch: refetchAdmissions,
+  } = useQuery({
     queryKey: ['admissions-active'],
     queryFn: () => ipdService.admissions.list({ status: 'admitted', limit: 100 }),
     refetchInterval: AUTO_REFRESH_INTERVAL,
@@ -171,7 +192,11 @@ export default function MedicationSchedulePage() {
 
   // Fetch medication schedules for all active admissions
   const today = new Date().toISOString().split('T')[0];
-  const { data: medicationsMap = new Map(), isLoading: medsLoading, refetch: refetchMeds } = useQuery({
+  const {
+    data: medicationsMap = new Map(),
+    isLoading: medsLoading,
+    refetch: refetchMeds,
+  } = useQuery({
     queryKey: ['medications-today', today],
     queryFn: async () => {
       const admissions = asList(admissionsData);
@@ -184,7 +209,7 @@ export default function MedicationSchedulePage() {
           } catch {
             map.set(admission.id, []);
           }
-        })
+        }),
       );
       return map;
     },
@@ -194,20 +219,29 @@ export default function MedicationSchedulePage() {
 
   // Fetch allergies for all admitted patients
   const { data: allergiesMap = new Map() } = useQuery({
-    queryKey: ['patient-allergies-map', asList(admissionsData).map(a => a.patientId).sort().join(',')],
+    queryKey: [
+      'patient-allergies-map',
+      asList(admissionsData)
+        .map((a) => a.patientId)
+        .sort()
+        .join(','),
+    ],
     queryFn: async () => {
       const admissions = asList(admissionsData);
-      const patientIds = [...new Set(admissions.map(a => a.patientId).filter(Boolean))];
+      const patientIds = [...new Set(admissions.map((a) => a.patientId).filter(Boolean))];
       const map = new Map<string, string[]>();
       await Promise.all(
         patientIds.map(async (pid) => {
           try {
             const list = await allergiesService.list(pid);
-            map.set(pid, list.filter(a => a.status === 'active').map(a => a.allergen));
+            map.set(
+              pid,
+              list.filter((a) => a.status === 'active').map((a) => a.allergen),
+            );
           } catch {
             map.set(pid, []);
           }
-        })
+        }),
       );
       return map;
     },
@@ -225,8 +259,11 @@ export default function MedicationSchedulePage() {
 
   // Quick administer mutation
   const administerMutation = useMutation({
-    mutationFn: (params: { medId: string; admissionId: string; status: 'given' | 'held' | 'refused' }) =>
-      ipdService.medications.administer(params.medId, { status: params.status }),
+    mutationFn: (params: {
+      medId: string;
+      admissionId: string;
+      status: 'administered' | 'held' | 'refused';
+    }) => ipdService.medications.administer(params.medId, { status: params.status }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['medications-today'] });
       toast.success('Medication status updated');
@@ -249,8 +286,11 @@ export default function MedicationSchedulePage() {
         const routeLower = (med.route || '').toLowerCase();
         const isIV = routeLower.includes('iv') || routeLower.includes('intravenous');
         const drugLower = (med.drugName || '').toLowerCase();
-        const isControlled = drugLower.includes('morphine') || drugLower.includes('tramadol') || 
-                            drugLower.includes('fentanyl') || drugLower.includes('codeine');
+        const isControlled =
+          drugLower.includes('morphine') ||
+          drugLower.includes('tramadol') ||
+          drugLower.includes('fentanyl') ||
+          drugLower.includes('codeine');
         const isPRN = med.notes?.toLowerCase().includes('prn') || false;
 
         result.push({
@@ -277,12 +317,16 @@ export default function MedicationSchedulePage() {
           isIV,
           isPRN,
           allergies: allergiesMap.get(admission.patientId) || [],
-          administrationHistory: med.administeredTime ? [{
-            time: med.administeredTime,
-            status: med.status,
-            givenBy: med.administeredBy?.fullName,
-            notes: med.notes,
-          }] : [],
+          administrationHistory: med.administeredTime
+            ? [
+                {
+                  time: med.administeredTime,
+                  status: med.status,
+                  givenBy: med.administeredBy?.fullName,
+                  notes: med.notes,
+                },
+              ]
+            : [],
         });
       });
     });
@@ -291,16 +335,19 @@ export default function MedicationSchedulePage() {
   }, [admissionsData, medicationsMap]);
 
   // Check medication timing status
-  const getMedTimingStatus = useCallback((med: ScheduledMed): 'due-now' | 'overdue' | 'upcoming' | 'passed' => {
-    if (med.status !== 'scheduled') return 'passed';
-    
-    const scheduledDate = parseScheduledTime(med.scheduledTime);
-    const diffMins = (scheduledDate.getTime() - currentTime.getTime()) / (1000 * 60);
-    
-    if (diffMins < -30) return 'overdue';
-    if (diffMins >= -30 && diffMins <= 30) return 'due-now';
-    return 'upcoming';
-  }, [currentTime]);
+  const getMedTimingStatus = useCallback(
+    (med: ScheduledMed): 'due-now' | 'overdue' | 'upcoming' | 'passed' => {
+      if (med.status !== 'scheduled') return 'passed';
+
+      const scheduledDate = parseScheduledTime(med.scheduledTime);
+      const diffMins = (scheduledDate.getTime() - currentTime.getTime()) / (1000 * 60);
+
+      if (diffMins < -30) return 'overdue';
+      if (diffMins >= -30 && diffMins <= 30) return 'due-now';
+      return 'upcoming';
+    },
+    [currentTime],
+  );
 
   // Apply filters
   const filteredMeds = useMemo(() => {
@@ -308,62 +355,74 @@ export default function MedicationSchedulePage() {
 
     // Ward filter
     if (selectedWard !== 'all') {
-      result = result.filter(m => m.wardId === selectedWard);
+      result = result.filter((m) => m.wardId === selectedWard);
     }
 
     // Patient filter
     if (selectedPatient) {
-      result = result.filter(m => m.patientId === selectedPatient);
+      result = result.filter((m) => m.patientId === selectedPatient);
     }
 
     // Time slot filter
     if (selectedTimeSlot) {
-      result = result.filter(m => getTimeSlotForTime(m.scheduledTime) === selectedTimeSlot);
+      result = result.filter((m) => getTimeSlotForTime(m.scheduledTime) === selectedTimeSlot);
     }
 
     // Quick filters
     switch (quickFilter) {
       case 'due-now':
-        result = result.filter(m => getMedTimingStatus(m) === 'due-now');
+        result = result.filter((m) => getMedTimingStatus(m) === 'due-now');
         break;
       case 'overdue':
-        result = result.filter(m => getMedTimingStatus(m) === 'overdue');
+        result = result.filter((m) => getMedTimingStatus(m) === 'overdue');
         break;
       case 'iv':
-        result = result.filter(m => m.isIV);
+        result = result.filter((m) => m.isIV);
         break;
       case 'controlled':
-        result = result.filter(m => m.isControlled);
+        result = result.filter((m) => m.isControlled);
         break;
       case 'prn':
-        result = result.filter(m => m.isPRN);
+        result = result.filter((m) => m.isPRN);
         break;
     }
 
     // Search filter
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
-      result = result.filter(m => 
-        m.patientName.toLowerCase().includes(query) ||
-        m.medication.toLowerCase().includes(query) ||
-        m.patientMrn.toLowerCase().includes(query)
+      result = result.filter(
+        (m) =>
+          m.patientName.toLowerCase().includes(query) ||
+          m.medication.toLowerCase().includes(query) ||
+          m.patientMrn.toLowerCase().includes(query),
       );
     }
 
     return result;
-  }, [schedule, selectedWard, selectedPatient, selectedTimeSlot, quickFilter, searchQuery, getMedTimingStatus]);
+  }, [
+    schedule,
+    selectedWard,
+    selectedPatient,
+    selectedTimeSlot,
+    quickFilter,
+    searchQuery,
+    getMedTimingStatus,
+  ]);
 
   // Get unique patients for patient view
   const uniquePatients = useMemo(() => {
-    const patientMap = new Map<string, { id: string; name: string; mrn: string; ward: string; bed: string }>();
-    schedule.forEach(m => {
+    const patientMap = new Map<
+      string,
+      { id: string; name: string; mrn: string; ward: string; bed: string }
+    >();
+    schedule.forEach((m) => {
       if (!patientMap.has(m.patientId)) {
-        patientMap.set(m.patientId, { 
-          id: m.patientId, 
-          name: m.patientName, 
+        patientMap.set(m.patientId, {
+          id: m.patientId,
+          name: m.patientName,
           mrn: m.patientMrn,
           ward: m.ward,
-          bed: m.bed
+          bed: m.bed,
         });
       }
     });
@@ -372,10 +431,10 @@ export default function MedicationSchedulePage() {
 
   // Statistics
   const stats = useMemo(() => {
-    const overdue = schedule.filter(m => getMedTimingStatus(m) === 'overdue').length;
-    const dueNow = schedule.filter(m => getMedTimingStatus(m) === 'due-now').length;
-    const given = schedule.filter(m => m.status === 'given').length;
-    const pending = schedule.filter(m => m.status === 'scheduled').length;
+    const overdue = schedule.filter((m) => getMedTimingStatus(m) === 'overdue').length;
+    const dueNow = schedule.filter((m) => getMedTimingStatus(m) === 'due-now').length;
+    const given = schedule.filter((m) => m.status === 'administered').length;
+    const pending = schedule.filter((m) => m.status === 'scheduled').length;
     return { overdue, dueNow, given, pending, total: schedule.length };
   }, [schedule, getMedTimingStatus]);
 
@@ -407,15 +466,31 @@ export default function MedicationSchedulePage() {
     const sizeClass = size === 'sm' ? 'px-1.5 py-0.5 text-[10px]' : 'px-2 py-0.5 text-xs';
     switch (status) {
       case 'scheduled':
-        return <span className={`${sizeClass} font-medium rounded bg-yellow-100 text-yellow-700`}>Pending</span>;
-      case 'given':
-        return <span className={`${sizeClass} font-medium rounded bg-green-100 text-green-700`}>Given</span>;
+        return (
+          <span className={`${sizeClass} font-medium rounded bg-yellow-100 text-yellow-700`}>
+            Pending
+          </span>
+        );
+      case 'administered':
+        return (
+          <span className={`${sizeClass} font-medium rounded bg-green-100 text-green-700`}>
+            Given
+          </span>
+        );
       case 'missed':
-        return <span className={`${sizeClass} font-medium rounded bg-red-100 text-red-700`}>Missed</span>;
+        return (
+          <span className={`${sizeClass} font-medium rounded bg-red-100 text-red-700`}>Missed</span>
+        );
       case 'held':
-        return <span className={`${sizeClass} font-medium rounded bg-gray-100 text-gray-700`}>Held</span>;
+        return (
+          <span className={`${sizeClass} font-medium rounded bg-gray-100 text-gray-700`}>Held</span>
+        );
       case 'refused':
-        return <span className={`${sizeClass} font-medium rounded bg-orange-100 text-orange-700`}>Refused</span>;
+        return (
+          <span className={`${sizeClass} font-medium rounded bg-orange-100 text-orange-700`}>
+            Refused
+          </span>
+        );
       default:
         return null;
     }
@@ -425,9 +500,17 @@ export default function MedicationSchedulePage() {
     const timing = getMedTimingStatus(med);
     switch (timing) {
       case 'overdue':
-        return <span className="px-2 py-0.5 text-xs font-medium rounded bg-red-500 text-white animate-pulse">OVERDUE</span>;
+        return (
+          <span className="px-2 py-0.5 text-xs font-medium rounded bg-red-500 text-white animate-pulse">
+            OVERDUE
+          </span>
+        );
       case 'due-now':
-        return <span className="px-2 py-0.5 text-xs font-medium rounded bg-amber-500 text-white">DUE NOW</span>;
+        return (
+          <span className="px-2 py-0.5 text-xs font-medium rounded bg-amber-500 text-white">
+            DUE NOW
+          </span>
+        );
       default:
         return null;
     }
@@ -438,8 +521,8 @@ export default function MedicationSchedulePage() {
     // Group meds by patient for grid
     const gridData = useMemo(() => {
       const patientMeds = new Map<string, Map<string, ScheduledMed[]>>();
-      
-      filteredMeds.forEach(med => {
+
+      filteredMeds.forEach((med) => {
         if (!patientMeds.has(med.patientId)) {
           patientMeds.set(med.patientId, new Map());
         }
@@ -464,10 +547,11 @@ export default function MedicationSchedulePage() {
                   Patient / Bed
                 </th>
                 {TIME_SLOTS.map((slot, idx) => {
-                  const isCurrentSlot = getTimeSlotForTime(currentTime.toTimeString().slice(0, 5)) === slot;
+                  const isCurrentSlot =
+                    getTimeSlotForTime(currentTime.toTimeString().slice(0, 5)) === slot;
                   return (
-                    <th 
-                      key={slot} 
+                    <th
+                      key={slot}
                       className={`px-2 py-3 text-center text-xs font-semibold w-24 ${
                         isCurrentSlot ? 'bg-teal-100 text-teal-800' : 'text-gray-600'
                       }`}
@@ -481,55 +565,67 @@ export default function MedicationSchedulePage() {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {uniquePatients
-                .filter(p => selectedWard === 'all' || schedule.find(m => m.patientId === p.id && m.wardId === selectedWard))
-                .map(patient => (
-                <tr key={patient.id} className="hover:bg-gray-50">
-                  <td className="sticky left-0 bg-white px-4 py-3 border-r border-gray-100">
-                    <div className="font-medium text-gray-900 text-sm truncate">{patient.name}</div>
-                    <div className="text-xs text-gray-500">{patient.ward} - {patient.bed}</div>
-                  </td>
-                  {TIME_SLOTS.map(slot => {
-                    const meds = gridData.get(patient.id)?.get(slot) || [];
-                    const isCurrentSlot = getTimeSlotForTime(currentTime.toTimeString().slice(0, 5)) === slot;
-                    
-                    return (
-                      <td 
-                        key={slot} 
-                        className={`px-1 py-2 text-center align-top ${isCurrentSlot ? 'bg-teal-50' : ''}`}
-                      >
-                        <div className="flex flex-col gap-1">
-                          {meds.map(med => {
-                            const timing = getMedTimingStatus(med);
-                            let bgColor = 'bg-gray-100';
-                            let textColor = 'text-gray-700';
-                            if (med.status === 'given') {
-                              bgColor = 'bg-green-100';
-                              textColor = 'text-green-700';
-                            } else if (timing === 'overdue') {
-                              bgColor = 'bg-red-100';
-                              textColor = 'text-red-700';
-                            } else if (timing === 'due-now') {
-                              bgColor = 'bg-amber-100';
-                              textColor = 'text-amber-700';
-                            }
-                            
-                            return (
-                              <button
-                                key={med.id}
-                                onClick={() => { setSelectedMed(med); setShowDetailsModal(true); }}
-                                className={`${bgColor} ${textColor} px-1.5 py-1 rounded text-[10px] font-medium truncate w-full text-left hover:opacity-80 transition-opacity`}
-                                title={`${med.medication} - ${med.dose}`}
-                              >
-                                {med.medication.slice(0, 10)}...
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
+                .filter(
+                  (p) =>
+                    selectedWard === 'all' ||
+                    schedule.find((m) => m.patientId === p.id && m.wardId === selectedWard),
+                )
+                .map((patient) => (
+                  <tr key={patient.id} className="hover:bg-gray-50">
+                    <td className="sticky left-0 bg-white px-4 py-3 border-r border-gray-100">
+                      <div className="font-medium text-gray-900 text-sm truncate">
+                        {patient.name}
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        {patient.ward} - {patient.bed}
+                      </div>
+                    </td>
+                    {TIME_SLOTS.map((slot) => {
+                      const meds = gridData.get(patient.id)?.get(slot) || [];
+                      const isCurrentSlot =
+                        getTimeSlotForTime(currentTime.toTimeString().slice(0, 5)) === slot;
+
+                      return (
+                        <td
+                          key={slot}
+                          className={`px-1 py-2 text-center align-top ${isCurrentSlot ? 'bg-teal-50' : ''}`}
+                        >
+                          <div className="flex flex-col gap-1">
+                            {meds.map((med) => {
+                              const timing = getMedTimingStatus(med);
+                              let bgColor = 'bg-gray-100';
+                              let textColor = 'text-gray-700';
+                              if (med.status === 'administered') {
+                                bgColor = 'bg-green-100';
+                                textColor = 'text-green-700';
+                              } else if (timing === 'overdue') {
+                                bgColor = 'bg-red-100';
+                                textColor = 'text-red-700';
+                              } else if (timing === 'due-now') {
+                                bgColor = 'bg-amber-100';
+                                textColor = 'text-amber-700';
+                              }
+
+                              return (
+                                <button
+                                  key={med.id}
+                                  onClick={() => {
+                                    setSelectedMed(med);
+                                    setShowDetailsModal(true);
+                                  }}
+                                  className={`${bgColor} ${textColor} px-1.5 py-1 rounded text-[10px] font-medium truncate w-full text-left hover:opacity-80 transition-opacity`}
+                                  title={`${med.medication} - ${med.dose}`}
+                                >
+                                  {med.medication.slice(0, 10)}...
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
               {uniquePatients.length === 0 && (
                 <tr>
                   <td colSpan={TIME_SLOTS.length + 1} className="text-center py-12 text-gray-500">
@@ -547,8 +643,8 @@ export default function MedicationSchedulePage() {
 
   // Patient Card View Component
   const PatientScheduleCard = ({ patientId }: { patientId: string }) => {
-    const patientMeds = filteredMeds.filter(m => m.patientId === patientId);
-    const patient = uniquePatients.find(p => p.id === patientId);
+    const patientMeds = filteredMeds.filter((m) => m.patientId === patientId);
+    const patient = uniquePatients.find((p) => p.id === patientId);
 
     if (!patient) return null;
 
@@ -560,55 +656,74 @@ export default function MedicationSchedulePage() {
           </div>
           <div className="flex-1">
             <h3 className="font-semibold text-gray-900">{patient.name}</h3>
-            <p className="text-sm text-gray-500">{patient.mrn} • {patient.ward} - {patient.bed}</p>
+            <p className="text-sm text-gray-500">
+              {patient.mrn} • {patient.ward} - {patient.bed}
+            </p>
           </div>
         </div>
 
         <div className="space-y-3">
-          {patientMeds.length > 0 ? patientMeds.map(med => {
-            const timing = getMedTimingStatus(med);
-            let borderColor = 'border-gray-200';
-            if (med.status === 'given') borderColor = 'border-green-300';
-            else if (timing === 'overdue') borderColor = 'border-red-300';
-            else if (timing === 'due-now') borderColor = 'border-amber-300';
+          {patientMeds.length > 0 ? (
+            patientMeds.map((med) => {
+              const timing = getMedTimingStatus(med);
+              let borderColor = 'border-gray-200';
+              if (med.status === 'administered') borderColor = 'border-green-300';
+              else if (timing === 'overdue') borderColor = 'border-red-300';
+              else if (timing === 'due-now') borderColor = 'border-amber-300';
 
-            return (
-              <div 
-                key={med.id} 
-                className={`p-3 rounded-lg border-2 ${borderColor} cursor-pointer hover:shadow-md transition-shadow`}
-                onClick={() => { setSelectedMed(med); setShowDetailsModal(true); }}
-              >
-                <div className="flex items-start justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <Pill className="w-4 h-4 text-purple-600" />
-                    <span className="font-medium text-gray-900">{med.medication}</span>
+              return (
+                <div
+                  key={med.id}
+                  className={`p-3 rounded-lg border-2 ${borderColor} cursor-pointer hover:shadow-md transition-shadow`}
+                  onClick={() => {
+                    setSelectedMed(med);
+                    setShowDetailsModal(true);
+                  }}
+                >
+                  <div className="flex items-start justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <Pill className="w-4 h-4 text-purple-600" />
+                      <span className="font-medium text-gray-900">{med.medication}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {getTimingBadge(med)}
+                      {getStatusBadge(med.status, 'sm')}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1">
-                    {getTimingBadge(med)}
-                    {getStatusBadge(med.status, 'sm')}
+                  <div className="grid grid-cols-4 gap-2 text-xs text-gray-600 mb-2">
+                    <div>
+                      <span className="text-gray-400">Dose:</span> {med.dose}
+                    </div>
+                    <div>
+                      <span className="text-gray-400">Route:</span> {med.route}
+                    </div>
+                    <div>
+                      <span className="text-gray-400">Freq:</span> {med.frequency}
+                    </div>
+                    <div>
+                      <span className="text-gray-400">Due:</span> {formatTime(med.scheduledTime)}
+                    </div>
                   </div>
+                  {med.status === 'scheduled' && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        administerMutation.mutate({
+                          medId: med.id,
+                          admissionId: med.admissionId,
+                          status: 'administered',
+                        });
+                      }}
+                      disabled={administerMutation.isPending}
+                      className="w-full mt-2 px-3 py-1.5 bg-teal-600 text-white text-sm rounded-lg hover:bg-teal-700 disabled:opacity-50"
+                    >
+                      {administerMutation.isPending ? 'Processing...' : 'Give Now'}
+                    </button>
+                  )}
                 </div>
-                <div className="grid grid-cols-4 gap-2 text-xs text-gray-600 mb-2">
-                  <div><span className="text-gray-400">Dose:</span> {med.dose}</div>
-                  <div><span className="text-gray-400">Route:</span> {med.route}</div>
-                  <div><span className="text-gray-400">Freq:</span> {med.frequency}</div>
-                  <div><span className="text-gray-400">Due:</span> {formatTime(med.scheduledTime)}</div>
-                </div>
-                {med.status === 'scheduled' && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      administerMutation.mutate({ medId: med.id, admissionId: med.admissionId, status: 'given' });
-                    }}
-                    disabled={administerMutation.isPending}
-                    className="w-full mt-2 px-3 py-1.5 bg-teal-600 text-white text-sm rounded-lg hover:bg-teal-700 disabled:opacity-50"
-                  >
-                    {administerMutation.isPending ? 'Processing...' : 'Give Now'}
-                  </button>
-                )}
-              </div>
-            );
-          }) : (
+              );
+            })
+          ) : (
             <p className="text-center text-gray-500 py-4">No medications for this patient</p>
           )}
         </div>
@@ -620,36 +735,47 @@ export default function MedicationSchedulePage() {
   const TimeView = () => (
     <div className="space-y-4">
       {TIME_SLOTS.map((slot, idx) => {
-        const slotMeds = filteredMeds.filter(m => getTimeSlotForTime(m.scheduledTime) === slot);
+        const slotMeds = filteredMeds.filter((m) => getTimeSlotForTime(m.scheduledTime) === slot);
         const isCurrentSlot = getTimeSlotForTime(currentTime.toTimeString().slice(0, 5)) === slot;
-        
+
         if (slotMeds.length === 0) return null;
 
         return (
-          <div 
-            key={slot} 
+          <div
+            key={slot}
             className={`bg-white rounded-xl border-2 ${isCurrentSlot ? 'border-teal-400' : 'border-gray-200'} overflow-hidden`}
           >
             <div className={`px-4 py-2 ${isCurrentSlot ? 'bg-teal-50' : 'bg-gray-50'} border-b`}>
               <div className="flex items-center justify-between">
-                <h3 className={`font-semibold ${isCurrentSlot ? 'text-teal-800' : 'text-gray-700'}`}>
+                <h3
+                  className={`font-semibold ${isCurrentSlot ? 'text-teal-800' : 'text-gray-700'}`}
+                >
                   {TIME_SLOT_LABELS[idx]} ({slot})
                 </h3>
                 <span className="text-sm text-gray-500">{slotMeds.length} medication(s)</span>
               </div>
             </div>
             <div className="divide-y divide-gray-100">
-              {slotMeds.map(med => (
-                <div 
+              {slotMeds.map((med) => (
+                <div
                   key={med.id}
-                  onClick={() => { setSelectedMed(med); setShowDetailsModal(true); }}
+                  onClick={() => {
+                    setSelectedMed(med);
+                    setShowDetailsModal(true);
+                  }}
                   className="p-4 hover:bg-gray-50 cursor-pointer flex items-center gap-4"
                 >
-                  <div className={`w-2 h-12 rounded-full ${
-                    med.status === 'given' ? 'bg-green-500' :
-                    getMedTimingStatus(med) === 'overdue' ? 'bg-red-500' :
-                    getMedTimingStatus(med) === 'due-now' ? 'bg-amber-500' : 'bg-gray-300'
-                  }`} />
+                  <div
+                    className={`w-2 h-12 rounded-full ${
+                      med.status === 'administered'
+                        ? 'bg-green-500'
+                        : getMedTimingStatus(med) === 'overdue'
+                          ? 'bg-red-500'
+                          : getMedTimingStatus(med) === 'due-now'
+                            ? 'bg-amber-500'
+                            : 'bg-gray-300'
+                    }`}
+                  />
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="font-medium text-gray-900">{med.medication}</span>
@@ -659,7 +785,9 @@ export default function MedicationSchedulePage() {
                     <p className="text-sm text-gray-500">
                       {med.patientName} • {med.ward} - {med.bed}
                     </p>
-                    <p className="text-xs text-gray-400">{med.dose} • {med.route}</p>
+                    <p className="text-xs text-gray-400">
+                      {med.dose} • {med.route}
+                    </p>
                   </div>
                   <ChevronRight className="w-5 h-5 text-gray-400" />
                 </div>
@@ -671,12 +799,14 @@ export default function MedicationSchedulePage() {
     </div>
   );
 
-  // Patient List View Component  
+  // Patient List View Component
   const PatientListView = () => (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-      {uniquePatients.length > 0 ? uniquePatients.map(patient => (
-        <PatientScheduleCard key={patient.id} patientId={patient.id} />
-      )) : (
+      {uniquePatients.length > 0 ? (
+        uniquePatients.map((patient) => (
+          <PatientScheduleCard key={patient.id} patientId={patient.id} />
+        ))
+      ) : (
         <div className="col-span-2 text-center py-12 text-gray-500">
           <User className="w-12 h-12 mx-auto mb-2 text-gray-300" />
           <p>No patients with scheduled medications</p>
@@ -708,7 +838,10 @@ export default function MedicationSchedulePage() {
                 )}
               </div>
             </div>
-            <button onClick={() => setShowDetailsModal(false)} className="p-2 hover:bg-gray-100 rounded-lg">
+            <button
+              onClick={() => setShowDetailsModal(false)}
+              className="p-2 hover:bg-gray-100 rounded-lg"
+            >
               <X className="w-5 h-5" />
             </button>
           </div>
@@ -730,13 +863,21 @@ export default function MedicationSchedulePage() {
 
             {/* Timing Status */}
             {timing !== 'passed' && timing !== 'upcoming' && (
-              <div className={`p-3 rounded-lg border ${
-                timing === 'overdue' ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200'
-              }`}>
+              <div
+                className={`p-3 rounded-lg border ${
+                  timing === 'overdue' ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200'
+                }`}
+              >
                 <div className="flex items-center gap-2">
-                  <Clock className={`w-5 h-5 ${timing === 'overdue' ? 'text-red-600' : 'text-amber-600'}`} />
-                  <span className={`font-medium ${timing === 'overdue' ? 'text-red-700' : 'text-amber-700'}`}>
-                    {timing === 'overdue' ? 'This medication is overdue!' : 'This medication is due now'}
+                  <Clock
+                    className={`w-5 h-5 ${timing === 'overdue' ? 'text-red-600' : 'text-amber-600'}`}
+                  />
+                  <span
+                    className={`font-medium ${timing === 'overdue' ? 'text-red-700' : 'text-amber-700'}`}
+                  >
+                    {timing === 'overdue'
+                      ? 'This medication is overdue!'
+                      : 'This medication is due now'}
                   </span>
                 </div>
               </div>
@@ -749,10 +890,18 @@ export default function MedicationSchedulePage() {
                 <span className="font-medium text-gray-900">Patient Information</span>
               </div>
               <div className="grid grid-cols-2 gap-2 text-sm">
-                <div><span className="text-gray-500">Name:</span> {selectedMed.patientName}</div>
-                <div><span className="text-gray-500">MRN:</span> {selectedMed.patientMrn}</div>
-                <div><span className="text-gray-500">Ward:</span> {selectedMed.ward}</div>
-                <div><span className="text-gray-500">Bed:</span> {selectedMed.bed}</div>
+                <div>
+                  <span className="text-gray-500">Name:</span> {selectedMed.patientName}
+                </div>
+                <div>
+                  <span className="text-gray-500">MRN:</span> {selectedMed.patientMrn}
+                </div>
+                <div>
+                  <span className="text-gray-500">Ward:</span> {selectedMed.ward}
+                </div>
+                <div>
+                  <span className="text-gray-500">Bed:</span> {selectedMed.bed}
+                </div>
               </div>
             </div>
 
@@ -768,7 +917,9 @@ export default function MedicationSchedulePage() {
               </div>
               <div className="p-3 bg-gray-50 rounded-lg">
                 <p className="text-xs text-gray-500 mb-1">Frequency</p>
-                <p className="font-medium text-gray-900">{selectedMed.frequency || 'As scheduled'}</p>
+                <p className="font-medium text-gray-900">
+                  {selectedMed.frequency || 'As scheduled'}
+                </p>
               </div>
               <div className="p-3 bg-gray-50 rounded-lg">
                 <p className="text-xs text-gray-500 mb-1">Scheduled Time</p>
@@ -783,10 +934,24 @@ export default function MedicationSchedulePage() {
                 <span className="font-medium text-blue-900">Prescription Details</span>
               </div>
               <div className="grid grid-cols-2 gap-2 text-sm">
-                <div><span className="text-blue-600">Prescribed by:</span> {selectedMed.prescribedBy || 'N/A'}</div>
-                <div><span className="text-blue-600">Start Date:</span> {selectedMed.startDate ? new Date(selectedMed.startDate).toLocaleDateString() : 'N/A'}</div>
-                <div><span className="text-blue-600">Duration:</span> {selectedMed.duration || 'Ongoing'}</div>
-                <div><span className="text-blue-600">Status:</span> {getStatusBadge(selectedMed.status)}</div>
+                <div>
+                  <span className="text-blue-600">Prescribed by:</span>{' '}
+                  {selectedMed.prescribedBy || 'N/A'}
+                </div>
+                <div>
+                  <span className="text-blue-600">Start Date:</span>{' '}
+                  {selectedMed.startDate
+                    ? new Date(selectedMed.startDate).toLocaleDateString()
+                    : 'N/A'}
+                </div>
+                <div>
+                  <span className="text-blue-600">Duration:</span>{' '}
+                  {selectedMed.duration || 'Ongoing'}
+                </div>
+                <div>
+                  <span className="text-blue-600">Status:</span>{' '}
+                  {getStatusBadge(selectedMed.status)}
+                </div>
               </div>
             </div>
 
@@ -829,12 +994,19 @@ export default function MedicationSchedulePage() {
                 </div>
                 <div className="space-y-2">
                   {selectedMed.administrationHistory.map((history, idx) => (
-                    <div key={idx} className="text-sm flex items-center justify-between p-2 bg-white rounded">
+                    <div
+                      key={idx}
+                      className="text-sm flex items-center justify-between p-2 bg-white rounded"
+                    >
                       <div>
-                        <span className="text-gray-500">{new Date(history.time).toLocaleString()}</span>
+                        <span className="text-gray-500">
+                          {new Date(history.time).toLocaleString()}
+                        </span>
                         <span className="mx-2">•</span>
                         <span className="capitalize">{history.status}</span>
-                        {history.givenBy && <span className="text-gray-400"> by {history.givenBy}</span>}
+                        {history.givenBy && (
+                          <span className="text-gray-400"> by {history.givenBy}</span>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -850,23 +1022,30 @@ export default function MedicationSchedulePage() {
               <button
                 onClick={() => {
                   setShowDetailsModal(false);
-                  navigate('/nursing/meds/administer', { 
-                    state: { 
+                  navigate('/nursing/meds/administer', {
+                    state: {
                       medication: selectedMed,
-                      nextMedication: schedule.find(m => m.id !== selectedMed.id && m.status === 'scheduled')
-                    } 
+                      nextMedication: schedule.find(
+                        (m) => m.id !== selectedMed.id && m.status === 'scheduled',
+                      ),
+                    },
                   });
                 }}
                 className="w-full px-4 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 flex items-center justify-center gap-2"
               >
-                <ShieldCheck className="w-5 h-5" />
-                5 Rights Verification
+                <ShieldCheck className="w-5 h-5" />5 Rights Verification
               </button>
-              
+
               {/* Quick Actions */}
               <div className="flex gap-3">
                 <button
-                  onClick={() => administerMutation.mutate({ medId: selectedMed.id, admissionId: selectedMed.admissionId, status: 'given' })}
+                  onClick={() =>
+                    administerMutation.mutate({
+                      medId: selectedMed.id,
+                      admissionId: selectedMed.admissionId,
+                      status: 'administered',
+                    })
+                  }
                   disabled={administerMutation.isPending}
                   className="flex-1 px-4 py-2 bg-teal-600 text-white rounded-lg font-medium hover:bg-teal-700 disabled:opacity-50 flex items-center justify-center gap-2"
                 >
@@ -874,7 +1053,13 @@ export default function MedicationSchedulePage() {
                   Quick Give
                 </button>
                 <button
-                  onClick={() => administerMutation.mutate({ medId: selectedMed.id, admissionId: selectedMed.admissionId, status: 'held' })}
+                  onClick={() =>
+                    administerMutation.mutate({
+                      medId: selectedMed.id,
+                      admissionId: selectedMed.admissionId,
+                      status: 'held',
+                    })
+                  }
                   disabled={administerMutation.isPending}
                   className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 disabled:opacity-50 flex items-center gap-2"
                 >
@@ -882,7 +1067,13 @@ export default function MedicationSchedulePage() {
                   Hold
                 </button>
                 <button
-                  onClick={() => administerMutation.mutate({ medId: selectedMed.id, admissionId: selectedMed.admissionId, status: 'refused' })}
+                  onClick={() =>
+                    administerMutation.mutate({
+                      medId: selectedMed.id,
+                      admissionId: selectedMed.admissionId,
+                      status: 'refused',
+                    })
+                  }
                   disabled={administerMutation.isPending}
                   className="px-4 py-2 bg-orange-100 text-orange-700 rounded-lg font-medium hover:bg-orange-200 disabled:opacity-50 flex items-center gap-2"
                 >
@@ -906,7 +1097,10 @@ export default function MedicationSchedulePage() {
         <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
           <div className="flex items-center justify-between p-4 border-b">
             <h2 className="font-semibold text-gray-900">Legend</h2>
-            <button onClick={() => setShowLegend(false)} className="p-2 hover:bg-gray-100 rounded-lg">
+            <button
+              onClick={() => setShowLegend(false)}
+              className="p-2 hover:bg-gray-100 rounded-lg"
+            >
               <X className="w-5 h-5" />
             </button>
           </div>
@@ -956,7 +1150,9 @@ export default function MedicationSchedulePage() {
                   <span className="text-sm">Controlled substance</span>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-700">PRN</span>
+                  <span className="px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-700">
+                    PRN
+                  </span>
                   <span className="text-sm">As needed medication</span>
                 </div>
               </div>
@@ -989,18 +1185,26 @@ export default function MedicationSchedulePage() {
               </div>
             </div>
           </div>
-          
+
           {/* Current Time Display */}
           <div className="flex items-center gap-4">
             <div className="bg-teal-50 border border-teal-200 rounded-lg px-4 py-2 text-center">
               <p className="text-2xl font-bold text-teal-700 font-mono">
-                {currentTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                {currentTime.toLocaleTimeString('en-US', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  second: '2-digit',
+                })}
               </p>
               <p className="text-xs text-teal-600">
-                {currentTime.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                {currentTime.toLocaleDateString('en-US', {
+                  weekday: 'short',
+                  month: 'short',
+                  day: 'numeric',
+                })}
               </p>
             </div>
-            
+
             {/* Action Buttons */}
             <div className="flex items-center gap-2">
               <button
@@ -1059,7 +1263,9 @@ export default function MedicationSchedulePage() {
             <button
               onClick={() => setViewMode('ward')}
               className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                viewMode === 'ward' ? 'bg-white shadow text-teal-700' : 'text-gray-600 hover:text-gray-900'
+                viewMode === 'ward'
+                  ? 'bg-white shadow text-teal-700'
+                  : 'text-gray-600 hover:text-gray-900'
               }`}
             >
               <Grid3X3 className="w-4 h-4" />
@@ -1068,7 +1274,9 @@ export default function MedicationSchedulePage() {
             <button
               onClick={() => setViewMode('patient')}
               className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                viewMode === 'patient' ? 'bg-white shadow text-teal-700' : 'text-gray-600 hover:text-gray-900'
+                viewMode === 'patient'
+                  ? 'bg-white shadow text-teal-700'
+                  : 'text-gray-600 hover:text-gray-900'
               }`}
             >
               <User className="w-4 h-4" />
@@ -1077,7 +1285,9 @@ export default function MedicationSchedulePage() {
             <button
               onClick={() => setViewMode('time')}
               className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                viewMode === 'time' ? 'bg-white shadow text-teal-700' : 'text-gray-600 hover:text-gray-900'
+                viewMode === 'time'
+                  ? 'bg-white shadow text-teal-700'
+                  : 'text-gray-600 hover:text-gray-900'
               }`}
             >
               <Clock className="w-4 h-4" />
@@ -1095,7 +1305,9 @@ export default function MedicationSchedulePage() {
             >
               <option value="all">All Wards</option>
               {wards.map((ward) => (
-                <option key={ward.id} value={ward.id}>{ward.name}</option>
+                <option key={ward.id} value={ward.id}>
+                  {ward.name}
+                </option>
               ))}
             </select>
           </div>

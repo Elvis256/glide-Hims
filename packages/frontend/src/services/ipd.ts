@@ -162,7 +162,7 @@ export interface CreateNursingNoteDto {
 }
 
 // Medication Administration Types
-export type MedicationStatus = 'scheduled' | 'given' | 'missed' | 'held' | 'refused';
+export type MedicationStatus = 'scheduled' | 'administered' | 'missed' | 'held' | 'refused';
 
 export interface MedicationAdministration {
   id: string;
