@@ -582,7 +582,7 @@ export class ProcurementService {
 
   async submitPurchaseRequest(id: string, tenantId?: string): Promise<PurchaseRequest> {
     const tid = requireTenantId(tenantId);
-    return this.dataSource.transaction(async (manager) => {
+    const result = await this.dataSource.transaction(async (manager) => {
       const prRepo = manager.getRepository(PurchaseRequest);
 
       const where: any = { id, deletedAt: IsNull() };
@@ -613,21 +613,36 @@ export class ProcurementService {
       pr.status = PRStatus.PENDING_APPROVAL;
       pr.totalEstimated = totalEstimated;
       const saved = await prRepo.save(pr);
-
-      // Phase 2B: Create approval chain (org-aware resolver if configured)
-      try {
-        await this.createApprovalChain(pr.id, 'PR', totalEstimated, pr.facilityId, tenantId, {
-          requesterId: pr.requestedById,
-          departmentId: pr.departmentId,
-          category: (pr as any).category || null,
-        });
-      } catch (error) {
-        this.logger.warn(`Failed to create approval chain for PR ${pr.id}: ${error.message}`);
-        // Don't fail PR submission if approval chain fails
-      }
-
-      return saved;
+      return { saved, totalEstimated };
     });
+
+    // Phase 2B: approval chain, raised AFTER the requisition is committed.
+    //
+    // It writes through its own connection and through ApprovalsService, so
+    // inside the transaction those rows commit independently: roll the
+    // submission back and the chain survives, pointing at a requisition that
+    // does not exist. Out here a rollback simply means no chain was created.
+    // Failure still does not fail the submission, as before.
+    try {
+      await this.createApprovalChain(
+        result.saved.id,
+        'PR',
+        result.totalEstimated,
+        result.saved.facilityId,
+        tenantId,
+        {
+          requesterId: result.saved.requestedById,
+          departmentId: result.saved.departmentId,
+          category: (result.saved as any).category || null,
+        },
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Failed to create approval chain for PR ${result.saved.id}: ${error.message}`,
+      );
+    }
+
+    return result.saved;
   }
 
   async approvePurchaseRequest(
@@ -892,7 +907,7 @@ export class ProcurementService {
     tenantId?: string,
   ): Promise<PurchaseOrder> {
     const tid = requireTenantId(tenantId);
-    return this.retryOnUniqueViolation('createPO', () =>
+    const createdPO = await this.retryOnUniqueViolation('createPO', () =>
       this.dataSource.transaction(async (manager) => {
         const facilityRepo = manager.getRepository('Facility');
         const deptRepo = manager.getRepository('Department');
@@ -1036,26 +1051,6 @@ export class ProcurementService {
 
         await poItemRepo.save(items);
 
-        // Phase 2: Create Approval Chain (org-aware resolver if configured,
-        // legacy tier ladder fallback)
-        try {
-          await this.createApprovalChain(
-            (savedPO as PurchaseOrder).id,
-            'PO',
-            totalAmount,
-            dto.facilityId,
-            tenantId,
-            {
-              requesterId: userId,
-              departmentId: dto.departmentId || null,
-              category: null,
-            },
-          );
-        } catch (error) {
-          this.logger.warn(
-            `Failed to create approval chain for PO ${orderNumber}: ${error.message}`,
-          );
-        }
 
         // Re-fetch within the active transaction so relations are loaded
         // from the same connection that just wrote the rows (otherwise a
@@ -1075,6 +1070,35 @@ export class ProcurementService {
         return fetched;
       }),
     );
+
+    // Phase 2: approval chain, raised AFTER the order is committed.
+    //
+    // It writes through its own connection and through ApprovalsService, so
+    // from inside the transaction those rows committed on their own: a
+    // rollback left a chain pointing at an order that never existed. It also
+    // sat inside retryOnUniqueViolation, so a retried order re-ran chain
+    // creation for an attempt that had been rolled back. Out here it runs
+    // once, against an order that exists.
+    try {
+      await this.createApprovalChain(
+        (createdPO as PurchaseOrder).id,
+        'PO',
+        Number((createdPO as PurchaseOrder).totalAmount || 0),
+        dto.facilityId,
+        tenantId,
+        {
+          requesterId: userId,
+          departmentId: dto.departmentId || null,
+          category: null,
+        },
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Failed to create approval chain for PO ${(createdPO as PurchaseOrder).orderNumber}: ${error.message}`,
+      );
+    }
+
+    return createdPO as PurchaseOrder;
   }
 
   async createPOFromPR(
@@ -2597,7 +2621,13 @@ export class ProcurementService {
   // ============ APPROVAL WORKFLOW (Phase 2B) ============
 
   /**
-   * Get or create approval threshold config for facility
+   * Get or create approval threshold config for facility.
+   *
+   * txn-connection-ok: intentionally runs on its own connection even when
+   * called from inside an approval transaction. The row it may create is
+   * facility configuration, not part of the approval, and should outlive a
+   * rejected or rolled-back approval. The insert race that separation opens
+   * is handled below.
    */
   private async getApprovalThreshold(
     facilityId: string,
@@ -2629,8 +2659,25 @@ export class ProcurementService {
         requireJustificationMin: 5000000,
         isActive: true,
       });
-      await this.approvalThresholdRepo.save(threshold);
-      this.logger.log(`Created default approval threshold for facility ${facilityId}`);
+      // (facilityId, tenantId) is UNIQUE, so two approvals racing on a
+      // facility that has no threshold row yet both reach here and one
+      // insert loses. Deliberately NOT joined to any caller's transaction:
+      // this is facility config, not part of the approval, and it should
+      // survive a rejected approval rather than be rolled back with it.
+      // The loser adopts the winner's row instead of failing the approval.
+      try {
+        await this.approvalThresholdRepo.save(threshold);
+        this.logger.log(`Created default approval threshold for facility ${facilityId}`);
+      } catch (e: any) {
+        const isUnique =
+          e?.code === '23505' ||
+          e?.driverError?.code === '23505' ||
+          /duplicate key value/i.test(e?.message || '');
+        if (!isUnique) throw e;
+        const existing = await this.approvalThresholdRepo.findOne({ where });
+        if (!existing) throw e;
+        threshold = existing;
+      }
     }
 
     return threshold;

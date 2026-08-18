@@ -19,6 +19,7 @@ import {
   Not,
   DataSource,
   DeepPartial,
+  EntityManager,
 } from 'typeorm';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { Employee, EmploymentStatus } from '../../database/entities/employee.entity';
@@ -155,6 +156,15 @@ export class HrService {
    * audit-insert error never blocks the HR action itself (the action's
    * own tx commits or rolls back independently).
    */
+  /**
+   * Write an audit row.
+   *
+   * Pass the EntityManager when calling from inside a transaction. Writing
+   * through this.auditLogRepo uses a separate connection, so the row commits
+   * on its own: roll the payroll or leave approval back and the log still
+   * says it happened. An audit trail that records approvals that were undone
+   * is worse than one that misses them.
+   */
   private async writeAudit(params: {
     action: string;
     entityType: string;
@@ -163,10 +173,14 @@ export class HrService {
     tenantId?: string;
     newValue?: any;
     oldValue?: any;
+    manager?: EntityManager;
   }): Promise<void> {
+    const repo = params.manager
+      ? params.manager.getRepository(AuditLog)
+      : this.auditLogRepo;
     try {
-      await this.auditLogRepo.save(
-        this.auditLogRepo.create({
+      await repo.save(
+        repo.create({
           userId: params.actorUserId,
           action: params.action,
           entityType: params.entityType,
@@ -1195,6 +1209,7 @@ export class HrService {
       const saved = await leaveRepo.save(leave);
 
       await this.writeAudit({
+        manager,
         action: dto.approved ? 'LEAVE_APPROVED' : 'LEAVE_REJECTED',
         entityType: 'LeaveRequest',
         entityId: id,
@@ -1294,6 +1309,7 @@ export class HrService {
       const saved = await prRepo.save(payroll);
 
       await this.writeAudit({
+        manager,
         action: 'PAYROLL_CREATED',
         entityType: 'PayrollRun',
         entityId: saved.id,
@@ -1440,6 +1456,7 @@ export class HrService {
       );
 
       await this.writeAudit({
+        manager,
         action: 'PAYROLL_PROCESSED',
         entityType: 'PayrollRun',
         entityId: saved.id,
@@ -1477,6 +1494,7 @@ export class HrService {
       const saved = await prRepo.save(payroll);
 
       await this.writeAudit({
+        manager,
         action: 'PAYROLL_APPROVED',
         entityType: 'PayrollRun',
         entityId: id,
@@ -1519,6 +1537,7 @@ export class HrService {
       const saved = await manager.save(payroll);
       this.logger.log(`[HR_NOTIFY] payroll.paid id=${id}`);
       await this.writeAudit({
+        manager,
         action: 'PAYROLL_MARKED_PAID',
         entityType: 'PayrollRun',
         entityId: id,
@@ -1623,6 +1642,7 @@ export class HrService {
       this.logger.log(`[HR_NOTIFY] payroll.reset id=${payroll.id}`);
       const saved = await manager.save(payroll);
       await this.writeAudit({
+        manager,
         action: 'PAYROLL_RESET',
         entityType: 'PayrollRun',
         entityId: payroll.id,
@@ -2145,6 +2165,7 @@ export class HrService {
       const saved = await swapRepo.save(swap);
 
       await this.writeAudit({
+        manager,
         action: dto.approved ? 'SHIFT_SWAP_APPROVED' : 'SHIFT_SWAP_REJECTED',
         entityType: 'ShiftSwapRequest',
         entityId: id,
