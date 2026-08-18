@@ -125,8 +125,10 @@ export default function RFQPage() {
     mutationFn: (data: CreateRFQDto) => rfqService.create(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rfqs'] });
+      toast.success('RFQ created');
       setShowCreateModal(false);
     },
+    onError: (err: any) => toast.error(err?.response?.data?.message || 'Failed to create RFQ'),
   });
 
   // Send RFQ mutation
