@@ -9,6 +9,7 @@ import {
 import {
   SupplierCreditNote,
   SupplierCreditNoteItem,
+  SupplierCreditNoteApplication,
 } from '../../database/entities/supplier-credit-note.entity';
 import { Supplier } from '../../database/entities/supplier.entity';
 import { GoodsReceiptNote } from '../../database/entities/goods-receipt.entity';
@@ -21,6 +22,7 @@ import { FinanceModule } from '../finance/finance.module';
       SupplierPaymentItem,
       SupplierCreditNote,
       SupplierCreditNoteItem,
+      SupplierCreditNoteApplication,
       Supplier,
       GoodsReceiptNote,
     ]),
