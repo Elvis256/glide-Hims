@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { toast } from 'sonner';
 import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -104,10 +105,16 @@ export default function ApproveQuotationsPage() {
     mutationFn: ({ id, comments }: { id: string; comments?: string }) => rfqService.approvals.approve(id, comments),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['pending-approvals'] });
+      toast.success('Quotation approved');
       setShowActionModal(null);
       setSelectedApproval(null);
       setComments('');
     },
+    // Quotation approval refuses when the approver is not next in the chain,
+    // or has already acted. Without this the modal just closed as though it
+    // had worked.
+    onError: (err: any) =>
+      toast.error(err?.response?.data?.message || 'Failed to approve quotation'),
   });
 
   // Reject mutation
@@ -115,10 +122,13 @@ export default function ApproveQuotationsPage() {
     mutationFn: ({ id, comments }: { id: string; comments: string }) => rfqService.approvals.reject(id, comments),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['pending-approvals'] });
+      toast.success('Quotation rejected');
       setShowActionModal(null);
       setSelectedApproval(null);
       setComments('');
     },
+    onError: (err: any) =>
+      toast.error(err?.response?.data?.message || 'Failed to reject quotation'),
   });
 
   const filteredApprovals = useMemo(() => {
