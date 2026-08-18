@@ -298,7 +298,10 @@ export class EncountersService {
       }
     }
 
-    return this.dataSource.transaction(async (manager) => {
+    // Resolved inside the transaction, charged after it commits.
+    let consultCharge: any = null;
+
+    const registered = await this.dataSource.transaction(async (manager) => {
       // Active-encounter check INSIDE the transaction with pessimistic lock so
       // two concurrent registration submits for the same patient cannot both
       // pass the check. Without this, double-clicking the Register button (or
@@ -373,27 +376,29 @@ export class EncountersService {
           const consultService = await consultServiceQb.getOne();
           const unitPrice = consultService?.basePrice ? Number(consultService.basePrice) : 0;
 
-          await this.billingService.addBillableItem(
-            {
-              encounterId: saved.id,
-              patientId: dto.patientId,
-              serviceCode: consultService?.code || consultConfig.fallbackCode,
-              description: consultService?.name || consultConfig.fallbackName,
-              quantity: 1,
-              unitPrice,
-              chargeType: 'consultation',
-              referenceType: 'encounter',
-              referenceId: saved.id,
-              insurancePolicyId: dto.insurancePolicyId,
-              paymentType: dto.payerType,
-              serviceId: consultService?.id,
-            },
-            userId,
-            tid,
-          );
+          // Resolved here, charged after the commit. addBillableItem goes
+          // through BillingService on its own connection, so the consultation
+          // fee committed while this transaction was still open — and this
+          // transaction can still fail, on the unique visit-number index or
+          // the queue-number allocation below it. That left a patient invoiced
+          // for a visit that was never registered.
+          consultCharge = {
+            encounterId: saved.id,
+            patientId: dto.patientId,
+            serviceCode: consultService?.code || consultConfig.fallbackCode,
+            description: consultService?.name || consultConfig.fallbackName,
+            quantity: 1,
+            unitPrice,
+            chargeType: 'consultation',
+            referenceType: 'encounter',
+            referenceId: saved.id,
+            insurancePolicyId: dto.insurancePolicyId,
+            paymentType: dto.payerType,
+            serviceId: consultService?.id,
+          };
         } catch (err) {
           this.logger.warn(
-            `Failed to auto-bill consultation fee for encounter ${saved.id}: ${err.message}`,
+            `Failed to resolve consultation fee for encounter ${saved.id}: ${err.message}`,
           );
         }
       } else {
@@ -404,6 +409,18 @@ export class EncountersService {
 
       return saved;
     });
+
+    if (consultCharge) {
+      try {
+        await this.billingService.addBillableItem(consultCharge, userId, tid);
+      } catch (err: any) {
+        this.logger.warn(
+          `Failed to auto-bill consultation fee for encounter ${registered.id}: ${err?.message || err}`,
+        );
+      }
+    }
+
+    return registered;
   }
 
   async findAll(

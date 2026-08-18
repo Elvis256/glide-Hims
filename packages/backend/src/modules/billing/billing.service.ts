@@ -968,7 +968,26 @@ export class BillingService {
 
   async recordPayment(dto: CreatePaymentDto, userId: string, tenantId?: string): Promise<Payment> {
     // Use transaction to prevent race conditions when multiple payments hit simultaneously
-    return this.dataSource.transaction(async (manager) => {
+    // Collected inside the transaction, acted on once it has committed. The
+    // thank-you message is the reason this matters most: it used to be sent
+    // from inside the transaction, so a payment that then rolled back had
+    // already thanked the patient for money the system no longer held. The
+    // GL post and the audit row had the same asymmetry in a recoverable form.
+    const after: {
+      facilityForGL: string | null;
+      thankYou: { facilityId: string; patientId: string; patientName: string } | null;
+      notifyDoctor: {
+        doctorUserId: string;
+        patientName: string;
+        invoiceNumber: string;
+        amount: number;
+        facilityId: string;
+      } | null;
+      invoiceId: string | null;
+      receiptNumber: string;
+    } = { facilityForGL: null, thankYou: null, notifyDoctor: null, invoiceId: null, receiptNumber: '' };
+
+    const savedPayment = await this.dataSource.transaction(async (manager) => {
       // Lock the invoice row for update to prevent concurrent payment issues
       const invoice = await manager.findOne(Invoice, {
         where: { id: dto.invoiceId, tenantId: requireTenantId(tenantId) },
@@ -1174,73 +1193,20 @@ export class BillingService {
         relations: ['patient', 'encounter'],
       });
 
-      // Auto-post to General Ledger: DR Cash/Bank, CR Accounts Receivable
-      const facilityForGL = fullInvoice?.encounter?.facilityId;
-      if (facilityForGL) {
-        try {
-          await this.financeService.autoPostPatientPaymentJournal(
-            {
-              facilityId: facilityForGL,
-              receiptNumber,
-              amount: dto.amount,
-              paymentMethod: dto.method || 'cash',
-              userId,
-            },
-            tenantId,
-          );
-        } catch (err) {
-          // P1: Track GL failure on the payment row for reconciliation reports
-          savedPayment.glPosted = false;
-          await manager.save(Payment, savedPayment);
-          this.logger.error(`GL auto-post failed for payment ${receiptNumber}: ${err.message}`, {
-            receiptNumber,
-            amount: dto.amount,
-            error: err.stack,
-          });
-        }
-      }
+      // Everything below is gathered here and acted on after the commit.
+      after.facilityForGL = fullInvoice?.encounter?.facilityId || null;
 
-      // Send thank you SMS/Email after full payment (non-blocking)
       if (invoiceFullyPaid && invoice.patientId && fullInvoice?.patient) {
-        const patientName = fullInvoice.patient.fullName;
         const facilityId = fullInvoice.encounter?.facilityId;
         if (facilityId) {
-          this.notificationsService
-            .sendThankYouMessage(facilityId, invoice.patientId, patientName, receiptNumber)
-            .then((result) => {
-              if (result.success) {
-                this.logger.log(`Thank you message sent to ${patientName} via ${result.channel}`);
-              }
-            })
-            .catch((err) => this.logger.warn(`Thank you message failed: ${err.message}`));
+          after.thankYou = {
+            facilityId,
+            patientId: invoice.patientId,
+            patientName: fullInvoice.patient.fullName,
+          };
         }
       }
 
-      // Audit log: every successful payment must be traceable to the cashier.
-      await this.auditLogService
-        .log({
-          userId,
-          action: 'PAYMENT_RECORDED',
-          entityType: 'Payment',
-          entityId: savedPayment.id,
-          newValue: {
-            receiptNumber,
-            invoiceId: invoice.id,
-            amount: Number(savedPayment.amount),
-            method: savedPayment.method,
-            status: savedPayment.status,
-            invoiceFullyPaid,
-          },
-          tenantId: requireTenantId(tenantId),
-        })
-        .catch((err) =>
-          this.logger.error(
-            `Audit log failed for recordPayment ${savedPayment.id}: ${err.message}`,
-          ),
-        );
-
-      // Notify the assigned doctor that the patient has cleared billing and is
-      // now back in the queue. Fire-and-forget; never block the cashier.
       if (invoiceFullyPaid && invoice.encounterId) {
         try {
           const queueEntry = await manager.findOne(Queue, {
@@ -1249,20 +1215,13 @@ export class BillingService {
             order: { createdAt: 'DESC' },
           });
           if (queueEntry?.assignedDoctorId) {
-            this.inAppNotifications
-              .notifyPaymentCleared({
-                doctorUserId: queueEntry.assignedDoctorId,
-                patientName: queueEntry.patient?.fullName || 'Patient',
-                invoiceNumber: invoice.invoiceNumber,
-                amount: Number(invoice.totalAmount) || 0,
-                facilityId: queueEntry.facilityId,
-                tenantId,
-              })
-              .catch((err) =>
-                this.logger.warn(
-                  `notifyPaymentCleared failed for ${invoice.invoiceNumber}: ${err?.message || err}`,
-                ),
-              );
+            after.notifyDoctor = {
+              doctorUserId: queueEntry.assignedDoctorId,
+              patientName: queueEntry.patient?.fullName || 'Patient',
+              invoiceNumber: invoice.invoiceNumber,
+              amount: Number(invoice.totalAmount) || 0,
+              facilityId: queueEntry.facilityId,
+            };
           }
         } catch (err: any) {
           this.logger.warn(
@@ -1271,8 +1230,95 @@ export class BillingService {
         }
       }
 
+      after.invoiceId = invoice.id;
+      after.receiptNumber = receiptNumber;
       return savedPayment;
     });
+
+    // Auto-post to General Ledger: DR Cash/Bank, CR Accounts Receivable.
+    // The glPosted flag is still written when posting fails, so the
+    // reconciliation report keeps working — it is just a follow-up update
+    // now rather than a write inside the transaction being posted about.
+    if (after.facilityForGL) {
+      try {
+        await this.financeService.autoPostPatientPaymentJournal(
+          {
+            facilityId: after.facilityForGL,
+            receiptNumber: after.receiptNumber,
+            amount: dto.amount,
+            paymentMethod: dto.method || 'cash',
+            userId,
+          },
+          tenantId,
+        );
+      } catch (err: any) {
+        await this.paymentRepository
+          .update(savedPayment.id, { glPosted: false })
+          .catch((e) =>
+            this.logger.error(
+              `Could not flag payment ${after.receiptNumber} as un-posted to GL: ${e?.message || e}`,
+            ),
+          );
+        this.logger.error(`GL auto-post failed for payment ${after.receiptNumber}: ${err.message}`, {
+          receiptNumber: after.receiptNumber,
+          amount: dto.amount,
+          error: err.stack,
+        });
+      }
+    }
+
+    // Audit log: every successful payment must be traceable to the cashier.
+    await this.auditLogService
+      .log({
+        userId,
+        action: 'PAYMENT_RECORDED',
+        entityType: 'Payment',
+        entityId: savedPayment.id,
+        newValue: {
+          receiptNumber: after.receiptNumber,
+          invoiceId: after.invoiceId,
+          amount: Number(savedPayment.amount),
+          method: savedPayment.method,
+          status: savedPayment.status,
+        },
+        tenantId: requireTenantId(tenantId),
+      })
+      .catch((err) =>
+        this.logger.error(`Audit log failed for recordPayment ${savedPayment.id}: ${err.message}`),
+      );
+
+    // Thank the patient only once the money is actually recorded.
+    if (after.thankYou) {
+      this.notificationsService
+        .sendThankYouMessage(
+          after.thankYou.facilityId,
+          after.thankYou.patientId,
+          after.thankYou.patientName,
+          after.receiptNumber,
+        )
+        .then((result) => {
+          if (result.success) {
+            this.logger.log(
+              `Thank you message sent to ${after.thankYou!.patientName} via ${result.channel}`,
+            );
+          }
+        })
+        .catch((err) => this.logger.warn(`Thank you message failed: ${err.message}`));
+    }
+
+    // Tell the assigned doctor the patient has cleared billing and is back in
+    // the queue. Fire-and-forget; never block the cashier.
+    if (after.notifyDoctor) {
+      this.inAppNotifications
+        .notifyPaymentCleared({ ...after.notifyDoctor, tenantId })
+        .catch((err) =>
+          this.logger.warn(
+            `notifyPaymentCleared failed for ${after.notifyDoctor!.invoiceNumber}: ${err?.message || err}`,
+          ),
+        );
+    }
+
+    return savedPayment;
   }
 
   async getPaymentsByInvoice(invoiceId: string, tenantId?: string): Promise<Payment[]> {
