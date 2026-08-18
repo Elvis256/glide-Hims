@@ -533,14 +533,31 @@ export class PrescriptionsService {
     return dispensation;
   }
 
-  private async updatePrescriptionStatus(prescriptionId: string, tenantId?: string): Promise<void> {
+  /**
+   * Recompute a prescription's status from its items.
+   *
+   * Takes an optional EntityManager and must be given one when called from
+   * inside a transaction. Reading through the repository instead uses a
+   * separate connection, which cannot see the item rows the open transaction
+   * has just written — so the status was computed from the state *before* the
+   * dispense that triggered it, and always lagged by one. A script dispensed
+   * in full stayed 'partially_dispensed', never reached 'dispensed', never
+   * left the pharmacy queue, and never moved its encounter to pending
+   * payment: the patient walked out with the drugs and was never sent to pay.
+   */
+  private async updatePrescriptionStatus(
+    prescriptionId: string,
+    tenantId?: string,
+    manager?: import('typeorm').EntityManager,
+  ): Promise<Prescription | null> {
     const tid = requireTenantId(tenantId);
-    const prescription = await this.prescriptionRepository.findOne({
+    const repo = manager ? manager.getRepository(Prescription) : this.prescriptionRepository;
+    const prescription = await repo.findOne({
       where: { id: prescriptionId, tenantId: tid },
       relations: ['items'],
     });
 
-    if (!prescription) return;
+    if (!prescription) return null;
 
     const allDispensed = prescription.items.every((item) => item.isDispensed);
     const someDispensed = prescription.items.some((item) => item.quantityDispensed > 0);
@@ -553,7 +570,7 @@ export class PrescriptionsService {
       if (!prescription.dispensedAt) prescription.dispensedAt = new Date();
     }
 
-    await this.prescriptionRepository.save(prescription);
+    return repo.save(prescription);
   }
 
   // Batch dispense all items in a prescription
@@ -1001,12 +1018,13 @@ export class PrescriptionsService {
         }
       }
 
-      // Update prescription status
-      await this.updatePrescriptionStatus(prescription.id, tenantId);
+      // Update prescription status on this transaction's manager, and use what
+      // it returns: findOne here would read a separate connection and miss the
+      // rows this transaction has not committed yet.
+      const updatedRx = await this.updatePrescriptionStatus(prescription.id, tenantId, manager);
 
       // Check if prescription is fully dispensed, update encounter status
-      const updatedRx = await this.findOne(prescription.id, tenantId);
-      if (updatedRx.status === PrescriptionStatus.DISPENSED && prescription.encounter) {
+      if (updatedRx?.status === PrescriptionStatus.DISPENSED && prescription.encounter) {
         // Move encounter to pending payment
         await manager
           .getRepository(Encounter)
@@ -1026,7 +1044,10 @@ export class PrescriptionsService {
       }
 
       // Return updated prescription
-      return updatedRx;
+      // updatedRx is only null if the prescription vanished mid-transaction,
+      // which the guards above have already ruled out; fall back to the row
+      // this transaction loaded rather than widening the return type.
+      return updatedRx ?? prescription;
     });
   }
 
