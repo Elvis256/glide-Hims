@@ -352,7 +352,12 @@ export default function SupplierCreditNotesPage() {
                         Approve
                       </button>
                     )}
-                    {note.status === 'approved' && note.noteType === 'credit_note' && (
+                    {/* Debit notes apply too — they are the rejected-goods
+                        recovery this screen exists for, and the backend
+                        accepts either type. Gating on credit_note alone left
+                        an approved debit note counted as "Ready to Apply"
+                        with no way to apply it. */}
+                    {note.status === 'approved' && (
                       <button
                         onClick={() => {
                           setApplyingNote(note);
