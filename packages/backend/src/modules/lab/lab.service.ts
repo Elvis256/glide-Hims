@@ -42,7 +42,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { EncountersService } from '../encounters/encounters.service';
 import { CriticalResultsService } from '../critical-results/critical-results.service';
 import { requireTenantId } from '../../common/utils/tenant.util';
-import { sqlSafeTimeZone, dayBoundsUtc } from '../../common/utils/timezone.util';
+import { localDateString, sqlSafeTimeZone, dayBoundsUtc } from '../../common/utils/timezone.util';
 
 @Injectable()
 export class LabService {
@@ -67,8 +67,11 @@ export class LabService {
   ) {}
 
   private async generateSampleNumber(manager: EntityManager, tenantId?: string): Promise<string> {
-    const today = new Date();
-    const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
+    // The hospital's date, not the server's: on UTC+3 a sample collected at
+    // 01:00 was numbered under the previous day, so the number on the tube
+    // disagreed with the collection date on the form. Lock key and sequence
+    // lookup both derive from this string, so they stay consistent.
+    const dateStr = localDateString(new Date()).replace(/-/g, '');
     const lockKey = `lab_sample_num_${dateStr}_${tenantId || 'global'}`;
 
     // Use advisory lock to prevent concurrent generation collisions

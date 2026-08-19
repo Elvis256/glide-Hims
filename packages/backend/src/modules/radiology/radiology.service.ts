@@ -29,6 +29,7 @@ import { CriticalResultsService } from '../critical-results/critical-results.ser
 import { AuditLogService } from '../../common/interceptors/audit-log.service';
 import { requireTenantId } from '../../common/utils/tenant.util';
 import { dayBoundsUtc } from '../../common/utils/timezone.util';
+import { localMonthString } from '../../common/utils/timezone.util';
 
 @Injectable()
 export class RadiologyService {
@@ -91,26 +92,41 @@ export class RadiologyService {
     userId: string,
     tenantId?: string,
   ): Promise<ImagingOrder> {
+    const tid = requireTenantId(tenantId);
     const savedOrder = await this.dataSource.transaction(async (manager) => {
-      // Generate order number with pessimistic lock
-      const date = new Date();
-      const yearMonth = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}`;
+      // Generate the order number.
+      //
+      // This used to be setLock('pessimistic_write') on a getCount(), which
+      // TypeORM carries into the aggregate query as FOR UPDATE — and Postgres
+      // rejects "FOR UPDATE with aggregate functions" outright. Creating an
+      // imaging order therefore failed every single time.
+      //
+      // Replaced with the advisory-lock + MAX pattern used for PR, PO, GRN and
+      // pre-auth numbers, which fixes three further faults in one go:
+      //  - COUNT+1 reuses a number as soon as any row is deleted; MAX+1 does
+      //    not.
+      //  - The count was scoped per facility while order_number is unique per
+      //    (tenant_id, order_number), so two facilities in one tenant
+      //    generated identical numbers and collided on insert.
+      //  - The month came from the server's clock. The hospital is UTC+3, so
+      //    an order raised at 01:00 on the 1st was numbered under the previous
+      //    month.
+      const yearMonth = localMonthString(new Date()).replace('-', '');
+      const prefix = `IMG${yearMonth}`;
 
-      // Count this month's orders with lock to prevent race conditions
-      const monthStart = new Date(date.getFullYear(), date.getMonth(), 1);
-      const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 1);
+      await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+        `radiology:order-number:${tid}:${prefix}`,
+      ]);
 
-      const count = await manager
+      const last = await manager
         .createQueryBuilder(ImagingOrder, 'imgOrder')
-        .setLock('pessimistic_write')
-        .where('imgOrder.facilityId = :facilityId', { facilityId: dto.facilityId })
-        .andWhere('imgOrder.createdAt >= :start AND imgOrder.createdAt < :end', {
-          start: monthStart,
-          end: monthEnd,
-        })
-        .getCount();
+        .where('imgOrder.order_number LIKE :prefix', { prefix: `${prefix}%` })
+        .andWhere('imgOrder.tenant_id = :tid', { tid })
+        .orderBy('imgOrder.order_number', 'DESC')
+        .getOne();
 
-      const orderNumber = `IMG${yearMonth}${String(count + 1).padStart(5, '0')}`;
+      const seq = last ? (parseInt(last.orderNumber.slice(prefix.length), 10) || 0) + 1 : 1;
+      const orderNumber = `${prefix}${String(seq).padStart(5, '0')}`;
 
       const order = manager.create(ImagingOrder, {
         orderNumber,
