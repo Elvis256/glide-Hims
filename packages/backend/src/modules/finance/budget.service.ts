@@ -456,13 +456,48 @@ export class BudgetService {
           throw new NotFoundException(`No active budget for facility ${facilityId}`);
         }
 
+        // Already reserved against this document? Return it rather than
+        // stacking a second. Approval can be retried, and a multi-level chain
+        // calls the approve path once per level; without this a PO could be
+        // encumbered several times over for the same money.
+        const existing = await reservationRepo.findOne({
+          where: {
+            documentId,
+            documentType,
+            tenantId: requireTenantId(tenantId),
+            status: In([
+              ReservationStatus.PENDING,
+              ReservationStatus.APPROVED,
+              ReservationStatus.SPENT,
+            ]),
+          },
+        });
+        if (existing) {
+          this.logger.log(
+            `${documentType} ${documentId} is already encumbered (${existing.status}); leaving it as is`,
+          );
+          return existing;
+        }
+
         // Recompute remaining capacity inside the lock so the check is
         // race-free.
+        //
+        // SPENT counts against the allocation. It used to be excluded, which
+        // meant a reservation stopped consuming budget the moment the goods
+        // arrived and markReservationSpent flipped it — so the annual
+        // allocation replenished itself on every delivery and a department
+        // could commit the whole budget over and over. RELEASED is the only
+        // status that genuinely frees capacity, because the commitment behind
+        // it was withdrawn.
         const reservations = await reservationRepo.find({
           where: {
             budgetId: budget.id,
             tenantId: requireTenantId(tenantId),
-            status: In([ReservationStatus.PENDING, ReservationStatus.APPROVED]),
+            status: In([
+              ReservationStatus.PENDING,
+              ReservationStatus.APPROVED,
+              ReservationStatus.SPENT,
+            ]),
           },
         });
         const reservedTotalCents = reservations.reduce(
@@ -513,6 +548,53 @@ export class BudgetService {
 
     reservation.status = ReservationStatus.APPROVED;
     return this.reservationRepo.save(reservation);
+  }
+
+  /**
+   * What is left of the facility's allocation once every live commitment is
+   * counted, or null when the facility has no active budget at all.
+   *
+   * The null is the point: budget control should apply where budgets are
+   * maintained and stay out of the way where they are not. reserveBudget
+   * throws NotFoundException for a facility with no budget, which is the right
+   * answer for an explicit reservation but the wrong one for a gate that every
+   * purchase order has to pass through — it would stop procurement dead at any
+   * facility that has never configured one.
+   */
+  async getRemainingCapacity(
+    facilityId: string,
+    tenantId?: string,
+  ): Promise<{ remaining: number; allocation: number } | null> {
+    const tid = requireTenantId(tenantId);
+
+    const budget = await this.facilityBudgetRepo
+      .createQueryBuilder('b')
+      .where('b.facility_id = :facilityId', { facilityId })
+      .andWhere('b.is_active = TRUE')
+      .andWhere('b.deleted_at IS NULL')
+      .andWhere('b.tenant_id = :tid', { tid })
+      .orderBy('b.fiscal_year_start', 'DESC')
+      .getOne();
+
+    if (!budget) return null;
+
+    const reservations = await this.reservationRepo.find({
+      where: {
+        budgetId: budget.id,
+        tenantId: tid,
+        status: In([
+          ReservationStatus.PENDING,
+          ReservationStatus.APPROVED,
+          ReservationStatus.SPENT,
+        ]),
+      },
+    });
+    const committedCents = reservations.reduce((sum, r) => sum + toCents(r.reservedAmount), 0);
+
+    return {
+      allocation: fromCents(toCents(budget.totalBudgetAllocation)),
+      remaining: fromCents(toCents(budget.totalBudgetAllocation) - committedCents),
+    };
   }
 
   /**

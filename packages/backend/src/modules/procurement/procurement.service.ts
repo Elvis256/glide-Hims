@@ -1082,7 +1082,6 @@ export class ProcurementService {
 
         await poItemRepo.save(items);
 
-
         // Re-fetch within the active transaction so relations are loaded
         // from the same connection that just wrote the rows (otherwise a
         // default-pool read can miss the uncommitted insert and 404).
@@ -1451,153 +1450,187 @@ export class ProcurementService {
     userRoles?: string[],
   ): Promise<PurchaseOrder> {
     const tid = requireTenantId(tenantId);
-    const { approvedPO, poApprovalAudit } = await this.dataSource.transaction(async (manager) => {
-      let poApprovalAudit: {
-        poNumber: string;
-        approvalLevel: number;
-        requiredRole: string;
-        actualRole: string;
-        amount: number;
-      } | null = null;
-      const poRepo = manager.getRepository(PurchaseOrder);
-      const chainRepo = manager.getRepository(ProcurementApprovalChain);
+    const { approvedPO, poApprovalAudit, encumberOnCommit } = await this.dataSource.transaction(
+      async (manager) => {
+        let encumberOnCommit = false;
+        let poApprovalAudit: {
+          poNumber: string;
+          approvalLevel: number;
+          requiredRole: string;
+          actualRole: string;
+          amount: number;
+        } | null = null;
+        const poRepo = manager.getRepository(PurchaseOrder);
+        const chainRepo = manager.getRepository(ProcurementApprovalChain);
 
-      const po = await poRepo.findOne({
-        where: { id, deletedAt: IsNull(), tenantId: tid },
-        lock: { mode: 'pessimistic_write' },
-      });
-
-      if (!po) throw new NotFoundException('Purchase order not found');
-      if (po.status !== POStatus.DRAFT && po.status !== POStatus.PENDING_APPROVAL) {
-        throw new BadRequestException('PO cannot be approved from current status');
-      }
-
-      // Segregation of duties: PO creator cannot approve their own PO
-      if (po.createdById === userId) {
-        const isSuperAdminUser = userRoles?.some((r) => r.toLowerCase() === 'super admin');
-        if (!isSuperAdminUser) {
-          throw new BadRequestException(
-            'Segregation of duties: the PO creator cannot approve their own purchase order',
-          );
-        }
-        this.logger.warn(
-          `Super Admin self-approval: user ${userId} approving own PO ${po.orderNumber}`,
-        );
-      }
-
-      // Phase 2C: Get next pending approval in chain (if any)
-      const chainWhere: any = {
-        documentId: id,
-        documentType: 'PO',
-        status: ApprovalChainStatus.PENDING,
-      };
-      chainWhere.tenantId = tid;
-
-      const nextChain = await chainRepo.findOne({
-        where: chainWhere,
-        order: { approvalLevel: 'ASC' },
-      });
-
-      if (nextChain) {
-        // Multi-level approval workflow is configured for this PO
-        // Verify user has required role
-        const userRolesList = userRoles || (await this.usersService.getUserRoles(userId, tenantId));
-        const userRoleNames = (userRolesList as any[]).map((r: any) =>
-          typeof r === 'string' ? r.toLowerCase() : r.name?.toLowerCase() || '',
-        );
-        const requiredRoleLower = nextChain.requiredRole.toLowerCase();
-
-        const synonyms: Record<string, string[]> = {
-          manager: ['manager', 'department head', 'department manager', 'super admin'],
-          finance_officer: ['finance_officer', 'finance officer', 'accountant', 'super admin'],
-          director: ['director', 'super admin'],
-          cfo: ['cfo', 'chief financial officer', 'super admin'],
-          'department head': ['department head', 'department manager', 'manager', 'super admin'],
-        };
-        const acceptedRoles = synonyms[requiredRoleLower] || [requiredRoleLower, 'super admin'];
-        const isSuperAdminUser = userRoleNames.includes('super admin');
-
-        if (nextChain.approverId) {
-          if (nextChain.approverId !== userId && !isSuperAdminUser) {
-            throw new BadRequestException(
-              `This approval is assigned to a specific user. You are not the designated approver.`,
-            );
-          }
-        } else if (!userRoleNames.some((r) => acceptedRoles.includes(r))) {
-          throw new BadRequestException(
-            `User does not have a role authorised to approve at level ${nextChain.approvalLevel} (required: ${nextChain.requiredRole})`,
-          );
-        }
-
-        // Mark approval at this level
-        nextChain.status = ApprovalChainStatus.APPROVED;
-        nextChain.approvedById = userId;
-        nextChain.approvedAt = new Date();
-        await chainRepo.save(nextChain);
-
-        // Phase 3: audit trail — raised after this transaction commits, since
-        // AuditService writes on its own connection and the row would
-        // otherwise outlive an approval that rolled back.
-        poApprovalAudit = {
-          poNumber: po.orderNumber,
-          approvalLevel: nextChain.approvalLevel,
-          requiredRole: nextChain.requiredRole,
-          actualRole: userRoleNames.join(', '),
-          amount: Number(po.totalAmount),
-        };
-
-        // Check if approval chain is complete
-        const pendingChains = await chainRepo.find({
-          where: { documentId: id, documentType: 'PO', status: ApprovalChainStatus.PENDING },
+        const po = await poRepo.findOne({
+          where: { id, deletedAt: IsNull(), tenantId: tid },
+          lock: { mode: 'pessimistic_write' },
         });
 
-        if (pendingChains.length === 0) {
-          // All approvals complete → transition to APPROVED
+        if (!po) throw new NotFoundException('Purchase order not found');
+        if (po.status !== POStatus.DRAFT && po.status !== POStatus.PENDING_APPROVAL) {
+          throw new BadRequestException('PO cannot be approved from current status');
+        }
+
+        // Segregation of duties: PO creator cannot approve their own PO
+        if (po.createdById === userId) {
+          const isSuperAdminUser = userRoles?.some((r) => r.toLowerCase() === 'super admin');
+          if (!isSuperAdminUser) {
+            throw new BadRequestException(
+              'Segregation of duties: the PO creator cannot approve their own purchase order',
+            );
+          }
+          this.logger.warn(
+            `Super Admin self-approval: user ${userId} approving own PO ${po.orderNumber}`,
+          );
+        }
+
+        // Phase 2C: Get next pending approval in chain (if any)
+        const chainWhere: any = {
+          documentId: id,
+          documentType: 'PO',
+          status: ApprovalChainStatus.PENDING,
+        };
+        chainWhere.tenantId = tid;
+
+        const nextChain = await chainRepo.findOne({
+          where: chainWhere,
+          order: { approvalLevel: 'ASC' },
+        });
+
+        if (nextChain) {
+          // Multi-level approval workflow is configured for this PO
+          // Verify user has required role
+          const userRolesList =
+            userRoles || (await this.usersService.getUserRoles(userId, tenantId));
+          const userRoleNames = (userRolesList as any[]).map((r: any) =>
+            typeof r === 'string' ? r.toLowerCase() : r.name?.toLowerCase() || '',
+          );
+          const requiredRoleLower = nextChain.requiredRole.toLowerCase();
+
+          const synonyms: Record<string, string[]> = {
+            manager: ['manager', 'department head', 'department manager', 'super admin'],
+            finance_officer: ['finance_officer', 'finance officer', 'accountant', 'super admin'],
+            director: ['director', 'super admin'],
+            cfo: ['cfo', 'chief financial officer', 'super admin'],
+            'department head': ['department head', 'department manager', 'manager', 'super admin'],
+          };
+          const acceptedRoles = synonyms[requiredRoleLower] || [requiredRoleLower, 'super admin'];
+          const isSuperAdminUser = userRoleNames.includes('super admin');
+
+          if (nextChain.approverId) {
+            if (nextChain.approverId !== userId && !isSuperAdminUser) {
+              throw new BadRequestException(
+                `This approval is assigned to a specific user. You are not the designated approver.`,
+              );
+            }
+          } else if (!userRoleNames.some((r) => acceptedRoles.includes(r))) {
+            throw new BadRequestException(
+              `User does not have a role authorised to approve at level ${nextChain.approvalLevel} (required: ${nextChain.requiredRole})`,
+            );
+          }
+
+          // Mark approval at this level
+          nextChain.status = ApprovalChainStatus.APPROVED;
+          nextChain.approvedById = userId;
+          nextChain.approvedAt = new Date();
+          await chainRepo.save(nextChain);
+
+          // Phase 3: audit trail — raised after this transaction commits, since
+          // AuditService writes on its own connection and the row would
+          // otherwise outlive an approval that rolled back.
+          poApprovalAudit = {
+            poNumber: po.orderNumber,
+            approvalLevel: nextChain.approvalLevel,
+            requiredRole: nextChain.requiredRole,
+            actualRole: userRoleNames.join(', '),
+            amount: Number(po.totalAmount),
+          };
+
+          // Check if approval chain is complete
+          const pendingChains = await chainRepo.find({
+            where: { documentId: id, documentType: 'PO', status: ApprovalChainStatus.PENDING },
+          });
+
+          if (pendingChains.length === 0) {
+            // All approvals complete → transition to APPROVED
+            await this.assertBudgetCapacity(po, tid);
+            po.status = POStatus.APPROVED;
+            po.approvedById = userId;
+            po.approvedAt = new Date();
+            encumberOnCommit = true;
+            this.logger.log(
+              `PO ${id} fully approved after ${nextChain.approvalLevel} approval levels`,
+            );
+          } else {
+            // More approvals needed → stay PENDING_APPROVAL
+            po.status = POStatus.PENDING_APPROVAL;
+            this.logger.log(
+              `PO ${id} approved at level ${nextChain.approvalLevel}, ${pendingChains.length} more approvals needed`,
+            );
+          }
+        } else {
+          // audit BUG-013: a missing approval chain previously let any user
+          // with procurement.approve nod through an arbitrary-value PO with
+          // just a warning log. Now: above the level-1 single-approver cap
+          // we REFUSE to approve until a chain is configured + persisted.
+          const totalAmount = Number(po.totalAmount) || 0;
+          const isSuperAdminUser = userRoles?.some((r) => r.toLowerCase() === 'super admin');
+
+          const thresholds = await this.getApprovalThreshold(po.facilityId, tenantId);
+          const level1Cap = Number(thresholds.level1MaxAmount) || 0;
+
+          if (totalAmount > level1Cap && !isSuperAdminUser) {
+            throw new ForbiddenException(
+              `PO amount (${totalAmount.toLocaleString()}) requires a multi-level approval chain ` +
+                `but none is configured. Configure an approval policy/chain for facility ` +
+                `${po.facilityId} or re-submit the PO so the chain is rebuilt.`,
+            );
+          }
+
+          if (totalAmount > 50000000) {
+            this.logger.warn(
+              `HIGH-VALUE PO ${po.orderNumber}: ${totalAmount.toLocaleString()} approved by ${userId} via single-step path`,
+            );
+          }
+
+          await this.assertBudgetCapacity(po, tid);
           po.status = POStatus.APPROVED;
           po.approvedById = userId;
           po.approvedAt = new Date();
-          this.logger.log(
-            `PO ${id} fully approved after ${nextChain.approvalLevel} approval levels`,
-          );
-        } else {
-          // More approvals needed → stay PENDING_APPROVAL
-          po.status = POStatus.PENDING_APPROVAL;
-          this.logger.log(
-            `PO ${id} approved at level ${nextChain.approvalLevel}, ${pendingChains.length} more approvals needed`,
-          );
-        }
-      } else {
-        // audit BUG-013: a missing approval chain previously let any user
-        // with procurement.approve nod through an arbitrary-value PO with
-        // just a warning log. Now: above the level-1 single-approver cap
-        // we REFUSE to approve until a chain is configured + persisted.
-        const totalAmount = Number(po.totalAmount) || 0;
-        const isSuperAdminUser = userRoles?.some((r) => r.toLowerCase() === 'super admin');
-
-        const thresholds = await this.getApprovalThreshold(po.facilityId, tenantId);
-        const level1Cap = Number(thresholds.level1MaxAmount) || 0;
-
-        if (totalAmount > level1Cap && !isSuperAdminUser) {
-          throw new ForbiddenException(
-            `PO amount (${totalAmount.toLocaleString()}) requires a multi-level approval chain ` +
-              `but none is configured. Configure an approval policy/chain for facility ` +
-              `${po.facilityId} or re-submit the PO so the chain is rebuilt.`,
-          );
+          encumberOnCommit = true;
         }
 
-        if (totalAmount > 50000000) {
-          this.logger.warn(
-            `HIGH-VALUE PO ${po.orderNumber}: ${totalAmount.toLocaleString()} approved by ${userId} via single-step path`,
-          );
-        }
+        return { approvedPO: await poRepo.save(po), poApprovalAudit, encumberOnCommit };
+      },
+    );
 
-        po.status = POStatus.APPROVED;
-        po.approvedById = userId;
-        po.approvedAt = new Date();
+    // Encumber the budget now the approval has committed.
+    //
+    // The capacity check above runs inside the transaction and is what
+    // actually blocks an over-budget order; this reserves against it. Split
+    // that way because BudgetService writes on its own connection, so a
+    // reservation raised from inside would survive an approval that rolled
+    // back. Two approvals passing the check at the same instant is the
+    // residual: the loser's reserveBudget refuses and the PO is approved but
+    // unencumbered, which is logged rather than silently absorbed.
+    if (encumberOnCommit) {
+      try {
+        await this.budgetService.reserveBudget(
+          approvedPO.facilityId,
+          approvedPO.id,
+          'PO',
+          Number(approvedPO.totalAmount) || 0,
+          tenantId,
+        );
+      } catch (err: any) {
+        this.logger.error(
+          `PO ${approvedPO.orderNumber} was approved but could not be encumbered: ${err?.message || err}. ` +
+            `The order stands; the budget does not reflect it.`,
+        );
       }
-
-      return { approvedPO: await poRepo.save(po), poApprovalAudit };
-    });
+    }
 
     if (poApprovalAudit) {
       try {
@@ -1618,6 +1651,45 @@ export class ProcurementService {
     }
 
     return approvedPO;
+  }
+
+  /**
+   * Refuse to approve a purchase order the facility cannot afford.
+   *
+   * txn-connection-ok: read-only, and it has to read committed state — the
+   * question is whether this order fits alongside everything already
+   * committed elsewhere.
+   *
+   * A facility with no active budget is not blocked. Budget control applies
+   * where budgets are maintained; a hospital that has never configured one
+   * should not find its procurement stopped by a control it never opted into.
+   * The refusal below is only for facilities that have a budget and have
+   * exhausted it.
+   */
+  private async assertBudgetCapacity(po: PurchaseOrder, tid: string): Promise<void> {
+    const amount = Number(po.totalAmount) || 0;
+    if (amount <= 0) return;
+
+    let capacity: { remaining: number; allocation: number } | null;
+    try {
+      capacity = await this.budgetService.getRemainingCapacity(po.facilityId, tid);
+    } catch (err: any) {
+      // A budget lookup that errors must not become an approval outage.
+      this.logger.warn(
+        `Budget capacity check skipped for PO ${po.orderNumber}: ${err?.message || err}`,
+      );
+      return;
+    }
+
+    if (!capacity) return;
+
+    if (amount > capacity.remaining) {
+      throw new BadRequestException(
+        `Approving ${po.orderNumber} would commit ${amount.toLocaleString()} against a remaining ` +
+          `budget of ${capacity.remaining.toLocaleString()} (allocation ${capacity.allocation.toLocaleString()}). ` +
+          `Increase the facility budget or cancel outstanding orders to free capacity.`,
+      );
+    }
   }
 
   async sendPurchaseOrder(id: string, userId: string, tenantId?: string): Promise<PurchaseOrder> {
@@ -1722,7 +1794,9 @@ export class ProcurementService {
       .releaseReservationsForDocument(cancelled.id, tid)
       .then((amount) => {
         if (amount > 0) {
-          this.logger.log(`Released ${amount} of budget reserved for cancelled PO ${cancelled.orderNumber}`);
+          this.logger.log(
+            `Released ${amount} of budget reserved for cancelled PO ${cancelled.orderNumber}`,
+          );
         }
       })
       .catch((err) =>
