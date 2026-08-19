@@ -1020,7 +1020,13 @@ export class BillingService {
       } | null;
       invoiceId: string | null;
       receiptNumber: string;
-    } = { facilityForGL: null, thankYou: null, notifyDoctor: null, invoiceId: null, receiptNumber: '' };
+    } = {
+      facilityForGL: null,
+      thankYou: null,
+      notifyDoctor: null,
+      invoiceId: null,
+      receiptNumber: '',
+    };
 
     const savedPayment = await this.dataSource.transaction(async (manager) => {
       // Lock the invoice row for update to prevent concurrent payment issues
@@ -1294,11 +1300,14 @@ export class BillingService {
               `Could not flag payment ${after.receiptNumber} as un-posted to GL: ${e?.message || e}`,
             ),
           );
-        this.logger.error(`GL auto-post failed for payment ${after.receiptNumber}: ${err.message}`, {
-          receiptNumber: after.receiptNumber,
-          amount: dto.amount,
-          error: err.stack,
-        });
+        this.logger.error(
+          `GL auto-post failed for payment ${after.receiptNumber}: ${err.message}`,
+          {
+            receiptNumber: after.receiptNumber,
+            amount: dto.amount,
+            error: err.stack,
+          },
+        );
       }
     }
 
@@ -1584,145 +1593,176 @@ export class BillingService {
       throw new BadRequestException('Refund reason is required');
     }
 
-    return this.dataSource.transaction(async (manager) => {
-      const paymentRepo = manager.getRepository(Payment);
-      const invoiceRepo = manager.getRepository(Invoice);
+    const { savedRefund, refundGlFacilityId, refundAudit } = await this.dataSource.transaction(
+      async (manager) => {
+        let refundGlFacilityId: string | null = null;
+        const paymentRepo = manager.getRepository(Payment);
+        const invoiceRepo = manager.getRepository(Invoice);
 
-      // Lock bare row, then load relations — FOR UPDATE + outer join 500s.
-      const lockedOriginal = await paymentRepo.findOne({
-        where: { id: paymentId, tenantId: requireTenantId(tenantId) },
-        lock: { mode: 'pessimistic_write' },
-      });
-      if (!lockedOriginal) throw new NotFoundException('Payment not found');
-      const original = await paymentRepo.findOne({
-        where: { id: paymentId, tenantId: requireTenantId(tenantId) },
-        relations: ['invoice', 'invoice.encounter'],
-      });
-
-      if (!original) throw new NotFoundException('Payment not found');
-      if (original.status !== PaymentStatus.COMPLETED) {
-        throw new BadRequestException(`Cannot refund a payment with status '${original.status}'`);
-      }
-      if (original.receivedById === userId) {
-        throw new BadRequestException(
-          'Segregation of duties violation: the payment receiver cannot process its refund',
-        );
-      }
-
-      // P1: Time window for refunds — 90-day limit
-      const refundWindowDays = 90;
-      const paymentAgeMs = Date.now() - new Date(original.paidAt).getTime();
-      if (paymentAgeMs > refundWindowDays * 24 * 60 * 60 * 1000) {
-        throw new BadRequestException(
-          `Payment is older than ${refundWindowDays} days. Refunds are no longer allowed — use a write-off instead.`,
-        );
-      }
-
-      // How much of this payment is still refundable?
-      const priorRefunds = await paymentRepo
-        .createQueryBuilder('p')
-        .where('p.transactionReference = :ref', {
-          ref: `REFUND-${original.receiptNumber}`,
-        })
-        .andWhere('p.status = :st', { st: PaymentStatus.REFUNDED })
-        .getMany();
-      const alreadyRefunded = priorRefunds.reduce((sum, p) => sum + Math.abs(Number(p.amount)), 0);
-      const remaining = Number(original.amount) - alreadyRefunded;
-      if (refundAmount > remaining) {
-        throw new BadRequestException(
-          `Refund amount ${refundAmount} exceeds remaining refundable balance ${remaining}`,
-        );
-      }
-
-      // P0: Use advisory-locked receipt generator instead of Date.now() suffix (collision risk)
-      const refundReceipt = (await this.generateReceiptNumber(manager, tenantId)).replace(
-        /^RCP/,
-        'REF',
-      );
-
-      const refund = manager.create(Payment, {
-        receiptNumber: refundReceipt,
-        invoiceId: original.invoiceId,
-        amount: -Math.abs(refundAmount),
-        method: original.method,
-        status: PaymentStatus.REFUNDED,
-        transactionReference: `REFUND-${original.receiptNumber}`,
-        notes: `Partial refund of payment ${original.receiptNumber}: ${reason}`,
-        receivedById: userId,
-        tenantId: requireTenantId(tenantId),
-      });
-      const savedRefund = await manager.save(refund);
-
-      // P0: Keep original payment as COMPLETED even when fully refunded — the refund
-      // counter-payment rows track the reversal. Reports distinguish refunds from voids
-      // by checking for counter-payments. Mark as REFUNDED (not VOIDED) for clarity.
-      if (alreadyRefunded + refundAmount >= Number(original.amount)) {
-        original.status = PaymentStatus.REFUNDED;
-        original.notes = `${original.notes || ''}\nFully refunded by ${userId}: ${reason}`.trim();
-        await paymentRepo.save(original);
-      }
-
-      // Adjust invoice balance
-      if (original.invoice) {
-        const invoice = await invoiceRepo.findOne({
-          where: { id: original.invoice.id },
+        // Lock bare row, then load relations — FOR UPDATE + outer join 500s.
+        const lockedOriginal = await paymentRepo.findOne({
+          where: { id: paymentId, tenantId: requireTenantId(tenantId) },
           lock: { mode: 'pessimistic_write' },
         });
-        if (invoice) {
-          invoice.amountPaid = Number(invoice.amountPaid) - refundAmount;
-          if (invoice.amountPaid < 0) invoice.amountPaid = 0;
-          invoice.balanceDue = Number(invoice.totalAmount) - Number(invoice.amountPaid);
+        if (!lockedOriginal) throw new NotFoundException('Payment not found');
+        const original = await paymentRepo.findOne({
+          where: { id: paymentId, tenantId: requireTenantId(tenantId) },
+          relations: ['invoice', 'invoice.encounter'],
+        });
 
-          if (invoice.amountPaid <= 0) {
-            invoice.status = InvoiceStatus.REFUNDED;
-          } else if (invoice.balanceDue > 0) {
-            invoice.status = InvoiceStatus.PARTIALLY_PAID;
-          }
-          invoice.notes = `${invoice.notes || ''}\nRefund (${refundAmount}): ${reason}`.trim();
-          await invoiceRepo.save(invoice);
+        if (!original) throw new NotFoundException('Payment not found');
+        if (original.status !== PaymentStatus.COMPLETED) {
+          throw new BadRequestException(`Cannot refund a payment with status '${original.status}'`);
+        }
+        if (original.receivedById === userId) {
+          throw new BadRequestException(
+            'Segregation of duties violation: the payment receiver cannot process its refund',
+          );
         }
 
-        // GL reversal for the refund leg
-        const facilityId = original.invoice.encounter?.facilityId;
-        if (facilityId && refundAmount > 0) {
-          this.financeService
-            .autoPostPatientPaymentJournal(
-              {
-                facilityId,
-                receiptNumber: refundReceipt,
-                amount: -refundAmount,
-                paymentMethod: original.method || 'cash',
-                userId,
-              },
-              tenantId,
-            )
-            .catch((err) =>
-              this.logger.error(`GL reversal failed for refund ${refundReceipt}: ${err.message}`, {
-                receiptNumber: refundReceipt,
-                refundAmount,
-                error: err.stack,
-              }),
-            );
+        // P1: Time window for refunds — 90-day limit
+        const refundWindowDays = 90;
+        const paymentAgeMs = Date.now() - new Date(original.paidAt).getTime();
+        if (paymentAgeMs > refundWindowDays * 24 * 60 * 60 * 1000) {
+          throw new BadRequestException(
+            `Payment is older than ${refundWindowDays} days. Refunds are no longer allowed — use a write-off instead.`,
+          );
         }
-      }
 
-      await this.auditLogService
-        .log({
-          userId,
-          action: 'PAYMENT_REFUNDED',
-          entityType: 'Payment',
-          entityId: original.id,
-          oldValue: { amount: Number(original.amount), receiptNumber: original.receiptNumber },
-          newValue: { refundAmount, refundReceipt, status: original.status },
-          reason,
-          tenantId: requireTenantId(tenantId),
-        })
-        .catch((err) =>
-          this.logger.error(`Audit log failed for refundPayment ${original.id}: ${err.message}`),
+        // How much of this payment is still refundable?
+        const priorRefunds = await paymentRepo
+          .createQueryBuilder('p')
+          .where('p.transactionReference = :ref', {
+            ref: `REFUND-${original.receiptNumber}`,
+          })
+          .andWhere('p.status = :st', { st: PaymentStatus.REFUNDED })
+          .getMany();
+        const alreadyRefunded = priorRefunds.reduce(
+          (sum, p) => sum + Math.abs(Number(p.amount)),
+          0,
+        );
+        const remaining = Number(original.amount) - alreadyRefunded;
+        if (refundAmount > remaining) {
+          throw new BadRequestException(
+            `Refund amount ${refundAmount} exceeds remaining refundable balance ${remaining}`,
+          );
+        }
+
+        // P0: Use advisory-locked receipt generator instead of Date.now() suffix (collision risk)
+        const refundReceipt = (await this.generateReceiptNumber(manager, tenantId)).replace(
+          /^RCP/,
+          'REF',
         );
 
-      return savedRefund;
-    });
+        const refund = manager.create(Payment, {
+          receiptNumber: refundReceipt,
+          invoiceId: original.invoiceId,
+          amount: -Math.abs(refundAmount),
+          method: original.method,
+          status: PaymentStatus.REFUNDED,
+          transactionReference: `REFUND-${original.receiptNumber}`,
+          notes: `Partial refund of payment ${original.receiptNumber}: ${reason}`,
+          receivedById: userId,
+          tenantId: requireTenantId(tenantId),
+        });
+        const savedRefund = await manager.save(refund);
+
+        // P0: Keep original payment as COMPLETED even when fully refunded — the refund
+        // counter-payment rows track the reversal. Reports distinguish refunds from voids
+        // by checking for counter-payments. Mark as REFUNDED (not VOIDED) for clarity.
+        if (alreadyRefunded + refundAmount >= Number(original.amount)) {
+          original.status = PaymentStatus.REFUNDED;
+          original.notes = `${original.notes || ''}\nFully refunded by ${userId}: ${reason}`.trim();
+          await paymentRepo.save(original);
+        }
+
+        // Adjust invoice balance
+        if (original.invoice) {
+          const invoice = await invoiceRepo.findOne({
+            where: { id: original.invoice.id },
+            lock: { mode: 'pessimistic_write' },
+          });
+          if (invoice) {
+            invoice.amountPaid = Number(invoice.amountPaid) - refundAmount;
+            if (invoice.amountPaid < 0) invoice.amountPaid = 0;
+            invoice.balanceDue = Number(invoice.totalAmount) - Number(invoice.amountPaid);
+
+            if (invoice.amountPaid <= 0) {
+              invoice.status = InvoiceStatus.REFUNDED;
+            } else if (invoice.balanceDue > 0) {
+              invoice.status = InvoiceStatus.PARTIALLY_PAID;
+            }
+            invoice.notes = `${invoice.notes || ''}\nRefund (${refundAmount}): ${reason}`.trim();
+            await invoiceRepo.save(invoice);
+          }
+
+          // Posted after the commit — see below.
+          refundGlFacilityId = original.invoice.encounter?.facilityId || null;
+        }
+
+        return {
+          savedRefund,
+          refundGlFacilityId,
+          refundAudit: {
+            originalId: original.id,
+            originalAmount: Number(original.amount),
+            originalReceipt: original.receiptNumber,
+            method: original.method,
+            status: original.status,
+          },
+        };
+      },
+    );
+
+    // GL reversal and audit both run after the commit. Both went through
+    // sibling services on their own connections from inside the transaction,
+    // so the reversal entry and the audit row committed independently of the
+    // refund they described. Both stay best-effort.
+    if (refundGlFacilityId && refundAmount > 0) {
+      this.financeService
+        .autoPostPatientPaymentJournal(
+          {
+            facilityId: refundGlFacilityId,
+            receiptNumber: savedRefund.receiptNumber,
+            amount: -refundAmount,
+            paymentMethod: refundAudit.method || 'cash',
+            userId,
+          },
+          tenantId,
+        )
+        .catch((err) =>
+          this.logger.error(
+            `GL reversal failed for refund ${savedRefund.receiptNumber}: ${err.message}`,
+            { receiptNumber: savedRefund.receiptNumber, refundAmount, error: err.stack },
+          ),
+        );
+    }
+
+    await this.auditLogService
+      .log({
+        userId,
+        action: 'PAYMENT_REFUNDED',
+        entityType: 'Payment',
+        entityId: refundAudit.originalId,
+        oldValue: {
+          amount: refundAudit.originalAmount,
+          receiptNumber: refundAudit.originalReceipt,
+        },
+        newValue: {
+          refundAmount,
+          refundReceipt: savedRefund.receiptNumber,
+          status: refundAudit.status,
+        },
+        reason,
+        tenantId: requireTenantId(tenantId),
+      })
+      .catch((err) =>
+        this.logger.error(
+          `Audit log failed for refundPayment ${refundAudit.originalId}: ${err.message}`,
+        ),
+      );
+
+    return savedRefund;
   }
 
   /**

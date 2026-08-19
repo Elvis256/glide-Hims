@@ -792,7 +792,8 @@ export class InsuranceService {
       throw new BadRequestException('Paid amount must be positive');
     }
 
-    const { saved, settledInBilling } = await this.dataSource.transaction(async (manager) => {
+    const { saved, mirror, auditPrevious, policyUsedAmount, delta } =
+      await this.dataSource.transaction(async (manager) => {
       const claim = await manager.findOne(InsuranceClaim, {
         where: { id, tenantId: requireTenantId(tenantId) },
         lock: { mode: 'pessimistic_write' },
@@ -852,43 +853,68 @@ export class InsuranceService {
 
       // Mirror the settlement onto the invoice inside the SAME txn so a
       // billing failure rolls back the claim flip and the policy increment.
-      // recordInsuranceClaimPayment is idempotent on transactionReference,
-      // so retries are safe even if upstream calls this method more than once.
-      let mirror = null;
-      if (savedClaim.invoiceId && delta > 0) {
-        mirror = await this.billingService.recordInsuranceClaimPayment(
-          savedClaim.invoiceId,
-          delta,
-          savedClaim.claimNumber,
+      return {
+        saved: savedClaim,
+        // Mirrored into billing after this commits, not before.
+        mirror:
+          savedClaim.invoiceId && delta > 0
+            ? { invoiceId: savedClaim.invoiceId, delta }
+            : null,
+        auditPrevious: { totalPaid: previouslyPaid, status: ClaimStatus.APPROVED },
+        policyUsedAmount: Number(policy.usedAmount),
+        delta,
+      };
+    });
+
+    // Mirror the insurer's payment onto the patient's invoice, after the
+    // commit.
+    //
+    // This went through BillingService on its own connection from inside the
+    // transaction, so the Payment row against the invoice committed the
+    // moment it was written — while the claim, policy and invoice writes
+    // beside it could still roll back. That left the invoice showing the
+    // insurer had paid against a claim payment that was never recorded. It is
+    // idempotent on transactionReference, so a retry after a partial failure
+    // is safe.
+    let settledInBilling = false;
+    if (mirror) {
+      try {
+        const mirrored = await this.billingService.recordInsuranceClaimPayment(
+          mirror.invoiceId,
+          mirror.delta,
+          saved.claimNumber,
           dto.paymentReference,
           userId || 'system',
           tenantId,
         );
-      }
-
-      await this.auditLogService
-        .log({
-          userId,
-          action: 'INSURANCE_CLAIM_PAYMENT_RECORDED',
-          entityType: 'InsuranceClaim',
-          entityId: savedClaim.id,
-          oldValue: { totalPaid: previouslyPaid, status: ClaimStatus.APPROVED },
-          newValue: {
-            totalPaid: paidAmount,
-            delta,
-            status: savedClaim.status,
-            policyUsedAmount: Number(policy.usedAmount),
-            paymentReference: dto.paymentReference,
-            mirrored: Boolean(mirror),
-          },
-          tenantId: requireTenantId(tenantId),
-        })
-        .catch((err) =>
-          this.logger.error(`Audit log failed for recordPayment ${savedClaim.id}: ${err.message}`),
+        settledInBilling = Boolean(mirrored);
+      } catch (err: any) {
+        this.logger.error(
+          `Failed to mirror insurance payment for claim ${saved.claimNumber} onto invoice ${mirror.invoiceId}: ${err?.message || err}`,
         );
+      }
+    }
 
-      return { saved: savedClaim, settledInBilling: Boolean(mirror) };
-    });
+    await this.auditLogService
+      .log({
+        userId,
+        action: 'INSURANCE_CLAIM_PAYMENT_RECORDED',
+        entityType: 'InsuranceClaim',
+        entityId: saved.id,
+        oldValue: auditPrevious,
+        newValue: {
+          totalPaid: paidAmount,
+          delta,
+          status: saved.status,
+          policyUsedAmount,
+          paymentReference: dto.paymentReference,
+          mirrored: settledInBilling,
+        },
+        tenantId: requireTenantId(tenantId),
+      })
+      .catch((err) =>
+        this.logger.error(`Audit log failed for recordPayment ${saved.id}: ${err.message}`),
+      );
 
     // GL posting runs on its own connection and is best-effort — outside the
     // txn so a GL failure does not roll back the claim/policy/invoice writes,
@@ -913,7 +939,6 @@ export class InsuranceService {
         });
     }
 
-    void settledInBilling;
     return saved;
   }
 
