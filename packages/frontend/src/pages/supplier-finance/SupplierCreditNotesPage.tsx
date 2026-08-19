@@ -71,7 +71,11 @@ export default function SupplierCreditNotesPage() {
     mutationFn: (id: string) => supplierFinanceService.creditNotes.approve(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['credit-notes'] });
+      toast.success('Note approved');
     },
+    // Approval refuses when the creator tries to approve their own note.
+    // Without this the button simply appeared not to work.
+    onError: (e: any) => toast.error(e.response?.data?.message || 'Failed to approve note'),
   });
 
   // Payment vouchers this note can be applied against — same supplier, and the
@@ -104,9 +108,18 @@ export default function SupplierCreditNotesPage() {
     mutationFn: (data: Partial<CreditNote>) => supplierFinanceService.creditNotes.create(data as any),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['credit-notes'] });
+      toast.success('Note created');
       setShowAddModal(false);
     },
+    onError: (e: any) => toast.error(e.response?.data?.message || 'Failed to create note'),
   });
+
+  // Only vouchers that can still take a deduction. A paid or cancelled
+  // voucher is refused by the endpoint — offering it in the list only invites
+  // the error.
+  const applicableVouchers = vouchers.filter(
+    (v) => v.status !== 'paid' && v.status !== 'cancelled',
+  );
 
   const items = creditNotes || [];
 
@@ -465,15 +478,17 @@ export default function SupplierCreditNotesPage() {
                   className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">Select voucher</option>
-                  {vouchers.map((v) => (
+                  {applicableVouchers.map((v) => (
                     <option key={v.id} value={v.id}>
-                      {v.voucherNumber} — {formatCurrency(num(v.netAmount))}
+                      {v.voucherNumber} — {formatCurrency(num(v.netAmount))} still payable
                     </option>
                   ))}
                 </select>
-                {vouchers.length === 0 && (
+                {applicableVouchers.length === 0 && (
                   <p className="text-xs text-gray-500 mt-1">
-                    No payment vouchers for this supplier.
+                    {vouchers.length === 0
+                      ? 'No payment vouchers for this supplier.'
+                      : 'This supplier has no unpaid voucher to apply a note against.'}
                   </p>
                 )}
               </div>

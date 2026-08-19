@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { toast } from 'sonner';
 import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { formatCurrency } from '../../lib/currency';
@@ -37,6 +38,7 @@ export default function SupplierPaymentVouchersPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('All');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [processingVoucher, setProcessingVoucher] = useState<PaymentVoucher | null>(null);
   const [viewingVoucher, setViewingVoucher] = useState<PaymentVoucher | null>(null);
 
   // Escape closes these, Tab stays within them, and focus returns to
@@ -55,33 +57,56 @@ export default function SupplierPaymentVouchersPage() {
     queryFn: () => supplierFinanceService.payments.list(),
   });
 
+  // None of these reported failure, and every step of this voucher's life
+  // refuses on segregation of duties: the preparer may not approve, and the
+  // payer may be neither the preparer nor the approver. Silence turned a
+  // deliberate refusal into a button that appeared not to work — on the
+  // screen that releases money.
+  const showError = (fallback: string) => (err: any) =>
+    toast.error(err?.response?.data?.message || fallback);
+
   const submitMutation = useMutation({
     mutationFn: (id: string) => supplierFinanceService.payments.submit(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['payment-vouchers'] });
+      toast.success('Voucher submitted for approval');
     },
+    onError: showError('Failed to submit voucher'),
   });
 
   const approveMutation = useMutation({
     mutationFn: (id: string) => supplierFinanceService.payments.approve(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['payment-vouchers'] });
+      toast.success('Voucher approved');
     },
+    onError: showError('Failed to approve voucher'),
   });
 
   const processMutation = useMutation({
-    mutationFn: (id: string) => supplierFinanceService.payments.process(id),
+    mutationFn: ({
+      id,
+      bankDetails,
+    }: {
+      id: string;
+      bankDetails?: { chequeNumber?: string; bankReference?: string };
+    }) => supplierFinanceService.payments.process(id, bankDetails),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['payment-vouchers'] });
+      toast.success('Payment processed');
+      setProcessingVoucher(null);
     },
+    onError: showError('Failed to process payment'),
   });
 
   const createMutation = useMutation({
     mutationFn: (data: Partial<PaymentVoucher>) => supplierFinanceService.payments.create(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['payment-vouchers'] });
+      toast.success('Payment voucher created');
       setShowAddModal(false);
     },
+    onError: showError('Failed to create payment voucher'),
   });
 
   const items = vouchers || [];
@@ -290,7 +315,7 @@ export default function SupplierPaymentVouchersPage() {
                     )}
                     {voucher.status === 'approved' && (
                       <button
-                        onClick={() => processMutation.mutate(voucher.id)}
+                        onClick={() => setProcessingVoucher(voucher)}
                         className="px-2 py-1 text-xs bg-purple-600 text-white rounded hover:bg-purple-700"
                       >
                         Process
@@ -463,6 +488,163 @@ export default function SupplierPaymentVouchersPage() {
           </div>
         </div>
       )}
+      {processingVoucher && (
+        <ProcessPaymentModal
+          voucher={processingVoucher}
+          isSubmitting={processMutation.isPending}
+          onClose={() => setProcessingVoucher(null)}
+          onConfirm={(bankDetails) =>
+            processMutation.mutate({ id: processingVoucher.id, bankDetails })
+          }
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Releasing the money.
+ *
+ * Process used to fire straight off the row button with no body, so the
+ * cheque number and bank reference the endpoint accepts were never captured
+ * and a cheque payment could not be matched to the bank statement later —
+ * even though the voucher detail panel displays a bank reference. It also
+ * states the segregation-of-duties rule up front, because the refusal comes
+ * from the server and is worth knowing before you click.
+ */
+export function ProcessPaymentModal({
+  voucher,
+  isSubmitting,
+  onClose,
+  onConfirm,
+}: {
+  voucher: PaymentVoucher;
+  isSubmitting: boolean;
+  onClose: () => void;
+  onConfirm: (bankDetails: { chequeNumber?: string; bankReference?: string }) => void;
+}) {
+  const dialogRef = useDialogA11y<HTMLDivElement>({ open: true, onClose });
+  const [chequeNumber, setChequeNumber] = useState('');
+  const [bankReference, setBankReference] = useState('');
+
+  const method = voucher.paymentMethod;
+  const needsCheque = method === 'cheque';
+  const needsReference = method === 'bank_transfer' || method === 'mobile_money';
+
+  const canSubmit =
+    !isSubmitting &&
+    (!needsCheque || chequeNumber.trim().length > 0) &&
+    (!needsReference || bankReference.trim().length > 0);
+
+  const submit = () => {
+    if (!canSubmit) return;
+    onConfirm({
+      chequeNumber: chequeNumber.trim() || undefined,
+      bankReference: bankReference.trim() || undefined,
+    });
+  };
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="process-payment-title"
+      ref={dialogRef}
+    >
+      <div className="bg-white rounded-lg shadow-xl max-w-lg w-full">
+        <div className="px-5 py-3 border-b">
+          <h3 id="process-payment-title" className="font-semibold text-gray-900">
+            Process {voucher.voucherNumber}
+          </h3>
+          <p className="text-sm text-gray-500">
+            {voucher.supplier?.name || 'Supplier'} ·{' '}
+            {formatCurrency(Number(voucher.netAmount ?? voucher.grossAmount) || 0)} by{' '}
+            {String(method || '').replace(/_/g, ' ')}
+          </p>
+        </div>
+
+        <div className="p-5 space-y-4">
+          <p className="text-sm text-gray-600">
+            This records the money as paid. The person processing a payment must be neither the
+            person who prepared the voucher nor the person who approved it.
+          </p>
+
+          {needsCheque && (
+            <div>
+              <label htmlFor="cheque-number" className="block text-sm text-gray-700 mb-1">
+                Cheque number <span className="text-red-600">required</span>
+              </label>
+              <input
+                id="cheque-number"
+                type="text"
+                value={chequeNumber}
+                onChange={(e) => setChequeNumber(e.target.value)}
+                placeholder="e.g. 004512"
+                className="w-full px-3 py-2 border rounded-lg text-sm font-mono"
+              />
+            </div>
+          )}
+
+          {needsReference && (
+            <div>
+              <label htmlFor="bank-reference" className="block text-sm text-gray-700 mb-1">
+                Transaction reference <span className="text-red-600">required</span>
+              </label>
+              <input
+                id="bank-reference"
+                type="text"
+                value={bankReference}
+                onChange={(e) => setBankReference(e.target.value)}
+                placeholder="Bank or mobile-money reference"
+                className="w-full px-3 py-2 border rounded-lg text-sm font-mono"
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                This is what the payment is matched on when the statement is reconciled.
+              </p>
+            </div>
+          )}
+
+          {!needsCheque && !needsReference && (
+            <div>
+              <label htmlFor="bank-reference-optional" className="block text-sm text-gray-700 mb-1">
+                Reference <span className="text-gray-400">(optional)</span>
+              </label>
+              <input
+                id="bank-reference-optional"
+                type="text"
+                value={bankReference}
+                onChange={(e) => setBankReference(e.target.value)}
+                placeholder="Receipt or voucher reference, if any"
+                className="w-full px-3 py-2 border rounded-lg text-sm font-mono"
+              />
+            </div>
+          )}
+        </div>
+
+        <div className="px-5 py-3 border-t flex gap-2 justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={submit}
+            disabled={!canSubmit}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center gap-2"
+          >
+            {isSubmitting ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <CreditCard className="w-4 h-4" />
+            )}
+            Record payment
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
