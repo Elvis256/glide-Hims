@@ -7,6 +7,8 @@ import {
   localDayStart,
   dayBoundsUtc,
   localDateString,
+  localMonthString,
+  monthBoundsUtc,
 } from '../timezone.util';
 
 describe('hospitalTimeZone', () => {
@@ -150,5 +152,56 @@ describe('localDayStart', () => {
     expect(after.getTime() - before.getTime()).toBe(24 * 60 * 60 * 1000);
     const next = startOfDayUtc('2026-03-30', 'Europe/London');
     expect(next.getTime() - after.getTime()).toBe(23 * 60 * 60 * 1000);
+  });
+});
+
+describe('monthBoundsUtc / localMonthString', () => {
+  const KLA = 'Africa/Kampala'; // UTC+3, no DST
+
+  it('starts the month at local midnight, not UTC midnight', () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-19T09:00:00Z'));
+    const { start, period } = monthBoundsUtc(0, KLA);
+    expect(period).toBe('2026-08');
+    // 1 Aug 00:00 in Kampala is 31 Jul 21:00 UTC
+    expect(start.toISOString()).toBe('2026-07-31T21:00:00.000Z');
+    jest.useRealTimers();
+  });
+
+  it('ends the instant before the next local month begins', () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-19T09:00:00Z'));
+    const { end } = monthBoundsUtc(0, KLA);
+    // 1 Sep 00:00 Kampala is 31 Aug 21:00 UTC; the month ends 1ms before
+    expect(end.toISOString()).toBe('2026-08-31T20:59:59.999Z');
+    jest.useRealTimers();
+  });
+
+  it('claims the small hours that UTC bucketing gave to the month before', () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-19T09:00:00Z'));
+    const { start, end } = monthBoundsUtc(0, KLA);
+    // A PO raised 01:30 Kampala on 1 August = 22:30 UTC on 31 July.
+    const overnightOrder = new Date('2026-07-31T22:30:00Z');
+    expect(overnightOrder >= start && overnightOrder <= end).toBe(true);
+    jest.useRealTimers();
+  });
+
+  it('does not swallow the next month s small hours', () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-19T09:00:00Z'));
+    const { end } = monthBoundsUtc(0, KLA);
+    // 01:30 Kampala on 1 September = 22:30 UTC on 31 August — September's.
+    expect(new Date('2026-08-31T22:30:00Z') > end).toBe(true);
+    jest.useRealTimers();
+  });
+
+  it('walks backwards across a year boundary', () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-01-15T09:00:00Z'));
+    expect(monthBoundsUtc(-1, KLA).period).toBe('2025-12');
+    expect(monthBoundsUtc(-13, KLA).period).toBe('2024-12');
+    jest.useRealTimers();
+  });
+
+  it('reports the local month, which after 21:00 UTC is already tomorrow s', () => {
+    // 31 Aug 21:30 UTC is 1 Sep 00:30 in Kampala
+    expect(localMonthString(new Date('2026-08-31T21:30:00Z'), KLA)).toBe('2026-09');
+    expect(localMonthString(new Date('2026-08-31T20:30:00Z'), KLA)).toBe('2026-08');
   });
 });

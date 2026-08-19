@@ -1,9 +1,11 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between } from 'typeorm';
+import { Repository, Between, In } from 'typeorm';
 import { PurchaseOrder, POStatus } from '../../database/entities/purchase-order.entity';
 import { GoodsReceiptNote } from '../../database/entities/goods-receipt.entity';
 import { Supplier } from '../../database/entities/supplier.entity';
+import { monthBoundsUtc } from '../../common/utils/timezone.util';
+import { COMMITTED_SPEND_PO_STATUSES } from './spend-status.constants';
 
 interface SupplierMetric {
   supplierId: string;
@@ -66,7 +68,7 @@ export class SupplierAnalyticsService {
       .leftJoinAndSelect('po.supplier', 'supplier')
       .where('po.tenantId = :tid', { tid })
       .andWhere('po.status IN (:...statuses)', {
-        statuses: [POStatus.APPROVED, POStatus.FULLY_RECEIVED],
+        statuses: COMMITTED_SPEND_PO_STATUSES,
       });
 
     if (startDate && endDate) {
@@ -198,7 +200,6 @@ export class SupplierAnalyticsService {
     const tid = this.requireTenant(tenantId);
     const m = Math.max(1, Math.min(60, Math.floor(Number(months) || 12)));
     const trends: SupplierTrend[] = [];
-    const now = new Date();
 
     const supplier = await this.supplierRepository.findOne({
       where: { id: supplierId, tenantId: tid },
@@ -210,20 +211,19 @@ export class SupplierAnalyticsService {
 
     let prevSpend: number | null = null;
     for (let i = m - 1; i >= 0; i--) {
-      const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const monthEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0, 23, 59, 59, 999);
+      // Months bounded where the hospital is — see monthBoundsUtc.
+      const { start: monthStart, end: monthEnd, period } = monthBoundsUtc(-i);
 
       const orders = await this.poRepository.find({
         where: {
           tenantId: tid,
           supplierId,
           createdAt: Between(monthStart, monthEnd),
-          status: POStatus.APPROVED as any,
+          status: In(COMMITTED_SPEND_PO_STATUSES),
         },
       });
 
       const spend = orders.reduce((sum, o) => sum + parseFloat(String(o.totalAmount || 0)), 0);
-      const period = monthStart.toISOString().slice(0, 7);
 
       let trend: 'increasing' | 'decreasing' | 'stable' | null = null;
       if (prevSpend !== null && prevSpend > 0) {
