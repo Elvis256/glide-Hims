@@ -50,6 +50,49 @@ def block(text, i, open_c='{', close_c='}'):
         j += 1
     return text[i:], i
 
+
+def comment_block_above(text, pos):
+    """The contiguous comment/blank lines immediately above `pos`.
+
+    A fixed character lookback kept getting this wrong in both directions: too
+    short and a waiver at the top of a long doc comment was missed, too long
+    and an unrelated comment several declarations up could waive a call it had
+    nothing to do with. Walking the block is exact.
+    """
+    line_start = text.rfind('\n', 0, pos) + 1
+    out = []
+    i = line_start
+    while i > 0:
+        prev_start = text.rfind('\n', 0, i - 1) + 1
+        line = text[prev_start:i - 1].strip()
+        if line == '' or line.startswith('//') or line.startswith('*') or \
+           line.startswith('/*') or line.endswith('*/'):
+            out.append(line)
+            i = prev_start
+            if prev_start == 0:
+                break
+        else:
+            break
+    return '\n'.join(out)
+
+
+def waiver_context(text, pos):
+    """Where a `txn-connection-ok` marker is allowed to sit for a call at `pos`.
+
+    The comment block directly above, plus the handful of lines before it. The
+    block alone is too strict: a waiver often documents the `try {` that wraps
+    the call, or a second call one line below the first it was written for. A
+    plain line window alone is too loose at the other end, missing a marker at
+    the top of a long doc comment.
+    """
+    line_start = text.rfind('\n', 0, pos) + 1
+    window_start = line_start
+    for _ in range(6):
+        window_start = text.rfind('\n', 0, max(0, window_start - 1)) + 1
+        if window_start == 0:
+            break
+    return comment_block_above(text, pos) + '\n' + text[window_start:line_start]
+
 rows = []
 waived = []
 for f in files:
@@ -78,7 +121,14 @@ for f in files:
             # No trailing dot required: the manager-aware helpers assign the
             # repo to a local first (`const repo = manager ? ... : this.fooRepo`),
             # and requiring `.` made every one of them invisible here.
-            if not re.search(r'this\.[A-Za-z0-9_]*[Rr]epo(sitory)?\b|this\.dataSource\.', cbody): continue
+            # A helper that reaches a sibling service counts too: it is on
+            # another connection just as surely as one holding its own repo.
+            # Without this a private wrapper hid the call from pass 1 while
+            # pass 2 could not see it either, since pass 2 only matches the
+            # `this.x.y(` form written inline in the transaction.
+            if not re.search(
+                r'this\.[A-Za-z0-9_]*[Rr]epo(sitory)?\b|this\.dataSource\.|this\.[A-Za-z0-9_]+Service\.',
+                cbody): continue
             if call.start() < first_write: continue          # reads committed state, fine
             writes = bool(re.search(r'\.(save|update|insert|delete|increment)\(', cbody))
             opens = 'dataSource.transaction' in cbody
@@ -90,7 +140,7 @@ for f in files:
             # earlier in the file would otherwise be searched for the waiver.
             dm = re.search(r'(?:private|public|protected|async)\s+(?:async\s+)?' + re.escape(callee) + r'\s*\(', text)
             decl = dm.start() if dm else text.find(f'{callee}(')
-            head = text[max(0, decl - 500):decl]
+            head = waiver_context(text, decl)
             if 'txn-connection-ok' in head:
                 waived.append((str(f).replace('modules/',''), callee))
                 continue
@@ -124,8 +174,7 @@ for f in files:
             # deliberate read and one genuine escaping write, and waiving the
             # whole block would hide the second. The comment has to sit within
             # the few lines directly above the call.
-            head = cb[max(0, call.start() - 400):call.start()]
-            head = head[head.rfind('\n\n') + 1:] if '\n\n' in head else head
+            head = waiver_context(cb, call.start())
             line = text[:tm.end() + call.start()].count('\n') + 1
             direct.append((str(f).replace('modules/',''), f'{recv}.{meth}', 'txn-connection-ok' in head, line))
 
