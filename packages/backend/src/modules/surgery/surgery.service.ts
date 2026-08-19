@@ -45,6 +45,7 @@ import {
 import { InventoryService } from '../inventory/inventory.service';
 import { AuditLogService } from '../../common/interceptors/audit-log.service';
 import { requireTenantId } from '../../common/utils/tenant.util';
+import { localCalendarDate } from '../../common/utils/timezone.util';
 
 @Injectable()
 export class SurgeryService {
@@ -905,10 +906,11 @@ export class SurgeryService {
 
   async getTodaySchedule(facilityId: string, tenantId?: string): Promise<SurgeryCase[]> {
     const tid = requireTenantId(tenantId);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    // scheduled_date is a `date` column, so "today" must be the hospital's
+    // calendar date. Server-midnight meant that until 03:00 the theatre list
+    // still showed yesterday's cases as today's.
+    const today = localCalendarDate();
+    const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
 
     // PRE_OP and IN_PROGRESS cases are still today's workload — filtering
     // only SCHEDULED made cases vanish from the list once prepped
@@ -932,10 +934,10 @@ export class SurgeryService {
     tenantId?: string,
   ): Promise<SurgeryCase[]> {
     const tid = requireTenantId(tenantId);
-    const targetDate = new Date(date);
-    targetDate.setHours(0, 0, 0, 0);
-    const nextDay = new Date(targetDate);
-    nextDay.setDate(nextDay.getDate() + 1);
+    // An explicit YYYY-MM-DD is already a calendar date; normalise it to UTC
+    // midnight to match the `date` column.
+    const targetDate = new Date(`${String(date).slice(0, 10)}T00:00:00.000Z`);
+    const nextDay = new Date(targetDate.getTime() + 24 * 60 * 60 * 1000);
 
     const where: any = {
       facilityId,
@@ -956,10 +958,10 @@ export class SurgeryService {
     tenantId?: string,
   ): Promise<SurgeryCase[]> {
     const tid = requireTenantId(tenantId);
-    const start = startDate ? new Date(startDate) : new Date();
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(start);
-    end.setDate(end.getDate() + 7);
+    const start = startDate
+      ? new Date(`${String(startDate).slice(0, 10)}T00:00:00.000Z`)
+      : localCalendarDate();
+    const end = new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000);
 
     const where: any = {
       facilityId,
@@ -976,10 +978,11 @@ export class SurgeryService {
 
   async getDashboard(facilityId: string, tenantId?: string) {
     const tid = requireTenantId(tenantId);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    // scheduled_date is a `date` column, so "today" must be the hospital's
+    // calendar date. Server-midnight meant that until 03:00 the theatre list
+    // still showed yesterday's cases as today's.
+    const today = localCalendarDate();
+    const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
 
     const todayScheduledWhere: any = {
       facilityId,

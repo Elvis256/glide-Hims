@@ -11,6 +11,13 @@ import {
 } from 'typeorm';
 import { requireTenantId } from '../../common/utils/tenant.util';
 import {
+  localCalendarDate,
+  localDateString,
+  localDayStart,
+  monthBoundsUtc,
+  startOfDayUtc,
+} from '../../common/utils/timezone.util';
+import {
   Item,
   StockLedger,
   StockBalance,
@@ -531,8 +538,10 @@ export class InventoryService {
 
   async getExpiredItems(facilityId: string, tenantId?: string) {
     const tid = requireTenantId(tenantId);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // The hospital's calendar date. expiry_date is a `date` column, and with
+    // server-midnight a batch that expired yesterday (hospital time) was not
+    // flagged until 03:00.
+    const today = localCalendarDate();
 
     const qb2 = this.stockLedgerRepository
       .createQueryBuilder('sl')
@@ -631,10 +640,13 @@ export class InventoryService {
         rangeStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
         break;
       case 'quarter':
-        rangeStart = new Date(now.getFullYear(), now.getMonth() - 3, 1);
+        // Hospital-local period starts. new Date(y, m, 1) is midnight in the
+        // server's zone — 03:00 in Kampala — so each period opened three
+        // hours late and swept the small hours into the one before.
+        rangeStart = monthBoundsUtc(-3).start;
         break;
       case 'year':
-        rangeStart = new Date(now.getFullYear(), 0, 1);
+        rangeStart = startOfDayUtc(`${localDateString(now).slice(0, 4)}-01-01`);
         break;
       case 'custom':
         // Both bounds required; without them there is no range to honour, so fall back to month.
@@ -643,11 +655,11 @@ export class InventoryService {
           rangeEnd = new Date(endDate);
           break;
         }
-        rangeStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        rangeStart = monthBoundsUtc(0).start;
         break;
       case 'month':
       default:
-        rangeStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        rangeStart = monthBoundsUtc(0).start;
         break;
     }
 
@@ -755,9 +767,15 @@ export class InventoryService {
     // Monthly trend for last 12 months
     const monthlyTrend: { month: string; quantity: number; value: number }[] = [];
     for (let i = 11; i >= 0; i--) {
-      const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const monthEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0, 23, 59, 59);
-      const monthName = monthStart.toLocaleString('default', { month: 'short', year: '2-digit' });
+      const { start: monthStart, end: monthEnd, period } = monthBoundsUtc(-i);
+      // Label from the period string, not from monthStart: the bucket now
+      // begins at 21:00 UTC of the previous day, and formatting that instant
+      // in the server's zone would name the month before.
+      const monthName = new Date(`${period}-15T00:00:00Z`).toLocaleString('default', {
+        month: 'short',
+        year: '2-digit',
+        timeZone: 'UTC',
+      });
 
       let monthQty = 0;
       let monthVal = 0;
@@ -775,15 +793,14 @@ export class InventoryService {
     // Consumption trend (daily for last 30 days)
     const consumptionTrend: { date: string; value: number }[] = [];
     for (let i = 29; i >= 0; i--) {
-      const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
-      const dayStr = d.toISOString().split('T')[0];
-      const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-      const dayEnd = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59);
+      const dayStart = localDayStart(-i);
+      const dayEnd = localDayStart(-i + 1);
+      const dayStr = localDateString(dayStart);
 
       let dayQty = 0;
       for (const m of movements) {
         const mDate = new Date(m.createdAt);
-        if (mDate >= dayStart && mDate <= dayEnd) {
+        if (mDate >= dayStart && mDate < dayEnd) {
           dayQty += Math.abs(m.quantity);
         }
       }
