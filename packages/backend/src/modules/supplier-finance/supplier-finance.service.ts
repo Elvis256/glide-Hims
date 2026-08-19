@@ -1247,7 +1247,11 @@ export class SupplierFinanceService {
   }> {
     const grn = await this.grnRepo.findOne({
       where: { id: grnId, tenantId: requireTenantId(tenantId) },
-      relations: ['items', 'items.item', 'supplier', 'purchaseOrder'],
+      // GoodsReceiptItem has NO `item` relation — it denormalises itemName,
+      // itemUnit and unitCost onto the row. Asking for 'items.item' made
+      // TypeORM throw EntityPropertyNotFoundError, so the debit-note preview
+      // (and with it the whole rejected-goods recovery flow) had never worked.
+      relations: ['items', 'supplier', 'purchaseOrder'],
     });
     if (!grn) throw new NotFoundException('GRN not found');
 
