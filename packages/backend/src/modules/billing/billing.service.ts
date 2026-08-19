@@ -264,7 +264,15 @@ export class BillingService {
     // (pg_advisory_xact_lock) is released at THIS transaction's commit, which
     // is also when the invoice row becomes visible — so concurrent createInvoice
     // calls cannot race to claim the same INV number.
-    const saved = await this.dataSource.transaction(async (manager) => {
+    const { saved, gl } = await this.dataSource.transaction(async (manager) => {
+      // Filled in below when the invoice is tied to an encounter; posted to
+      // the ledger after this transaction commits.
+      let invoiceGl: {
+        facilityId: string;
+        invoiceNumber: string;
+        totalAmount: number;
+        revenueCategory: string;
+      } | null = null;
       const invoiceNumber = await this.generateInvoiceNumber(manager, tenantId);
 
       const invoice = this.invoiceRepository.create({
@@ -298,18 +306,15 @@ export class BillingService {
             `Encounter ${dto.encounterId} not found${tenantId ? ' for this tenant' : ''}`,
           );
         }
-        if (encounter.facilityId) {
-          await this.financeService.autoPostInvoiceJournal(
-            {
+        // Resolved here, posted after the commit.
+        invoiceGl = encounter.facilityId
+          ? {
               facilityId: encounter.facilityId,
-              invoiceNumber: invoiceNumber,
-              totalAmount: totalAmount,
+              invoiceNumber,
+              totalAmount,
               revenueCategory: dto.paymentType || 'consultation',
-              userId,
-            },
-            tenantId,
-          );
-        }
+            }
+          : null;
         // Update encounter status if linked
         if (encounter && encounter.status === EncounterStatus.PENDING_PHARMACY) {
           encounter.status = EncounterStatus.PENDING_PAYMENT;
@@ -317,8 +322,38 @@ export class BillingService {
         }
       }
 
-      return savedInvoice;
+      return { saved: savedInvoice, gl: invoiceGl };
     });
+
+    // Post the invoice to the General Ledger: DR Accounts Receivable, CR
+    // Revenue — after the commit.
+    //
+    // This used to run inside the transaction, through FinanceService on its
+    // own connection. On the happy path it committed the journal and then
+    // carried on; if anything after it failed — the encounter status save
+    // directly below it, for one — the invoice rolled back and the ledger was
+    // left carrying revenue for an invoice that does not exist. Out here the
+    // journal is only posted once the invoice is real, and a posting failure
+    // is recorded on the invoice for the reconciliation report rather than
+    // discarding a bill the patient has already been given.
+    if (gl) {
+      try {
+        await this.financeService.autoPostInvoiceJournal({ ...gl, userId }, tenantId);
+      } catch (err: any) {
+        // Invoice carries no glPosted flag (that column is on Payment), so an
+        // unposted invoice is only visible in the log. Logged at error level
+        // with the figures needed to post it by hand.
+        this.logger.error(
+          `GL auto-post failed for invoice ${saved.invoiceNumber}: ${err?.message || err}`,
+          {
+            invoiceNumber: saved.invoiceNumber,
+            facilityId: gl.facilityId,
+            totalAmount: gl.totalAmount,
+            error: err?.stack,
+          },
+        );
+      }
+    }
 
     // Best-effort auto-deduction of consumable inventory items linked to
     // each invoiced service. Failures are logged but never block invoicing.
@@ -1393,7 +1428,9 @@ export class BillingService {
     userId: string,
     tenantId?: string,
   ): Promise<Payment> {
-    return this.dataSource.transaction(async (manager) => {
+    let voidGlFacilityId: string | null = null;
+
+    const voided = await this.dataSource.transaction(async (manager) => {
       const paymentRepo = manager.getRepository(Payment);
       const invoiceRepo = manager.getRepository(Invoice);
 
@@ -1474,47 +1511,57 @@ export class BillingService {
           await invoiceRepo.save(invoice);
         }
 
-        // Post GL reversal: DR Accounts Receivable, CR Cash (reverses the original payment posting)
-        const facilityId = payment.invoice.encounter?.facilityId;
-        if (facilityId && Number(payment.amount) > 0) {
-          this.financeService
-            .autoPostPatientPaymentJournal(
-              {
-                facilityId,
-                receiptNumber: `${payment.receiptNumber}-VOID`,
-                amount: -Number(payment.amount),
-                paymentMethod: payment.method || 'cash',
-                userId,
-              },
-              tenantId,
-            )
-            .catch((err) =>
-              this.logger.error(
-                `GL reversal failed for voided payment ${payment.receiptNumber}: ${err.message}`,
-                { receiptNumber: payment.receiptNumber, amount: payment.amount, error: err.stack },
-              ),
-            );
-        }
+        // Resolved here, posted after the commit.
+        voidGlFacilityId = payment.invoice.encounter?.facilityId || null;
       }
-
-      // Audit log: payment void is high-sensitivity
-      await this.auditLogService
-        .log({
-          userId,
-          action: 'PAYMENT_VOIDED',
-          entityType: 'Payment',
-          entityId: payment.id,
-          oldValue: { status: PaymentStatus.COMPLETED, amount: Number(payment.amount) },
-          newValue: { status: PaymentStatus.VOIDED, receiptNumber: payment.receiptNumber },
-          reason,
-          tenantId: requireTenantId(tenantId),
-        })
-        .catch((err) =>
-          this.logger.error(`Audit log failed for voidPayment ${payment.id}: ${err.message}`),
-        );
 
       return payment;
     });
+
+    // GL reversal and audit both run after the commit.
+    //
+    // Both went through sibling services on their own connections, from
+    // inside the transaction: the reversal entry and the audit row committed
+    // independently of the void they described, so a void that rolled back
+    // left the ledger showing money returned and the trail showing a void
+    // that never happened. Both stay best-effort.
+    if (voidGlFacilityId && Number(voided.amount) > 0) {
+      this.financeService
+        .autoPostPatientPaymentJournal(
+          {
+            facilityId: voidGlFacilityId,
+            receiptNumber: `${voided.receiptNumber}-VOID`,
+            amount: -Number(voided.amount),
+            paymentMethod: voided.method || 'cash',
+            userId,
+          },
+          tenantId,
+        )
+        .catch((err) =>
+          this.logger.error(
+            `GL reversal failed for voided payment ${voided.receiptNumber}: ${err.message}`,
+            { receiptNumber: voided.receiptNumber, amount: voided.amount, error: err.stack },
+          ),
+        );
+    }
+
+    // Audit log: payment void is high-sensitivity
+    await this.auditLogService
+      .log({
+        userId,
+        action: 'PAYMENT_VOIDED',
+        entityType: 'Payment',
+        entityId: voided.id,
+        oldValue: { status: PaymentStatus.COMPLETED, amount: Number(voided.amount) },
+        newValue: { status: PaymentStatus.VOIDED, receiptNumber: voided.receiptNumber },
+        reason,
+        tenantId: requireTenantId(tenantId),
+      })
+      .catch((err) =>
+        this.logger.error(`Audit log failed for voidPayment ${voided.id}: ${err.message}`),
+      );
+
+    return voided;
   }
 
   /**
@@ -2322,6 +2369,10 @@ export class BillingService {
         let isCovered = true;
 
         try {
+          // txn-connection-ok: resolvePrice is read-only — service prices,
+          // insurance price lists and pricing rules — none of which this
+          // transaction writes, so its own connection sees the same
+          // committed state.
           const resolved = await this.pricingEngineService.resolvePrice(
             {
               serviceId: params.serviceId,
@@ -2340,6 +2391,9 @@ export class BillingService {
 
           // Run coverage check (exclusions, annual limit, pre-auth)
           try {
+            // txn-connection-ok: checkCoverage issues no writes anywhere in
+            // the service; it reads policies, exclusions and accumulated
+            // limits, which this transaction does not touch.
             const coverageResult = await this.coverageCheckService.checkCoverage(
               {
                 patientId: params.patientId,

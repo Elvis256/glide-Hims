@@ -166,7 +166,7 @@ export class SurgeryService {
     tenantId?: string,
   ): Promise<SurgeryCase> {
     const tid = requireTenantId(tenantId);
-    return this.dataSource.transaction(async (manager) => {
+    const saved = await this.dataSource.transaction(async (manager) => {
       // Lock the theatre row to prevent concurrent scheduling race conditions
       const theatreQb = manager
         .createQueryBuilder(Theatre, 'theatre')
@@ -233,23 +233,28 @@ export class SurgeryService {
 
       const saved = await manager.save(surgeryCase);
 
-      this.auditLogService
-        .log({
-          action: 'SCHEDULE_SURGERY',
-          entityType: 'SurgeryCase',
-          entityId: saved.id,
-          userId,
-          tenantId,
-          newValue: {
-            caseNumber: saved.caseNumber,
-            status: SurgeryStatus.SCHEDULED,
-            procedureName: dto.procedureName,
-          },
-        })
-        .catch(() => {});
-
       return saved;
     });
+
+    // Audit after the commit — it writes on its own connection, so inside the
+    // transaction the log row committed independently of the case it
+    // described. Still best-effort.
+    this.auditLogService
+      .log({
+        action: 'SCHEDULE_SURGERY',
+        entityType: 'SurgeryCase',
+        entityId: saved.id,
+        userId,
+        tenantId,
+        newValue: {
+          caseNumber: saved.caseNumber,
+          status: SurgeryStatus.SCHEDULED,
+          procedureName: dto.procedureName,
+        },
+      })
+      .catch(() => {});
+
+    return saved;
   }
 
   async checkTheatreConflicts(

@@ -1177,7 +1177,8 @@ export class IpdService {
     tenantId?: string,
   ): Promise<MedicationAdministration> {
     const tid = requireTenantId(tenantId);
-    return this.dataSource.transaction(async (manager) => {
+    let auditPreviousStatus: string | undefined;
+    const saved = await this.dataSource.transaction(async (manager) => {
       // C2: pessimistic lock prevents two nurses double-administering the same dose.
       const med = await manager.findOne(MedicationAdministration, {
         where: { id, tenantId: tid },
@@ -1239,31 +1240,38 @@ export class IpdService {
       // Doses given are already recorded, one row per dose, on this very
       // table: count medication_administrations with status ADMINISTERED.
 
-      // C6: audit log (best-effort, never blocks the dose).
-      this.auditLogService
-        .log({
-          userId,
-          action: 'MEDICATION_ADMINISTERED',
-          entityType: 'MedicationAdministration',
-          entityId: saved.id,
-          oldValue: { status: previousStatus },
-          newValue: {
-            status: saved.status,
-            drugName: saved.drugName,
-            admissionId: saved.admissionId,
-            allergyOverrideReason: dto.allergyOverrideReason || null,
-          },
-          tenantId: tid,
-        })
-        .catch((err) =>
-          this.logger.error(`Audit log failed for med admin ${saved.id}: ${err.message}`),
-        );
-
+      auditPreviousStatus = previousStatus;
       this.logger.log(
         `Medication administered: ${med.drugName} status ${dto.status} for admission ${med.admissionId} by user ${userId}`,
       );
       return saved;
     });
+
+    // C6: audit log (best-effort, never blocks the dose) — after the commit.
+    // AuditLogService writes on its own connection, so from inside the
+    // transaction the log row committed independently of the dose it
+    // recorded: roll the administration back and the record still said the
+    // patient had been given it.
+    this.auditLogService
+      .log({
+        userId,
+        action: 'MEDICATION_ADMINISTERED',
+        entityType: 'MedicationAdministration',
+        entityId: saved.id,
+        oldValue: { status: auditPreviousStatus },
+        newValue: {
+          status: saved.status,
+          drugName: saved.drugName,
+          admissionId: saved.admissionId,
+          allergyOverrideReason: dto.allergyOverrideReason || null,
+        },
+        tenantId: tid,
+      })
+      .catch((err) =>
+        this.logger.error(`Audit log failed for med admin ${saved.id}: ${err.message}`),
+      );
+
+    return saved;
   }
 
   // ========== DASHBOARD STATS ==========

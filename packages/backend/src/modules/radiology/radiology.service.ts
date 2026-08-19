@@ -91,7 +91,7 @@ export class RadiologyService {
     userId: string,
     tenantId?: string,
   ): Promise<ImagingOrder> {
-    return this.dataSource.transaction(async (manager) => {
+    const savedOrder = await this.dataSource.transaction(async (manager) => {
       // Generate order number with pessimistic lock
       const date = new Date();
       const yearMonth = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}`;
@@ -135,24 +135,30 @@ export class RadiologyService {
         `Imaging order created: ${orderNumber} for patient ${dto.patientId} by user ${userId}`,
       );
 
-      this.auditLogService
-        .log({
-          action: 'CREATE_IMAGING_ORDER',
-          entityType: 'ImagingOrder',
-          entityId: savedOrder.id,
-          userId,
-          tenantId,
-          newValue: {
-            orderNumber,
-            studyType: dto.studyType,
-            patientId: dto.patientId,
-            status: ImagingOrderStatus.ORDERED,
-          },
-        })
-        .catch(() => {});
-
       return savedOrder;
     });
+
+    // Audit after the commit. It writes through AuditLogService on its own
+    // connection, so from inside the transaction the log row committed
+    // independently: roll the order back and the trail still said it was
+    // created. Still best-effort — a logging failure must not fail the order.
+    this.auditLogService
+      .log({
+        action: 'CREATE_IMAGING_ORDER',
+        entityType: 'ImagingOrder',
+        entityId: savedOrder.id,
+        userId,
+        tenantId,
+        newValue: {
+          orderNumber: savedOrder.orderNumber,
+          studyType: dto.studyType,
+          patientId: dto.patientId,
+          status: ImagingOrderStatus.ORDERED,
+        },
+      })
+      .catch(() => {});
+
+    return savedOrder;
   }
 
   async getOrder(id: string, tenantId?: string): Promise<ImagingOrder> {

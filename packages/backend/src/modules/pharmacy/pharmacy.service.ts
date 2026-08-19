@@ -1019,8 +1019,14 @@ export class PharmacyService {
       // to submit to URA. Skip for legacy sales and when the tenant has not
       // enabled EFRIS submission.
       try {
+        // txn-connection-ok: getConfig is a single findOne on the tenant's
+        // EFRIS settings and buildInvoicePayload is pure — it formats the
+        // sale it is handed. Neither touches a row this sale writes. The
+        // enqueue below is the part that must be transactional, and it is
+        // given the manager.
         const cfg = tenantId ? await this.efrisService.getConfig(tenantId) : null;
         if (cfg?.isEnabled && cfg?.submitOnCompletion && sale.saleChannel !== SaleChannel.LEGACY) {
+          // txn-connection-ok: pure — it formats the sale it is handed.
           const payload = this.efrisService.buildInvoicePayload(sale, sale.items, cfg);
           await this.efrisService.enqueueDocument(
             manager,

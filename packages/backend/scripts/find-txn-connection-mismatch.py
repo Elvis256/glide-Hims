@@ -120,7 +120,12 @@ for f in files:
             # already handed the transaction's manager
             args, _ = block(cb, call.end()-1, '(', ')')
             if re.search(r'\bmanager\b', args): continue
-            head = text[max(0, text.rfind('\n\n', 0, tm.start())):tm.start()]
+            # Waive per call, not per transaction: a transaction can hold one
+            # deliberate read and one genuine escaping write, and waiving the
+            # whole block would hide the second. The comment has to sit within
+            # the few lines directly above the call.
+            head = cb[max(0, call.start() - 400):call.start()]
+            head = head[head.rfind('\n\n') + 1:] if '\n\n' in head else head
             line = text[:tm.end() + call.start()].count('\n') + 1
             direct.append((str(f).replace('modules/',''), f'{recv}.{meth}', 'txn-connection-ok' in head, line))
 

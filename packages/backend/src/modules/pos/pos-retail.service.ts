@@ -263,6 +263,9 @@ export class PosRetailService {
 
       // EFRIS credit note (best-effort)
       try {
+        // txn-connection-ok: a single findOne on the tenant's EFRIS settings,
+        // which this return does not write. The enqueue below takes the
+        // manager so the outbox row commits with the return.
         const cfg = await this.efrisService.getConfig(tenantId);
         if (cfg?.isEnabled) {
           const idempKey = `return:${savedReturn.id}:credit_note`;
@@ -431,6 +434,8 @@ export class PosRetailService {
 
       // EFRIS credit note (full void)
       try {
+        // txn-connection-ok: reads the tenant's EFRIS settings, which the
+        // void does not write. enqueueDocument below is given the manager.
         const cfg = await this.efrisService.getConfig(tenantId);
         if (cfg?.isEnabled) {
           await this.efrisService.enqueueDocument(
