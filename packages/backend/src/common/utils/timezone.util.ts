@@ -216,6 +216,31 @@ export function monthBoundsUtc(
 }
 
 /**
+ * SQL that reads a stored instant as hospital wall-clock, ready to bucket.
+ *
+ * `AT TIME ZONE` runs in opposite directions depending on the column type, and
+ * getting it backwards moves a skew rather than removing it:
+ *
+ *   timestamptz AT TIME ZONE z  -> timestamp   (converts INTO z)   — wanted
+ *   timestamp   AT TIME ZONE z  -> timestamptz (declares it IS z)  — not
+ *
+ * This codebase has both. encounters.start_time and payments.paid_at are
+ * timestamptz; patients.created_at, invoices.created_at, stock_ledger.created_at
+ * and admissions."dischargeDate" are timestamp without time zone. The naive
+ * ones default to now() on a session pinned to UTC, so they hold UTC
+ * wall-clock and have to be declared UTC before being converted.
+ *
+ * Pass `naive: true` for a column with no zone. Getting the flag wrong is a
+ * silent three-hour error, so check information_schema rather than guessing.
+ */
+export function localWallClockSql(column: string, naive: boolean): string {
+  const z = sqlSafeTimeZone();
+  return naive
+    ? `${column} AT TIME ZONE 'UTC' AT TIME ZONE '${z}'`
+    : `${column} AT TIME ZONE '${z}'`;
+}
+
+/**
  * The hospital's current calendar date, as UTC midnight of that date.
  *
  * For `date` columns only — queue_date, and anything else storing a calendar
