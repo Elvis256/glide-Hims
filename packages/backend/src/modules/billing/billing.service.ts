@@ -35,7 +35,7 @@ import { InsurancePolicy, PolicyStatus } from '../../database/entities/insurance
 import { MembershipScheme, PatientMembership } from '../../database/entities/membership.entity';
 import { multiply, add, subtract, divide, roundCurrency } from '../../common/utils/currency';
 import { requireTenantId } from '../../common/utils/tenant.util';
-import { dayBoundsUtc } from '../../common/utils/timezone.util';
+import { dayBoundsUtc, localDateString } from '../../common/utils/timezone.util';
 
 @Injectable()
 export class BillingService {
@@ -63,8 +63,16 @@ export class BillingService {
   ) {}
 
   private async generateInvoiceNumber(manager: EntityManager, tenantId?: string): Promise<string> {
-    const today = new Date();
-    const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
+    // The hospital's date, not the server's: on UTC+3 an invoice raised at
+    // 01:00 was numbered under the previous day.
+    //
+    // This has to move in lockstep with the identical prefix in
+    // QueueManagementService, which deliberately shares this advisory-lock key
+    // so the two generators serialise against each other rather than only
+    // against themselves. Change one and not the other and for three hours
+    // each day they take different locks while writing to the same UNIQUE
+    // column.
+    const dateStr = localDateString(new Date()).replace(/-/g, '');
     const lockKey = `inv_num_${dateStr}_${tenantId || 'global'}`;
 
     // Use advisory lock to prevent concurrent generation collisions
