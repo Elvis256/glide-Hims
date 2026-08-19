@@ -653,7 +653,7 @@ export class ProcurementService {
     userRoles?: string[],
   ): Promise<PurchaseRequest> {
     const tid = requireTenantId(tenantId);
-    return this.dataSource.transaction(async (manager) => {
+    const { approved, approvalAudit } = await this.dataSource.transaction(async (manager) => {
       const prRepo = manager.getRepository(PurchaseRequest);
       const prItemRepo = manager.getRepository(PurchaseRequestItem);
       const chainRepo = manager.getRepository(ProcurementApprovalChain);
@@ -745,23 +745,15 @@ export class ProcurementService {
       nextChain.comments = dto.comments;
       await chainRepo.save(nextChain);
 
-      // Phase 3: Log approval for audit trail
-      try {
-        await this.auditService.logPRApprove({
-          prId: id,
-          requestNumber: pr.requestNumber,
-          approvalLevel: nextChain.approvalLevel,
-          requiredRole: nextChain.requiredRole,
-          actualRole: userRoleNames.join(', '),
-          userId,
-          tenantId,
-          comments: dto.comments,
-          amount: pr.totalEstimated,
-        });
-      } catch (error) {
-        this.logger.warn(`Failed to log PR approval: ${error.message}`);
-        // Don't fail approval if audit log fails
-      }
+      // Phase 3: audit trail — raised after this transaction commits, since
+      // AuditService writes on its own connection and the row would otherwise
+      // outlive an approval that rolled back.
+      const approvalAudit = {
+        requestNumber: pr.requestNumber,
+        approvalLevel: nextChain.approvalLevel,
+        requiredRole: nextChain.requiredRole,
+        actualRole: userRoleNames.join(', '),
+      };
 
       // Update approved quantities if provided
       let totalEstimatedApproved = 0;
@@ -837,8 +829,29 @@ export class ProcurementService {
         );
       }
 
-      return prRepo.save(pr);
+      return { approved: await prRepo.save(pr), approvalAudit };
     });
+
+    if (approvalAudit) {
+      try {
+        await this.auditService.logPRApprove({
+          prId: id,
+          requestNumber: approvalAudit.requestNumber,
+          approvalLevel: approvalAudit.approvalLevel,
+          requiredRole: approvalAudit.requiredRole,
+          actualRole: approvalAudit.actualRole,
+          userId,
+          tenantId,
+          comments: dto.comments,
+          amount: approved.totalEstimated,
+        });
+      } catch (error) {
+        this.logger.warn(`Failed to log PR approval: ${error.message}`);
+        // Don't fail approval if audit log fails
+      }
+    }
+
+    return approved;
   }
 
   async rejectPurchaseRequest(
@@ -848,7 +861,7 @@ export class ProcurementService {
     tenantId?: string,
   ): Promise<PurchaseRequest> {
     const tid = requireTenantId(tenantId);
-    return this.dataSource.transaction(async (manager) => {
+    const rejected = await this.dataSource.transaction(async (manager) => {
       const prRepo = manager.getRepository(PurchaseRequest);
       const chainRepo = manager.getRepository(ProcurementApprovalChain);
 
@@ -885,23 +898,27 @@ export class ProcurementService {
       pr.approvedAt = new Date();
       pr.rejectionReason = dto.rejectionReason;
 
-      // Phase 3: Log rejection for audit trail
-      try {
-        await this.auditService.logPRReject({
-          prId: id,
-          requestNumber: pr.requestNumber,
-          rejectedById: userId,
-          rejectionReason: dto.rejectionReason,
-          tenantId,
-        });
-      } catch (error) {
-        this.logger.warn(`Failed to log PR rejection: ${error.message}`);
-        // Don't fail rejection if audit log fails
-      }
-
       this.logger.log(`PR ${id} rejected by user ${userId}`);
       return prRepo.save(pr);
     });
+
+    // Phase 3: audit trail — after the commit. AuditService writes on its own
+    // connection, so from inside the transaction the rejection record
+    // committed independently of the rejection itself.
+    try {
+      await this.auditService.logPRReject({
+        prId: id,
+        requestNumber: rejected.requestNumber,
+        rejectedById: userId,
+        rejectionReason: dto.rejectionReason,
+        tenantId,
+      });
+    } catch (error) {
+      this.logger.warn(`Failed to log PR rejection: ${error.message}`);
+      // Don't fail rejection if audit log fails
+    }
+
+    return rejected;
   }
 
   // ============ PURCHASE ORDER ============
@@ -1434,7 +1451,14 @@ export class ProcurementService {
     userRoles?: string[],
   ): Promise<PurchaseOrder> {
     const tid = requireTenantId(tenantId);
-    return this.dataSource.transaction(async (manager) => {
+    const { approvedPO, poApprovalAudit } = await this.dataSource.transaction(async (manager) => {
+      let poApprovalAudit: {
+        poNumber: string;
+        approvalLevel: number;
+        requiredRole: string;
+        actualRole: string;
+        amount: number;
+      } | null = null;
       const poRepo = manager.getRepository(PurchaseOrder);
       const chainRepo = manager.getRepository(ProcurementApprovalChain);
 
@@ -1511,22 +1535,16 @@ export class ProcurementService {
         nextChain.approvedAt = new Date();
         await chainRepo.save(nextChain);
 
-        // Phase 3: Log approval for audit trail
-        try {
-          await this.auditService.logPOApprove({
-            poId: id,
-            poNumber: po.orderNumber,
-            approvalLevel: nextChain.approvalLevel,
-            requiredRole: nextChain.requiredRole,
-            actualRole: userRoleNames.join(', '),
-            userId,
-            tenantId,
-            amount: Number(po.totalAmount),
-          });
-        } catch (error) {
-          this.logger.warn(`Failed to log PO approval: ${error.message}`);
-          // Don't fail approval if audit log fails
-        }
+        // Phase 3: audit trail — raised after this transaction commits, since
+        // AuditService writes on its own connection and the row would
+        // otherwise outlive an approval that rolled back.
+        poApprovalAudit = {
+          poNumber: po.orderNumber,
+          approvalLevel: nextChain.approvalLevel,
+          requiredRole: nextChain.requiredRole,
+          actualRole: userRoleNames.join(', '),
+          amount: Number(po.totalAmount),
+        };
 
         // Check if approval chain is complete
         const pendingChains = await chainRepo.find({
@@ -1578,8 +1596,28 @@ export class ProcurementService {
         po.approvedAt = new Date();
       }
 
-      return poRepo.save(po);
+      return { approvedPO: await poRepo.save(po), poApprovalAudit };
     });
+
+    if (poApprovalAudit) {
+      try {
+        await this.auditService.logPOApprove({
+          poId: id,
+          poNumber: poApprovalAudit.poNumber,
+          approvalLevel: poApprovalAudit.approvalLevel,
+          requiredRole: poApprovalAudit.requiredRole,
+          actualRole: poApprovalAudit.actualRole,
+          userId,
+          tenantId,
+          amount: poApprovalAudit.amount,
+        });
+      } catch (error) {
+        this.logger.warn(`Failed to log PO approval: ${error.message}`);
+        // Don't fail approval if audit log fails
+      }
+    }
+
+    return approvedPO;
   }
 
   async sendPurchaseOrder(id: string, userId: string, tenantId?: string): Promise<PurchaseOrder> {

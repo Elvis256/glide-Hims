@@ -1596,7 +1596,7 @@ export class EncountersService {
     }
 
     const tid = requireTenantId(tenantId);
-    await this.dataSource.transaction(async (manager) => {
+    const deleteAudit = await this.dataSource.transaction(async (manager) => {
       // Re-fetch with lock inside the transaction
       const locked = await manager.findOne(Encounter, {
         where: { id, tenantId: tid },
@@ -1656,7 +1656,23 @@ export class EncountersService {
 
       await manager.softRemove(Encounter, locked);
 
-      // Audit log (inside transaction so it reflects the final state)
+      return {
+        status: locked.status,
+        patientId: locked.patientId,
+        visitNumber: locked.visitNumber,
+        cancelledInvoiceIds: unpaidInvoices.map((inv) => inv.id),
+      };
+    });
+
+    // Audit after the commit.
+    //
+    // It was placed inside the transaction "so it reflects the final state",
+    // but AuditLogService writes through its own connection: it could not see
+    // this transaction's uncommitted rows, so it never reflected that state —
+    // it only recorded the in-memory values, and did so whether or not the
+    // deletion committed. Out here the values are the same and the row is
+    // only written if the encounter really was deleted. Still best-effort.
+    if (deleteAudit) {
       this.auditLogService
         .log({
           userId,
@@ -1664,17 +1680,17 @@ export class EncountersService {
           entityType: 'encounter',
           entityId: id,
           oldValue: {
-            status: locked.status,
-            patientId: locked.patientId,
-            visitNumber: locked.visitNumber,
+            status: deleteAudit.status,
+            patientId: deleteAudit.patientId,
+            visitNumber: deleteAudit.visitNumber,
           },
           newValue: {
-            cancelledInvoices: unpaidInvoices.length,
-            cancelledInvoiceIds: unpaidInvoices.map((inv) => inv.id),
+            cancelledInvoices: deleteAudit.cancelledInvoiceIds.length,
+            cancelledInvoiceIds: deleteAudit.cancelledInvoiceIds,
           },
         })
         .catch((err) => this.logger.warn(`Audit log failed: ${err.message}`));
-    });
+    }
   }
 
   /**

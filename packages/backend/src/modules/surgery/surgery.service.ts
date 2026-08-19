@@ -435,7 +435,8 @@ export class SurgeryService {
       throw new BadRequestException(`WHO ${phase} checklist incomplete: ${problems.join('; ')}`);
     }
 
-    return this.dataSource.transaction(async (manager) => {
+    let auditCaseNumber: string | undefined;
+    const saved = await this.dataSource.transaction(async (manager) => {
       const surgeryCase = await manager.findOne(SurgeryCase, {
         where: { id: surgeryCaseId, tenantId: tid },
         lock: { mode: 'pessimistic_write' },
@@ -507,19 +508,25 @@ export class SurgeryService {
 
       const saved = await manager.save(SurgerySafetyChecklist, checklist);
 
-      this.auditLogService
-        .log({
-          action: `WHO_CHECKLIST_${phase.toUpperCase()}_COMPLETED`,
-          entityType: 'SurgerySafetyChecklist',
-          entityId: saved.id,
-          userId,
-          tenantId,
-          newValue: { surgeryCaseId, phase, caseNumber: surgeryCase.caseNumber },
-        })
-        .catch(() => {});
-
+      auditCaseNumber = surgeryCase.caseNumber;
       return saved;
     });
+
+    // Audit after the commit — it writes on its own connection, so inside the
+    // transaction the log row committed independently of the checklist phase
+    // it recorded. Still best-effort.
+    this.auditLogService
+      .log({
+        action: `WHO_CHECKLIST_${phase.toUpperCase()}_COMPLETED`,
+        entityType: 'SurgerySafetyChecklist',
+        entityId: saved.id,
+        userId,
+        tenantId,
+        newValue: { surgeryCaseId, phase, caseNumber: auditCaseNumber },
+      })
+      .catch(() => {});
+
+    return saved;
   }
 
   /** Whether the tenant enforces the WHO checklist against the surgery workflow. */

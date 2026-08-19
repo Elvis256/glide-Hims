@@ -330,7 +330,12 @@ export class LabSuppliesService {
     userId?: string,
   ): Promise<ReagentConsumption> {
     // P0: wrap in transaction with pessimistic lock to prevent stock going negative
-    return this.dataSource.transaction(async (manager) => {
+    let consumeAudit: { lotId: string; remainingQuantity: number; facilityId: string } = {
+      lotId: '',
+      remainingQuantity: 0,
+      facilityId: '',
+    };
+    const saved = await this.dataSource.transaction(async (manager) => {
       const lot = await manager.findOne(ReagentLot, {
         where: { id: data.lotId, tenantId: requireTenantId(tenantId) },
         lock: { mode: 'pessimistic_write' },
@@ -364,28 +369,37 @@ export class LabSuppliesService {
         await manager.save(reagent);
       }
 
-      // Audit
-      try {
-        await this.auditLogService.log({
-          action: 'REAGENT_CONSUMED',
-          entityType: 'ReagentConsumption',
-          entityId: saved.id,
-          userId,
-          tenantId,
-          newValue: {
-            consumptionId: saved.id,
-            lotId: lot.id,
-            quantityUsed: data.quantityUsed,
-            remainingQuantity: lot.currentQuantity,
-            facilityId: lot.facilityId,
-          },
-        });
-      } catch (e) {
-        this.logger.warn(`Audit log failed (REAGENT_CONSUMED): ${(e as Error).message}`);
-      }
-
+      consumeAudit = {
+        lotId: lot.id,
+        remainingQuantity: lot.currentQuantity,
+        facilityId: lot.facilityId,
+      };
       return saved;
     });
+
+    // Audit after the commit — AuditLogService writes on its own connection,
+    // so inside the transaction the log row committed independently of the
+    // consumption it recorded. Still best-effort.
+    try {
+      await this.auditLogService.log({
+        action: 'REAGENT_CONSUMED',
+        entityType: 'ReagentConsumption',
+        entityId: saved.id,
+        userId,
+        tenantId,
+        newValue: {
+          consumptionId: saved.id,
+          lotId: consumeAudit.lotId,
+          quantityUsed: data.quantityUsed,
+          remainingQuantity: consumeAudit.remainingQuantity,
+          facilityId: consumeAudit.facilityId,
+        },
+      });
+    } catch (e) {
+      this.logger.warn(`Audit log failed (REAGENT_CONSUMED): ${(e as Error).message}`);
+    }
+
+    return saved;
   }
 
   private applyReagentStatus(reagent: LabReagent): void {
