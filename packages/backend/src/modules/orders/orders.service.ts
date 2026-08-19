@@ -27,6 +27,7 @@ import { InAppNotificationsService } from '../in-app-notifications/in-app-notifi
 import { QueueManagementService } from '../queue-management/queue-management.service';
 import { AuditLogService } from '../../common/interceptors/audit-log.service';
 import { requireTenantId } from '../../common/utils/tenant.util';
+import { localDateString, localDayStart } from '../../common/utils/timezone.util';
 
 @Injectable()
 export class OrdersService {
@@ -71,8 +72,12 @@ export class OrdersService {
           : orderType === OrderType.PHARMACY
             ? 'PHM'
             : 'PRC';
-    const date = new Date();
-    const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
+    // The hospital's date, not the server's: on UTC+3 an order raised at
+    // 01:00 was stamped with yesterday's date, so the number on the request
+    // form disagreed with the day it was actually taken. The lock key and the
+    // sequence lookup both derive from this same string, so they stay
+    // consistent with each other either way.
+    const dateStr = localDateString(new Date()).replace(/-/g, '');
 
     // Serialize per tenant/type/day: count-based numbering against a UNIQUE
     // column raced under concurrent ordering (and counted without a tenant
@@ -640,7 +645,14 @@ export class OrdersService {
 
   async getOrderStats(facilityId: string, orderType?: OrderType, tenantId?: string) {
     const tid = requireTenantId(tenantId);
-    const today = new Date().toISOString().slice(0, 10);
+
+    // "Today" is the hospital's day, not the server's. toISOString() gives the
+    // UTC date and DATE(completed_at) truncates in the session zone, which is
+    // also UTC — so with the hospital on UTC+3 every order completed before
+    // 03:00 local was counted against yesterday, and the count reset itself
+    // three hours into the working day.
+    const dayStart = localDayStart(0);
+    const nextDayStart = localDayStart(1);
 
     const baseQuery = this.orderRepository
       .createQueryBuilder('order')
@@ -665,7 +677,10 @@ export class OrdersService {
     const completedToday = await baseQuery
       .clone()
       .andWhere('order.status = :status', { status: OrderStatus.COMPLETED })
-      .andWhere('DATE(order.completedAt) = :today', { today })
+      .andWhere('order.completedAt >= :dayStart AND order.completedAt < :nextDayStart', {
+        dayStart,
+        nextDayStart,
+      })
       .getCount();
 
     const urgent = await baseQuery
