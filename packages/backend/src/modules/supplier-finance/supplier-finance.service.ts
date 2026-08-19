@@ -156,6 +156,10 @@ export class SupplierFinanceService {
             invoiceDate: item.invoiceDate,
             amount: item.amount,
             grnId: item.grnId,
+            // Without this the insert violates the RLS WITH CHECK on
+            // supplier_payment_items — the voucher header saved and the
+            // items 500'd, rolling the whole creation back.
+            tenantId: requireTenantId(tenantId),
           }),
         );
         await paymentItemRepo.save(items);
@@ -617,6 +621,8 @@ export class SupplierFinanceService {
           taxAmount: item.taxAmount,
           totalAmount: item.totalAmount,
           batchNumber: item.batchNumber,
+          // Same RLS WITH CHECK as payment items — see above.
+          tenantId: requireTenantId(tenantId),
         }),
       );
       await noteItemRepo.save(items);

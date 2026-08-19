@@ -3,6 +3,7 @@ import { getApiErrorMessage } from '../../services/api';
 import { toast } from 'sonner';
 import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useFacilityId } from '../../lib/facility';
 import { formatCurrency } from '../../lib/currency';
 import { supplierFinanceService, type PaymentVoucher } from '../../services/supplier-finance';
 import {
@@ -53,9 +54,15 @@ export default function SupplierPaymentVouchersPage() {
     onClose: () => setShowAddModal(false),
   });
 
+  // facilityId is REQUIRED — listPaymentVouchers filters on it
+  // unconditionally, so the bare list() this page used to call matched
+  // nothing and the screen showed "No payment vouchers found" forever,
+  // whatever existed. Same trap the credit-notes page already fixed.
+  const facilityId = useFacilityId();
   const { data: vouchers, isLoading } = useQuery({
-    queryKey: ['payment-vouchers'],
-    queryFn: () => supplierFinanceService.payments.list(),
+    queryKey: ['payment-vouchers', facilityId],
+    queryFn: () => supplierFinanceService.payments.list({ facilityId }),
+    enabled: !!facilityId,
   });
 
   // Every step of this voucher's life refuses on segregation of duties: the
