@@ -1,8 +1,13 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between } from 'typeorm';
+import { Repository, Between, In } from 'typeorm';
+import { monthBoundsUtc } from '../../common/utils/timezone.util';
 import { PurchaseOrder, POStatus } from '../../database/entities/purchase-order.entity';
 import { Item } from '../../database/entities/inventory.entity';
+import {
+  COMMITTED_SPEND_PO_STATUSES,
+  COMMITTED_SPEND_PO_STATUS_VALUES,
+} from './spend-status.constants';
 
 interface CategorySpend {
   category: string;
@@ -75,6 +80,10 @@ export class SpendAnalyticsService {
       dateClause = `AND po.created_at BETWEEN $2 AND $3`;
       params.push(startDate, endDate);
     }
+    // Bound last so the placeholder index is right whether or not the
+    // optional date range added two parameters ahead of it.
+    params.push(COMMITTED_SPEND_PO_STATUS_VALUES);
+    const statusParam = `$${params.length}`;
 
     const rows: Array<{ category: string; total_spend: string; order_count: string }> =
       await this.poRepository.query(
@@ -86,7 +95,7 @@ export class SpendAnalyticsService {
          LEFT JOIN items i ON i.id::text = poi.item_id
          LEFT JOIN item_categories ic ON ic.id = i.category_id
          WHERE po.tenant_id = $1
-           AND po.status IN ('approved', 'fully_received')
+           AND po.status = ANY(${statusParam})
            AND po.deleted_at IS NULL
            ${dateClause}
          GROUP BY ic.name
@@ -136,11 +145,11 @@ export class SpendAnalyticsService {
          LEFT JOIN items i ON i.id::text = poi.item_id
          LEFT JOIN item_categories ic ON ic.id = i.category_id
          WHERE po.tenant_id = $1
-           AND po.status IN ('approved', 'fully_received')
+           AND po.status = ANY($4)
            AND po.deleted_at IS NULL
            AND po.created_at BETWEEN $2 AND $3
          GROUP BY ic.name`,
-      [tenantId, priorStart, priorEnd],
+      [tenantId, priorStart, priorEnd, COMMITTED_SPEND_PO_STATUS_VALUES],
     );
     return new Map(rows.map((r) => [r.category, Number(r.total_spend || 0)]));
   }
@@ -163,6 +172,10 @@ export class SpendAnalyticsService {
       dateClause = `AND po.created_at BETWEEN $2 AND $3`;
       params.push(startDate, endDate);
     }
+    // Bound last so the placeholder index is right whether or not the
+    // optional date range added two parameters ahead of it.
+    params.push(COMMITTED_SPEND_PO_STATUS_VALUES);
+    const statusParam = `$${params.length}`;
 
     const rows: Array<{
       department_id: string | null;
@@ -177,7 +190,7 @@ export class SpendAnalyticsService {
        FROM purchase_orders po
        LEFT JOIN departments d ON d.id = po.department_id
        WHERE po.tenant_id = $1
-         AND po.status IN ('approved', 'fully_received')
+         AND po.status = ANY(${statusParam})
          AND po.deleted_at IS NULL
          ${dateClause}
        GROUP BY po.department_id, d.name
@@ -229,17 +242,19 @@ export class SpendAnalyticsService {
     const tid = this.requireTenant(tenantId);
     const m = Math.max(1, Math.min(60, Math.floor(Number(months) || 12)));
     const trends: SpendTrend[] = [];
-    const now = new Date();
 
     for (let i = m - 1; i >= 0; i--) {
-      const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const monthEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0, 23, 59, 59, 999);
+      // Months bounded where the hospital is, not where the server is: the
+      // old new Date(y, m, 1) is UTC midnight, which is 03:00 in Kampala, so
+      // the first three hours of every month were reported under the month
+      // before.
+      const { start: monthStart, end: monthEnd, period } = monthBoundsUtc(-i);
 
       const monthOrders = await this.poRepository.find({
         where: {
           tenantId: tid,
           createdAt: Between(monthStart, monthEnd),
-          status: POStatus.APPROVED as any,
+          status: In(COMMITTED_SPEND_PO_STATUSES),
         },
       });
 
@@ -250,7 +265,7 @@ export class SpendAnalyticsService {
       const orderCount = monthOrders.length;
 
       trends.push({
-        period: monthStart.toISOString().slice(0, 7),
+        period,
         totalSpend,
         orderCount,
         avgOrderValue: orderCount > 0 ? totalSpend / orderCount : 0,

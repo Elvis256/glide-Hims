@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between } from 'typeorm';
 import { PurchaseOrder, POStatus } from '../../database/entities/purchase-order.entity';
 import { requireTenantId } from '../../common/utils/tenant.util';
+import { localDateString, localMonthString } from '../../common/utils/timezone.util';
 
 export interface ApprovalBottleneck {
   level: number;
@@ -106,7 +107,9 @@ export class ApprovalAnalyticsService {
 
     const groupedByMonth = new Map<string, PurchaseOrder[]>();
     for (const order of approvedOrders) {
-      const month = (order.updatedAt || new Date()).toISOString().slice(0, 7);
+      // toISOString() gives the UTC month. The hospital is UTC+3, so an
+      // approval given at 01:00 on the 1st was filed under the month before.
+      const month = localMonthString(order.updatedAt || new Date());
       if (!groupedByMonth.has(month)) groupedByMonth.set(month, []);
       groupedByMonth.get(month)!.push(order);
     }
@@ -150,7 +153,9 @@ export class ApprovalAnalyticsService {
 
     const groupedByDate = new Map<string, PurchaseOrder[]>();
     for (const order of orders) {
-      const date = (order.updatedAt || new Date()).toISOString().slice(0, 10);
+      // Same skew a day at a time: an approval at 01:00 local was counted
+      // against yesterday, so the daily trend was three hours out of step.
+      const date = localDateString(order.updatedAt || new Date());
       if (!groupedByDate.has(date)) groupedByDate.set(date, []);
       groupedByDate.get(date)!.push(order);
     }

@@ -177,6 +177,44 @@ export function localDayStart(offsetDays = 0, zone: string = hospitalTimeZone())
   return startOfDayUtc(shifted.toISOString().slice(0, 10), zone);
 }
 
+/** The calendar month an instant falls in where the hospital is, as YYYY-MM. */
+export function localMonthString(instant: Date, zone: string = hospitalTimeZone()): string {
+  return localDateString(instant, zone).slice(0, 7);
+}
+
+/**
+ * The instants bounding the hospital's month, `offsetMonths` from the current
+ * one (0 = this month, -1 = last month).
+ *
+ * Monthly spend and trend reports were assembling boundaries with
+ * `new Date(year, month, 1)`, which is midnight in the *server's* zone. On a
+ * UTC server that is 03:00 in Kampala, so the first three hours of every month
+ * were reported under the month before — and the same slice of the following
+ * month was counted twice over at the other end.
+ */
+export function monthBoundsUtc(
+  offsetMonths = 0,
+  zone: string = hospitalTimeZone(),
+): { start: Date; end: Date; period: string } {
+  const [y, m] = localMonthString(new Date(), zone).split('-').map(Number);
+
+  // Normalise through UTC calendar arithmetic so month overflow/underflow
+  // (December + 1, January - 1) is handled for us, then convert the resulting
+  // wall-clock dates into instants in the hospital's zone.
+  const startCal = new Date(Date.UTC(y, m - 1 + offsetMonths, 1));
+  const nextCal = new Date(Date.UTC(y, m + offsetMonths, 1));
+
+  const startStr = startCal.toISOString().slice(0, 10);
+  const start = startOfDayUtc(startStr, zone);
+
+  // End is the last instant before the next month begins, rather than the
+  // 23:59:59.999 of a day computed by subtracting 24 hours — which would be
+  // the wrong day in a zone that moved its clocks that month.
+  const end = new Date(startOfDayUtc(nextCal.toISOString().slice(0, 10), zone).getTime() - 1);
+
+  return { start, end, period: startStr.slice(0, 7) };
+}
+
 /** A given hour of `dateStr` in the hospital's zone — used for census snapshots. */
 export function hourOfDayUtc(
   dateStr: string,
