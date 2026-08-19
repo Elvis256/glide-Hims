@@ -38,6 +38,7 @@ import {
 import { InvoiceStatus } from '../../database/entities/invoice.entity';
 import { sumCents, eqCents, fromCents, toCents } from '../../common/utils/money';
 import { requireTenantId } from '../../common/utils/tenant.util';
+import { localDateString } from '../../common/utils/timezone.util';
 
 @Injectable()
 export class FinanceService {
@@ -773,7 +774,9 @@ export class FinanceService {
     const totalCredit = fromCents(totalCreditCents);
 
     return {
-      asOfDate: asOfDate || new Date().toISOString().slice(0, 10),
+      // The hospital's date. A trial balance or balance sheet pulled at 01:00
+      // was labelled with yesterday's date on a UTC server.
+      asOfDate: asOfDate || localDateString(new Date()),
       accounts: data,
       totalDebit,
       totalCredit,
@@ -832,7 +835,9 @@ export class FinanceService {
     const totalEquity = equity.reduce((sum, a) => sum + Number(a.currentBalance), 0);
 
     return {
-      asOfDate: asOfDate || new Date().toISOString().slice(0, 10),
+      // The hospital's date. A trial balance or balance sheet pulled at 01:00
+      // was labelled with yesterday's date on a UTC server.
+      asOfDate: asOfDate || localDateString(new Date()),
       assets: assets.map((a) => ({
         accountCode: a.accountCode,
         accountName: a.accountName,

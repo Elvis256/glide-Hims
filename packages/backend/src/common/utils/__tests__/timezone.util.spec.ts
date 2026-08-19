@@ -10,6 +10,7 @@ import {
   localMonthString,
   monthBoundsUtc,
   localCalendarDate,
+  localWallClockSql,
 } from '../timezone.util';
 
 describe('hospitalTimeZone', () => {
@@ -231,5 +232,26 @@ describe('localCalendarDate', () => {
     jest.useFakeTimers().setSystemTime(new Date('2026-08-19T09:00:00Z'));
     expect(localCalendarDate(KLA).toISOString().slice(0, 10)).toBe('2026-08-19');
     jest.useRealTimers();
+  });
+});
+
+describe('localWallClockSql', () => {
+  it('converts a timestamptz column into the hospital zone', () => {
+    expect(localWallClockSql('p.paid_at', false)).toBe(
+      "p.paid_at AT TIME ZONE 'Africa/Kampala'",
+    );
+  });
+
+  it('declares a naive column UTC before converting it', () => {
+    // The single-cast form would tell Postgres the stored value IS Kampala
+    // time, shifting it the wrong way — a stored 01:00 UTC would bucket to the
+    // previous day instead of the current one.
+    expect(localWallClockSql('i.created_at', true)).toBe(
+      "i.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Africa/Kampala'",
+    );
+  });
+
+  it('never emits the naive form for a timestamptz column', () => {
+    expect(localWallClockSql('e.start_time', false)).not.toContain("AT TIME ZONE 'UTC'");
   });
 });
