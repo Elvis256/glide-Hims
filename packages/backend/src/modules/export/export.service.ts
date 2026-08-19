@@ -7,6 +7,7 @@ import { AuditLog } from '../../database/entities/audit-log.entity';
 import { Patient } from '../../database/entities/patient.entity';
 import { Invoice } from '../../database/entities/invoice.entity';
 import { Item } from '../../database/entities/inventory.entity';
+import { dayBoundsUtc, localDateString } from '../../common/utils/timezone.util';
 
 interface ExportFilters {
   startDate?: string;
@@ -70,7 +71,7 @@ export class ExportService {
 
     this.logger.log(`Exporting ${rows.length} ${entity} records as ${format}`);
 
-    const timestamp = new Date().toISOString().slice(0, 10);
+    const timestamp = localDateString(new Date());
     const filename = `${entity}-export-${timestamp}.${format}`;
 
     if (format === 'xlsx') {
@@ -289,13 +290,15 @@ export class ExportService {
     }
     base.tenantId = tenantId;
     if (filters.startDate) {
-      base.createdAt = MoreThanOrEqual(new Date(filters.startDate));
+      base.createdAt = MoreThanOrEqual(dayBoundsUtc(filters.startDate).start);
     }
     if (filters.endDate) {
-      const end = new Date(filters.endDate);
-      end.setHours(23, 59, 59, 999);
+      // End of the hospital's day. setHours(23,59,...) was the server's day
+      // end — 02:59:59 the next local morning — so an export "to Friday"
+      // quietly included Saturday's small hours.
+      const end = dayBoundsUtc(filters.endDate).end;
       base.createdAt = filters.startDate
-        ? MoreThanOrEqual(new Date(filters.startDate))
+        ? MoreThanOrEqual(dayBoundsUtc(filters.startDate).start)
         : base.createdAt;
       // Apply both start and end using And if needed; for simplicity keep
       // end date as a separate clause when search fans-out below.
@@ -306,8 +309,7 @@ export class ExportService {
       return searchFields.map((field) => {
         const clause: Record<string, any> = { ...base, [field]: ILike(`%${filters.search}%`) };
         if (filters.endDate) {
-          const end = new Date(filters.endDate);
-          end.setHours(23, 59, 59, 999);
+          const end = dayBoundsUtc(filters.endDate).end;
           clause.createdAt = this.combineDateRange(filters.startDate, end);
         }
         return clause as FindOptionsWhere<T>;
@@ -315,8 +317,10 @@ export class ExportService {
     }
 
     if (filters.endDate) {
-      const end = new Date(filters.endDate);
-      end.setHours(23, 59, 59, 999);
+      // End of the hospital's day. setHours(23,59,...) was the server's day
+      // end — 02:59:59 the next local morning — so an export "to Friday"
+      // quietly included Saturday's small hours.
+      const end = dayBoundsUtc(filters.endDate).end;
       base.createdAt = this.combineDateRange(filters.startDate, end);
     }
 
@@ -328,13 +332,13 @@ export class ExportService {
       // TypeORM doesn't have a built-in Between for FindOptionsWhere with
       // two operators on the same column, so we use the raw Between helper.
       const { Between } = require('typeorm');
-      return Between(new Date(startDate), end);
+      return Between(dayBoundsUtc(startDate).start, end);
     }
     if (end) {
       return LessThanOrEqual(end);
     }
     if (startDate) {
-      return MoreThanOrEqual(new Date(startDate));
+      return MoreThanOrEqual(dayBoundsUtc(startDate).start);
     }
     return undefined;
   }

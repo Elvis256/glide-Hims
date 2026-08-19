@@ -41,6 +41,7 @@ import { FollowUpsService } from '../follow-ups/follow-ups.service';
 import { FollowUpType } from '../../database/entities/follow-up.entity';
 import { StateMachine } from '../../common/fsm/state-machine';
 import { requireTenantId } from '../../common/utils/tenant.util';
+import { localDateString, localDayStart } from '../../common/utils/timezone.util';
 
 @Injectable()
 export class EncountersService {
@@ -74,8 +75,10 @@ export class EncountersService {
   ) {}
 
   private async generateVisitNumber(manager: EntityManager, tenantId?: string): Promise<string> {
-    const today = new Date();
-    const datePrefix = today.toISOString().slice(0, 10).replace(/-/g, '');
+    // Hospital-local date: a visit registered at 01:00 was numbered under
+    // yesterday. Lock key and sequence lookup derive from the same string, so
+    // they stay consistent; nothing else uses this key.
+    const datePrefix = localDateString(new Date()).replace(/-/g, '');
     const lockKey = `visit_num_${datePrefix}_${tenantId || 'global'}`;
 
     // Use advisory lock to prevent concurrent generation collisions
@@ -106,8 +109,10 @@ export class EncountersService {
     departmentId?: string,
     tenantId?: string,
   ): Promise<number> {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // The hospital's day, not the server's: with server-midnight the daily
+    // queue sequence did not reset until 03:00, so tokens issued in the small
+    // hours continued yesterday's numbering.
+    const today = localDayStart(0);
 
     const query = manager
       .getRepository(Encounter)
@@ -1470,8 +1475,8 @@ export class EncountersService {
     /** @deprecated Use inConsultation */
     inProgress: number;
   }> {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // Hospital's day — the front-desk summary used to roll over at 03:00.
+    const today = localDayStart(0);
 
     const tenantFilter = tenantId ? 'encounter.tenant_id = :tenantId' : '1=1';
 

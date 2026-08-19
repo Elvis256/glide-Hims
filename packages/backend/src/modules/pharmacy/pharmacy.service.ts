@@ -69,6 +69,12 @@ import { BillingService } from '../billing/billing.service';
 import { Patient } from '../../database/entities/patient.entity';
 import { Store } from '../../database/entities/store.entity';
 import { requireTenantId } from '../../common/utils/tenant.util';
+import {
+  dayBoundsUtc,
+  localCalendarDate,
+  localDateString,
+  localDayStart,
+} from '../../common/utils/timezone.util';
 
 // C4: VAT rate is loaded per-tenant from efris_config, fallback to UG default.
 // This is retrieved in getDefaultVatRate() which caches the result.
@@ -177,8 +183,10 @@ export class PharmacyService {
   }
 
   private async generateSaleNumber(manager: EntityManager, tenantId?: string): Promise<string> {
-    const today = new Date();
-    const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
+    // Hospital-local date: a sale rung up at 01:00 was numbered under
+    // yesterday. Lock key and sequence lookup derive from the same string, so
+    // they stay consistent; nothing else uses this key.
+    const dateStr = localDateString(new Date()).replace(/-/g, '');
     const lockKey = `pharm_sale_num_${dateStr}_${tenantId || 'global'}`;
 
     // Use advisory lock to prevent concurrent generation collisions
@@ -209,8 +217,9 @@ export class PharmacyService {
     tenantId?: string,
   ): Promise<{ pending: number; dispensed: number }> {
     const tid = requireTenantId(tenantId);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // "Dispensed today" starts at the hospital's midnight, not the server's —
+    // the counter used to reset at 03:00.
+    const today = localDayStart(0);
 
     // Count pending prescriptions
     const pendingQuery = this.prescriptionRepo
@@ -706,9 +715,10 @@ export class PharmacyService {
         }
       }
 
-      // Normalize to midnight for consistent expiry comparisons regardless of time-of-day
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+      // The hospital's calendar date, for expiry comparisons: batch expiry is
+      // a calendar date, and server-midnight let an expired batch sell for
+      // three more hours after local midnight.
+      const today = localCalendarDate();
 
       // Validate and deduct stock using pre-locked records
       for (const item of sale.items) {
@@ -1193,11 +1203,11 @@ export class PharmacyService {
       throw new BadRequestException('tenantId is required for daily summary queries');
     }
 
+    // The hospital's day, whichever way the date arrived. setHours(0,0,0,0)
+    // was the server's midnight, so the daily summary the pharmacist closes
+    // against was cut three hours into the shift.
     const parsedDate = date ? new Date(date) : new Date();
-    const start = isNaN(parsedDate.getTime()) ? new Date() : parsedDate;
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(start);
-    end.setDate(end.getDate() + 1);
+    const { start, end } = dayBoundsUtc(isNaN(parsedDate.getTime()) ? new Date() : date || new Date());
 
     const qb = this.saleRepo
       .createQueryBuilder('s')
@@ -1228,7 +1238,7 @@ export class PharmacyService {
     }
 
     const result = await qb.getRawOne();
-    return { ...result, date: start.toISOString().slice(0, 10) };
+    return { ...result, date: localDateString(start) };
   }
 
   async getProfitAnalytics(params: {
@@ -1450,8 +1460,7 @@ export class PharmacyService {
     if (Number.isNaN(parsedExpiry.getTime())) {
       throw new BadRequestException('expiryDate is not a valid date');
     }
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const today = localCalendarDate();
     if (parsedExpiry < today) {
       throw new BadRequestException(
         `Cannot receive stock with a past expiry date (${parsedExpiry.toISOString().slice(0, 10)}). Expired stock requires the remediation workflow.`,
