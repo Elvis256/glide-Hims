@@ -657,7 +657,8 @@ export class InsuranceService {
     tenantId?: string,
     userId?: string,
   ): Promise<InsuranceClaim> {
-    return this.dataSource.transaction(async (manager) => {
+    let auditPrevious: Record<string, unknown> = {};
+    const saved = await this.dataSource.transaction(async (manager) => {
       const claim = await manager.findOne(InsuranceClaim, {
         where: { id, tenantId: requireTenantId(tenantId) },
         lock: { mode: 'pessimistic_write' },
@@ -749,29 +750,35 @@ export class InsuranceService {
 
       const saved = await manager.save(InsuranceClaim, claim);
 
-      await this.auditLogService
-        .log({
-          userId,
-          action: approve ? 'INSURANCE_CLAIM_APPROVED' : 'INSURANCE_CLAIM_REJECTED',
-          entityType: 'InsuranceClaim',
-          entityId: saved.id,
-          oldValue: { status: previousStatus, totalApproved: previousApproved },
-          newValue: {
-            status: saved.status,
-            totalApproved: Number(saved.totalApproved),
-            patientResponsibility: Number(saved.patientResponsibility),
-            denialReason: saved.denialReason || null,
-            denialCode: saved.denialCode || null,
-          },
-          reason: dto.notes,
-          tenantId: requireTenantId(tenantId),
-        })
-        .catch((err) =>
-          this.logger.error(`Audit log failed for processClaim ${saved.id}: ${err.message}`),
-        );
-
+      auditPrevious = { status: previousStatus, totalApproved: previousApproved };
       return saved;
     });
+
+    // Audit after the commit — it writes on its own connection, so inside the
+    // transaction the log row committed independently of the adjudication it
+    // recorded. Still best-effort.
+    await this.auditLogService
+      .log({
+        userId,
+        action: approve ? 'INSURANCE_CLAIM_APPROVED' : 'INSURANCE_CLAIM_REJECTED',
+        entityType: 'InsuranceClaim',
+        entityId: saved.id,
+        oldValue: auditPrevious,
+        newValue: {
+          status: saved.status,
+          totalApproved: Number(saved.totalApproved),
+          patientResponsibility: Number(saved.patientResponsibility),
+          denialReason: saved.denialReason || null,
+          denialCode: saved.denialCode || null,
+        },
+        reason: dto.notes,
+        tenantId: requireTenantId(tenantId),
+      })
+      .catch((err) =>
+        this.logger.error(`Audit log failed for processClaim ${saved.id}: ${err.message}`),
+      );
+
+    return saved;
   }
 
   async recordPayment(

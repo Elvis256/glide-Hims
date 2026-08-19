@@ -735,6 +735,7 @@ export class EncountersService {
       await this.identityGuard.assertAssignableProvider(attendingProviderId, tid);
     }
 
+    let auditOldStatus: string | undefined;
     const saved = await this.dataSource.transaction(async (manager) => {
       // Lock row first without relations (FOR UPDATE can't apply to outer joins)
       const encounter = await manager.findOne(Encounter, {
@@ -850,24 +851,28 @@ export class EncountersService {
 
       const result = await manager.save(Encounter, encounter);
 
-      this.auditLogService
-        .log({
-          userId: actorUserId || 'system',
-          action: 'STATUS_CHANGE',
-          entityType: 'encounter',
-          entityId: id,
-          oldValue: { status: oldStatus },
-          newValue: {
-            status,
-            reason,
-            attendingProviderId: encounter.attendingProviderId,
-            patientId: encounter.patientId,
-          },
-        })
-        .catch((err) => this.logger.warn(`Audit log failed: ${err.message}`));
-
+      auditOldStatus = oldStatus;
       return result;
     });
+
+    // Audit after the commit. AuditLogService writes on its own connection,
+    // so from inside the transaction the log row committed independently of
+    // the status change it recorded. Still best-effort.
+    this.auditLogService
+      .log({
+        userId: actorUserId || 'system',
+        action: 'STATUS_CHANGE',
+        entityType: 'encounter',
+        entityId: id,
+        oldValue: { status: auditOldStatus },
+        newValue: {
+          status,
+          reason,
+          attendingProviderId: saved.attendingProviderId,
+          patientId: saved.patientId,
+        },
+      })
+      .catch((err) => this.logger.warn(`Audit log failed: ${err.message}`));
 
     // Auto-generate insurance claim when encounter completes/discharges (non-blocking)
     if (

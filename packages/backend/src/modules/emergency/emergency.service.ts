@@ -86,7 +86,7 @@ export class EmergencyService {
     // of either insert rolls both back. Previously the two `save()` calls were
     // independent: a crash between them left an orphaned Encounter with no
     // EmergencyCase, corrupting the ER record on every admission.
-    return this.dataSource.transaction(async (manager) => {
+    const savedCase = await this.dataSource.transaction(async (manager) => {
       const patientWhere: any = { id: dto.patientId };
       patientWhere.tenantId = tid;
       const patient = await manager.findOne(Patient, { where: patientWhere });
@@ -133,27 +133,32 @@ export class EmergencyService {
         `[AUDIT] Emergency case registered: ${caseNumber}, patientId: ${dto.patientId}, userId: ${userId}, facilityId: ${facilityId}`,
       );
 
-      this.auditLogService
-        .log({
-          action: 'REGISTER_EMERGENCY_CASE',
-          entityType: 'EmergencyCase',
-          entityId: savedCase.id,
-          userId,
-          tenantId,
-          oldValue: undefined,
-          newValue: {
-            caseNumber: savedCase.caseNumber,
-            patientId: dto.patientId,
-            chiefComplaint: savedCase.chiefComplaint,
-            arrivalMode: savedCase.arrivalMode,
-            status: savedCase.status,
-            facilityId,
-          },
-        })
-        .catch(() => {});
-
       return savedCase;
     });
+
+    // Audit after the commit — it writes on its own connection, so inside the
+    // transaction the log row committed independently of the case it
+    // described. Still best-effort.
+    this.auditLogService
+      .log({
+        action: 'REGISTER_EMERGENCY_CASE',
+        entityType: 'EmergencyCase',
+        entityId: savedCase.id,
+        userId,
+        tenantId,
+        oldValue: undefined,
+        newValue: {
+          caseNumber: savedCase.caseNumber,
+          patientId: dto.patientId,
+          chiefComplaint: savedCase.chiefComplaint,
+          arrivalMode: savedCase.arrivalMode,
+          status: savedCase.status,
+          facilityId: savedCase.facilityId,
+        },
+      })
+      .catch(() => {});
+
+    return savedCase;
   }
 
   // ========== TRIAGE ==========

@@ -669,6 +669,8 @@ export class AuthService {
           tokenVersion: user.tokenVersion,
         };
 
+        // txn-connection-ok: signing a JWT is pure crypto over the payload
+        // above — no connection, no query, nothing to be stale about.
         const accessToken = this.jwtService.sign(newPayload);
         const newRefreshToken = this.jwtService.sign(
           { ...newPayload, jti: crypto.randomUUID() },

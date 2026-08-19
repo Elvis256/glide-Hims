@@ -796,6 +796,12 @@ export class ProcurementService {
       }
 
       // Phase 2A: Validate sufficient budget available
+      //
+      // txn-connection-ok: read-only. It sums budget allocations, posted
+      // expense and live reservations — none of which this approval writes.
+      // It has to be a read on committed state anyway: the question is
+      // whether the facility can afford this, given everything already
+      // committed elsewhere.
       try {
         await this.budgetService.validateBudgetSufficient(
           pr.facilityId,

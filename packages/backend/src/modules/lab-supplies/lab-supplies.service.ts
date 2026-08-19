@@ -250,7 +250,12 @@ export class LabSuppliesService {
     }
 
     // P0: wrap in transaction with pessimistic lock to prevent lost stock updates
-    return this.dataSource.transaction(async (manager) => {
+    let auditContext: { reagentId: string; reagentName: string; quantity: number } = {
+      reagentId: '',
+      reagentName: '',
+      quantity: 0,
+    };
+    const saved = await this.dataSource.transaction(async (manager) => {
       const reagent = await manager.findOne(LabReagent, {
         where: { id: data.reagentId, tenantId: requireTenantId(tenantId) },
         lock: { mode: 'pessimistic_write' },
@@ -280,29 +285,34 @@ export class LabSuppliesService {
       this.applyReagentStatus(reagent);
       await manager.save(reagent);
 
-      // Audit
-      try {
-        await this.auditLogService.log({
-          action: 'REAGENT_LOT_RECEIVED',
-          entityType: 'ReagentLot',
-          entityId: saved.id,
-          userId,
-          tenantId,
-          newValue: {
-            lotId: saved.id,
-            reagentId: reagent.id,
-            reagentName: reagent.name,
-            initialQuantity: qty,
-            lotNumber: data.lotNumber,
-            facilityId: data.facilityId,
-          },
-        });
-      } catch (e) {
-        this.logger.warn(`Audit log failed (REAGENT_LOT_RECEIVED): ${(e as Error).message}`);
-      }
-
+      auditContext = { reagentId: reagent.id, reagentName: reagent.name, quantity: qty };
       return saved;
     });
+
+    // Audit after the commit — AuditLogService writes on its own connection,
+    // so inside the transaction the log row committed independently of the
+    // lot it recorded. Still best-effort.
+    try {
+      await this.auditLogService.log({
+        action: 'REAGENT_LOT_RECEIVED',
+        entityType: 'ReagentLot',
+        entityId: saved.id,
+        userId,
+        tenantId,
+        newValue: {
+          lotId: saved.id,
+          reagentId: auditContext.reagentId,
+          reagentName: auditContext.reagentName,
+          initialQuantity: auditContext.quantity,
+          lotNumber: data.lotNumber,
+          facilityId: data.facilityId,
+        },
+      });
+    } catch (e) {
+      this.logger.warn(`Audit log failed (REAGENT_LOT_RECEIVED): ${(e as Error).message}`);
+    }
+
+    return saved;
   }
 
   async openLot(lotId: string, tenantId?: string): Promise<ReagentLot> {
