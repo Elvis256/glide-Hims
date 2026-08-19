@@ -1255,7 +1255,7 @@ export function CancelPOModal({
             Cancel {po.poNumber}?
           </h3>
           <p className="text-sm text-gray-500">
-            {po.supplier} · {po.items?.length || 0} line
+            {po.vendor?.name || 'Supplier'} · {po.items?.length || 0} line
             {(po.items?.length || 0) === 1 ? '' : 's'}
           </p>
         </div>
