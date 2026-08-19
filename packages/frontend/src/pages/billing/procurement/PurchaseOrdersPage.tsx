@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import api from '../../../services/api';
+import api, { getApiErrorMessage } from '../../../services/api';
 import { getFacilityId } from '../../../lib/facility';
 import { CatalogItemPicker, type SelectedItem } from '../../../components/catalog';
 import { CategoryContextBanner, useProcurementCategory } from '../../../components/procurement/CategoryContextBanner';
@@ -301,7 +301,7 @@ export default function PurchaseOrdersPage() {
       toast.success('Purchase order created from approved quotation');
     },
     onError: (err: any) => {
-      toast.error(err?.response?.data?.message || 'Failed to create PO from quotation');
+      toast.error(getApiErrorMessage(err, 'Failed to create PO from quotation'));
     },
   });
 
@@ -315,10 +315,9 @@ export default function PurchaseOrdersPage() {
       queryClient.invalidateQueries({ queryKey: ['purchase-orders'] });
     },
     // Approval genuinely refuses above the single-approver cap when no
-    // approval chain is configured. With no onError that refusal was
-    // invisible and the button just appeared not to work.
+    // approval chain is configured, so name that case in the fallback.
     onError: (err: any) =>
-      toast.error(err?.response?.data?.message || 'Failed to approve purchase order'),
+      toast.error(getApiErrorMessage(err, 'Failed to approve purchase order')),
   });
 
   // Send to supplier mutation
@@ -333,7 +332,7 @@ export default function PurchaseOrdersPage() {
       setSelectedPO(null);
     },
     onError: (err: any) =>
-      toast.error(err?.response?.data?.message || 'Failed to send purchase order'),
+      toast.error(getApiErrorMessage(err, 'Failed to send purchase order')),
   });
 
   // Cancel purchase order mutation.
@@ -355,7 +354,7 @@ export default function PurchaseOrdersPage() {
       setSelectedPO(null);
     },
     onError: (err: any) =>
-      toast.error(err?.response?.data?.message || 'Failed to cancel purchase order'),
+      toast.error(getApiErrorMessage(err, 'Failed to cancel purchase order')),
   });
 
   const isActionLoading = createMutation.isPending || approveMutation.isPending || sendMutation.isPending || cancelMutation.isPending;

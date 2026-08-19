@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import api from '../../../services/api';
+import api, { getApiErrorMessage } from '../../../services/api';
 import { useFacilityId } from '../../../lib/facility';
 import { CatalogItemPicker, type SelectedItem } from '../../../components/catalog';
 import {
@@ -253,13 +253,12 @@ export default function RequisitionsPage() {
     enabled: !!detailId,
   });
 
-  // None of these reported failure, and all three refuse for reasons the
-  // approver needs to read: a requester cannot approve their own requisition,
-  // a role that is not next in the approval chain cannot approve at all, and
-  // an empty draft cannot be submitted. Silence made every one of those look
-  // like a dead button.
-  const showError = (fallback: string) => (err: any) =>
-    toast.error(err?.response?.data?.message || fallback);
+  // The QueryClient installs a global mutation onError, so these already
+  // surfaced a message; a mutation-level onError replaces it rather than
+  // adding to it, so route through the same formatter and only supply a
+  // better fallback for the case where the server sends no message.
+  const showError = (fallback: string) => (err: unknown) =>
+    toast.error(getApiErrorMessage(err, fallback));
 
   // Submit mutation
   const submitMutation = useMutation({
@@ -287,8 +286,10 @@ export default function RequisitionsPage() {
   //
   // This sent no body at all, while the endpoint requires a rejectionReason —
   // so with the global whitelisting ValidationPipe every rejection came back
-  // 400 and, with no onError, the button silently did nothing. Rejecting a
-  // requisition was impossible from this screen.
+  // 400. The global mutation onError did surface that as a class-validator
+  // message ("rejectionReason must be a string"), which told the user nothing
+  // they could act on. Rejecting a requisition was impossible from this
+  // screen; now the reason is collected and sent.
   const rejectMutation = useMutation({
     mutationFn: ({ id, rejectionReason }: { id: string; rejectionReason: string }) =>
       api.put(`/procurement/purchase-requests/${id}/reject`, { rejectionReason }),

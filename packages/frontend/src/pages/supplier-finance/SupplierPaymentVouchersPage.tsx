@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { getApiErrorMessage } from '../../services/api';
 import { toast } from 'sonner';
 import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -57,13 +58,13 @@ export default function SupplierPaymentVouchersPage() {
     queryFn: () => supplierFinanceService.payments.list(),
   });
 
-  // None of these reported failure, and every step of this voucher's life
-  // refuses on segregation of duties: the preparer may not approve, and the
-  // payer may be neither the preparer nor the approver. Silence turned a
-  // deliberate refusal into a button that appeared not to work — on the
-  // screen that releases money.
-  const showError = (fallback: string) => (err: any) =>
-    toast.error(err?.response?.data?.message || fallback);
+  // Every step of this voucher's life refuses on segregation of duties: the
+  // preparer may not approve, and the payer may be neither the preparer nor
+  // the approver. The global mutation onError already surfaced those, and a
+  // handler defined here replaces it rather than adding to it — so route
+  // through the same formatter and only improve the no-message fallback.
+  const showError = (fallback: string) => (err: unknown) =>
+    toast.error(getApiErrorMessage(err, fallback));
 
   const submitMutation = useMutation({
     mutationFn: (id: string) => supplierFinanceService.payments.submit(id),
