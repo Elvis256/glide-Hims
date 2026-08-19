@@ -15,11 +15,15 @@ afterEach(cleanup);
  * unexplained. These pin the reason to the request.
  */
 describe('RejectRequisitionModal', () => {
+  // Shaped like the API actually sends them — department and requestedBy are
+  // joined relations, not strings. The original fixture used strings, which
+  // let a render of the raw objects ("Objects are not valid as a React
+  // child") pass the tests while crashing in the browser.
   const requisition: any = {
     id: 'pr-1',
     requestNumber: 'PR-0007',
-    department: 'Maternity',
-    requestedBy: 'A. Nakato',
+    department: { id: 'd1', name: 'Maternity' },
+    requestedBy: { id: 'u1', fullName: 'A. Nakato' },
   };
 
   const setup = () => {

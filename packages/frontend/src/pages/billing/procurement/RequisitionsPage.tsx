@@ -1238,8 +1238,16 @@ export function RejectRequisitionModal({
             Reject {requisition.requestNumber}?
           </h3>
           <p className="text-sm text-gray-500">
-            {requisition.department || 'Department'} · raised by{' '}
-            {requisition.requestedBy || 'unknown'}
+            {(typeof requisition.department === 'string'
+              ? requisition.department
+              : requisition.department?.name) || 'Department'}{' '}
+            · raised by{' '}
+            {requisition.requestedBy?.fullName ||
+              [requisition.requestedBy?.firstName, requisition.requestedBy?.lastName]
+                .filter(Boolean)
+                .join(' ') ||
+              requisition.requester ||
+              'unknown'}
           </p>
         </div>
 

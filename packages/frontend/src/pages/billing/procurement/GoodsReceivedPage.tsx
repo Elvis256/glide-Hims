@@ -1,5 +1,4 @@
 import React, { useState, useMemo } from 'react';
-import { getApiErrorMessage } from '../../../services/api';
 import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -186,7 +185,12 @@ export default function GoodsReceivedPage() {
   }, [grns, searchTerm]);
 
   const pendingDeliveries = useMemo(() => {
-    return grns.filter((grn) => grn.status === 'pending_inspection').length;
+    // Fresh GRNs are created as 'draft' and nothing ever transitions them to
+    // 'pending_inspection' — found by walking the flow live: this counter
+    // read 0 with two deliveries sitting uninspected. The backend accepts
+    // inspection from either status, so count and gate on both.
+    return grns.filter((grn) => grn.status === 'draft' || grn.status === 'pending_inspection')
+      .length;
   }, [grns]);
 
   const getReceiptPercentage = (grn: GoodsReceipt) => {
@@ -527,7 +531,7 @@ export default function GoodsReceivedPage() {
 
               {/* Actions */}
               <div className="pt-4 space-y-2">
-                {selectedGRN.status === 'pending_inspection' && (
+                {(selectedGRN.status === 'draft' || selectedGRN.status === 'pending_inspection') && (
                   <button 
                     onClick={() => setInspectingGRN(selectedGRN)}
                     disabled={isAnyMutationLoading}
@@ -1246,8 +1250,8 @@ function CreateDebitNoteAction({
           .map((i: any) => `${i.description}: ${i.rejectionReason}`)
           .join('; '),
       );
-    } catch (e: any) {
-      toast.error(getApiErrorMessage(err, 'Failed to load preview'));
+    } catch (e: unknown) {
+      toast.error(getApiErrorMessage(e, 'Failed to load preview'));
     } finally {
       setLoading(false);
     }
@@ -1268,8 +1272,8 @@ function CreateDebitNoteAction({
       setOpen(false);
       setPreview(null);
       onCreated();
-    } catch (e: any) {
-      toast.error(getApiErrorMessage(err, 'Failed to create debit note'));
+    } catch (e: unknown) {
+      toast.error(getApiErrorMessage(e, 'Failed to create debit note'));
     } finally {
       setSubmitting(false);
     }

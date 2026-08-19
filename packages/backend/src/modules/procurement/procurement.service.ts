@@ -1625,10 +1625,19 @@ export class ProcurementService {
           tenantId,
         );
       } catch (err: any) {
-        this.logger.error(
-          `PO ${approvedPO.orderNumber} was approved but could not be encumbered: ${err?.message || err}. ` +
-            `The order stands; the budget does not reflect it.`,
-        );
+        // A facility with no active budget is the same deliberate skip the
+        // capacity gate makes — first live run logged it as an ERROR, which
+        // reads as data loss when it is policy.
+        if (err instanceof NotFoundException) {
+          this.logger.log(
+            `PO ${approvedPO.orderNumber} not encumbered: ${err.message} (facility not under budget control)`,
+          );
+        } else {
+          this.logger.error(
+            `PO ${approvedPO.orderNumber} was approved but could not be encumbered: ${err?.message || err}. ` +
+              `The order stands; the budget does not reflect it.`,
+          );
+        }
       }
     }
 
@@ -2012,7 +2021,13 @@ export class ProcurementService {
       }),
     );
 
-    return this.getGoodsReceipt(createdGRN.id);
+    // tenantId was dropped here, and getGoodsReceipt's requireTenantId threw
+    // "Missing tenant context" AFTER the GRN had committed — so every GRN
+    // creation persisted the receipt and then answered 400. The storekeeper
+    // saw a failure for a receipt that existed, and a retry hit the
+    // over-receipt guard with a message about a PO line allowing 0 more.
+    // Found by running the flow, not by reading it.
+    return this.getGoodsReceipt(createdGRN.id, tenantId);
   }
 
   async createGRNFromPO(
