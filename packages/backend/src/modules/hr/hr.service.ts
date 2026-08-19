@@ -33,19 +33,31 @@ import {
   ShiftSwapRequest,
   SwapRequestStatus,
 } from '../../database/entities/shift-swap-request.entity';
-import { JobPosting, JobStatus, EmploymentType as JobEmploymentType } from '../../database/entities/job-posting.entity';
+import {
+  JobPosting,
+  JobStatus,
+  EmploymentType as JobEmploymentType,
+} from '../../database/entities/job-posting.entity';
 import { JobApplication, ApplicationStatus } from '../../database/entities/job-application.entity';
 import {
   PerformanceAppraisal,
   AppraisalStatus,
   AppraisalPeriod,
 } from '../../database/entities/performance-appraisal.entity';
-import { TrainingProgram, TrainingStatus, TrainingType } from '../../database/entities/training-program.entity';
+import {
+  TrainingProgram,
+  TrainingStatus,
+  TrainingType,
+} from '../../database/entities/training-program.entity';
 import {
   TrainingEnrollment,
   EnrollmentStatus,
 } from '../../database/entities/training-enrollment.entity';
-import { User, StaffCategory, EmploymentType as UserEmploymentType } from '../../database/entities/user.entity';
+import {
+  User,
+  StaffCategory,
+  EmploymentType as UserEmploymentType,
+} from '../../database/entities/user.entity';
 import { Department } from '../../database/entities/department.entity';
 import {
   StaffDocument,
@@ -175,9 +187,7 @@ export class HrService {
     oldValue?: any;
     manager?: EntityManager;
   }): Promise<void> {
-    const repo = params.manager
-      ? params.manager.getRepository(AuditLog)
-      : this.auditLogRepo;
+    const repo = params.manager ? params.manager.getRepository(AuditLog) : this.auditLogRepo;
     try {
       await repo.save(
         repo.create({
@@ -302,7 +312,8 @@ export class HrService {
 
     if (dto.jobTitle !== undefined) user.jobTitle = dto.jobTitle;
     if (dto.staffCategory !== undefined) user.staffCategory = dto.staffCategory as StaffCategory;
-    if (dto.employmentType !== undefined) user.employmentType = dto.employmentType as UserEmploymentType;
+    if (dto.employmentType !== undefined)
+      user.employmentType = dto.employmentType as UserEmploymentType;
     if (dto.departmentId !== undefined) user.departmentId = dto.departmentId;
     if (dto.facilityId !== undefined) user.facilityId = dto.facilityId;
     if (dto.dateOfBirth !== undefined) user.dateOfBirth = new Date(dto.dateOfBirth);
@@ -543,7 +554,9 @@ export class HrService {
 
   // Deactivate staff member (unified - updates user status)
   async deactivateStaff(id: string, reason?: string, tenantId?: string) {
-    const user = await this.userRepo.findOne({ where: { id, tenantId: requireTenantId(tenantId) } });
+    const user = await this.userRepo.findOne({
+      where: { id, tenantId: requireTenantId(tenantId) },
+    });
     if (!user) throw new NotFoundException('Staff member not found');
 
     user.status = 'inactive';
@@ -554,7 +567,9 @@ export class HrService {
 
   // Reactivate staff member
   async reactivateStaff(id: string, tenantId?: string) {
-    const user = await this.userRepo.findOne({ where: { id, tenantId: requireTenantId(tenantId) } });
+    const user = await this.userRepo.findOne({
+      where: { id, tenantId: requireTenantId(tenantId) },
+    });
     if (!user) throw new NotFoundException('Staff member not found');
 
     user.status = 'active';
@@ -1323,7 +1338,7 @@ export class HrService {
   }
 
   async processPayroll(id: string, tenantId?: string): Promise<PayrollRun> {
-    return this.dataSource.transaction(async (manager) => {
+    const { saved, gl } = await this.dataSource.transaction(async (manager) => {
       // Row-lock the payroll run to prevent concurrent processing
       const payroll = await manager
         .getRepository(PayrollRun)
@@ -1430,27 +1445,6 @@ export class HrService {
 
       const saved = await manager.save(payroll);
 
-      // Auto-post GL outside of the transaction commitment is not strictly required;
-      // we fire-and-forget so failures don't roll back payroll creation.
-      this.financeService
-        .autoPostPayrollJournal(
-          {
-            facilityId: payroll.facilityId,
-            payrollNumber: payroll.payrollNumber,
-            totalGross,
-            totalNet,
-            totalPaye,
-            totalNssf,
-            userId: 'system',
-          },
-          tenantId,
-        )
-        .catch((err) =>
-          this.logger.warn(
-            `GL auto-post failed for payroll ${payroll.payrollNumber}: ${err.message}`,
-          ),
-        );
-
       this.logger.log(
         `[HR_NOTIFY] payroll.processed payrollId=${saved.id} number=${saved.payrollNumber} employees=${paidStaff.length} totalNet=${totalNet}`,
       );
@@ -1472,8 +1466,38 @@ export class HrService {
         },
       });
 
-      return saved;
+      return {
+        saved,
+        gl: { facilityId: payroll.facilityId, totalGross, totalNet, totalPaye, totalNssf },
+      };
     });
+
+    // Auto-post the payroll journal, after the commit.
+    //
+    // The old comment said posting "outside of the transaction commitment is
+    // not strictly required" and fired it unawaited — but it ran on
+    // FinanceService's own connection from inside the transaction, so the
+    // journal committed independently. A payroll run that then rolled back
+    // left the ledger carrying the wage bill. Still fire-and-forget: a GL
+    // failure must not undo a payroll that has been processed.
+    this.financeService
+      .autoPostPayrollJournal(
+        {
+          facilityId: gl.facilityId,
+          payrollNumber: saved.payrollNumber,
+          totalGross: gl.totalGross,
+          totalNet: gl.totalNet,
+          totalPaye: gl.totalPaye,
+          totalNssf: gl.totalNssf,
+          userId: 'system',
+        },
+        tenantId,
+      )
+      .catch((err) =>
+        this.logger.warn(`GL auto-post failed for payroll ${saved.payrollNumber}: ${err.message}`),
+      );
+
+    return saved;
   }
 
   async approvePayrollRun(id: string, userId: string, tenantId?: string): Promise<PayrollRun> {
@@ -2787,7 +2811,9 @@ export class HrService {
 
   async getTrainingStats(facilityId: string, tenantId?: string) {
     const [totalPrograms, activePrograms, totalEnrollments, completed] = await Promise.all([
-      this.trainingProgramRepo.count({ where: { facilityId, tenantId: requireTenantId(tenantId) } }),
+      this.trainingProgramRepo.count({
+        where: { facilityId, tenantId: requireTenantId(tenantId) },
+      }),
       this.trainingProgramRepo.count({
         where: {
           facilityId,
@@ -2813,7 +2839,9 @@ export class HrService {
 
   async getAppraisalStats(facilityId: string, year: number, tenantId?: string) {
     const [total, pending, completed] = await Promise.all([
-      this.appraisalRepo.count({ where: { facilityId, year, tenantId: requireTenantId(tenantId) } }),
+      this.appraisalRepo.count({
+        where: { facilityId, year, tenantId: requireTenantId(tenantId) },
+      }),
       this.appraisalRepo.count({
         where: {
           facilityId,

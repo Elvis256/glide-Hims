@@ -591,7 +591,12 @@ export class PrescriptionsService {
       unitPrice: number;
     }[] = [];
 
-    const dispensed = await this.dataSource.transaction(async (manager) => {
+    const dispenseResult = await this.dataSource.transaction(async (manager) => {
+      let dispensedNotification: {
+        patientName: string;
+        prescriptionId: string;
+        facilityId?: string;
+      } | null = null;
       const prescriptionRepo = manager.getRepository(Prescription);
       const itemRepo = manager.getRepository(PrescriptionItem);
       const dispensationRepo = manager.getRepository(Dispensation);
@@ -1022,25 +1027,39 @@ export class PrescriptionsService {
           .getRepository(Encounter)
           .update({ id: prescription.encounter.id }, { status: EncounterStatus.PENDING_PAYMENT });
 
-        // Notify billing/cashier (non-critical side effect)
-        try {
-          const patientName = prescription.encounter?.patient?.fullName || 'Patient';
-          await this.inAppNotificationsService.notifyPrescriptionDispensed(
-            patientName,
-            prescription.id,
-            prescription.encounter?.facilityId,
-          );
-        } catch (err) {
-          this.logger.warn(`Dispensation notification failed: ${err?.message}`);
-        }
+        // Notify billing/cashier after the commit — see below.
+        dispensedNotification = {
+          patientName: prescription.encounter?.patient?.fullName || 'Patient',
+          prescriptionId: prescription.id,
+          facilityId: prescription.encounter?.facilityId,
+        };
       }
 
       // Return updated prescription
       // updatedRx is only null if the prescription vanished mid-transaction,
       // which the guards above have already ruled out; fall back to the row
       // this transaction loaded rather than widening the return type.
-      return updatedRx ?? prescription;
+      return { prescription: updatedRx ?? prescription, dispensedNotification };
     });
+
+    const dispensed = dispenseResult.prescription;
+
+    // Tell billing the script is fully dispensed and the patient is due at
+    // the cashier. This ran inside the transaction, so a dispensation that
+    // rolled back had already sent the cashier a patient who was never given
+    // their drugs. Non-critical, as before.
+    if (dispenseResult.dispensedNotification) {
+      const n = dispenseResult.dispensedNotification;
+      try {
+        await this.inAppNotificationsService.notifyPrescriptionDispensed(
+          n.patientName,
+          n.prescriptionId,
+          n.facilityId,
+        );
+      } catch (err: any) {
+        this.logger.warn(`Dispensation notification failed: ${err?.message}`);
+      }
+    }
 
     // Raise the pharmacy charges now the dispensation is real.
     //

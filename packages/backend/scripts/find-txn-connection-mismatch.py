@@ -149,3 +149,6 @@ print('(on its own connection by construction — check each is deliberate):\n')
 for f, c, ln in sorted(rows2):
     print(f"  {f}:{ln}".ljust(52) + f"-> {c}()")
 print(f"\n{len(rows2)} sites")
+dwaived = {(f, c) for f, c, w, _ in direct if w}
+if dwaived:
+    print(f"({len(dwaived)} reviewed sites waived via txn-connection-ok)")

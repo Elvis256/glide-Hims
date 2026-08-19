@@ -794,77 +794,75 @@ export class InsuranceService {
 
     const { saved, mirror, auditPrevious, policyUsedAmount, delta } =
       await this.dataSource.transaction(async (manager) => {
-      const claim = await manager.findOne(InsuranceClaim, {
-        where: { id, tenantId: requireTenantId(tenantId) },
-        lock: { mode: 'pessimistic_write' },
+        const claim = await manager.findOne(InsuranceClaim, {
+          where: { id, tenantId: requireTenantId(tenantId) },
+          lock: { mode: 'pessimistic_write' },
+        });
+        if (!claim) throw new NotFoundException('Claim not found');
+
+        if (
+          claim.status !== ClaimStatus.APPROVED &&
+          claim.status !== ClaimStatus.PARTIALLY_APPROVED
+        ) {
+          throw new BadRequestException(
+            'Claim must be approved (or partially approved) to record payment',
+          );
+        }
+
+        // Segregation of duties: neither the submitter nor the user who recorded
+        // the previous payment can post a new payment on the same claim.
+        if (userId && claim.submittedById && claim.submittedById === userId) {
+          throw new BadRequestException(
+            'Segregation of duties violation: the user who submitted the claim cannot also record the payment',
+          );
+        }
+
+        // Idempotency + cap: paidAmount is treated as the cumulative paid total
+        // for this claim. We reject duplicates and amounts that exceed the
+        // approved ceiling, so calling recordPayment twice (or with an inflated
+        // value) cannot inflate policy.usedAmount beyond what was approved.
+        const previouslyPaid = Number(claim.totalPaid || 0);
+        const approvedCeiling = Number(claim.totalApproved || 0);
+        if (paidAmount > approvedCeiling) {
+          throw new BadRequestException(
+            `Paid amount ${paidAmount} exceeds approved amount ${approvedCeiling}`,
+          );
+        }
+        if (paidAmount <= previouslyPaid) {
+          throw new BadRequestException(
+            `Paid amount ${paidAmount} is not greater than already recorded ${previouslyPaid}; nothing to post`,
+          );
+        }
+        const delta = paidAmount - previouslyPaid;
+
+        const policy = await manager.findOne(InsurancePolicy, {
+          where: { id: claim.policyId, tenantId: requireTenantId(tenantId) },
+          lock: { mode: 'pessimistic_write' },
+        });
+        if (!policy) throw new NotFoundException('Policy not found');
+
+        claim.totalPaid = paidAmount;
+        claim.paymentReference = dto.paymentReference;
+        claim.paidAt = dto.paymentDate ? new Date(dto.paymentDate) : new Date();
+        claim.status = ClaimStatus.PAID;
+
+        policy.usedAmount = Number(policy.usedAmount || 0) + delta;
+        await manager.save(InsurancePolicy, policy);
+
+        const savedClaim = await manager.save(InsuranceClaim, claim);
+
+        // Mirror the settlement onto the invoice inside the SAME txn so a
+        // billing failure rolls back the claim flip and the policy increment.
+        return {
+          saved: savedClaim,
+          // Mirrored into billing after this commits, not before.
+          mirror:
+            savedClaim.invoiceId && delta > 0 ? { invoiceId: savedClaim.invoiceId, delta } : null,
+          auditPrevious: { totalPaid: previouslyPaid, status: ClaimStatus.APPROVED },
+          policyUsedAmount: Number(policy.usedAmount),
+          delta,
+        };
       });
-      if (!claim) throw new NotFoundException('Claim not found');
-
-      if (
-        claim.status !== ClaimStatus.APPROVED &&
-        claim.status !== ClaimStatus.PARTIALLY_APPROVED
-      ) {
-        throw new BadRequestException(
-          'Claim must be approved (or partially approved) to record payment',
-        );
-      }
-
-      // Segregation of duties: neither the submitter nor the user who recorded
-      // the previous payment can post a new payment on the same claim.
-      if (userId && claim.submittedById && claim.submittedById === userId) {
-        throw new BadRequestException(
-          'Segregation of duties violation: the user who submitted the claim cannot also record the payment',
-        );
-      }
-
-      // Idempotency + cap: paidAmount is treated as the cumulative paid total
-      // for this claim. We reject duplicates and amounts that exceed the
-      // approved ceiling, so calling recordPayment twice (or with an inflated
-      // value) cannot inflate policy.usedAmount beyond what was approved.
-      const previouslyPaid = Number(claim.totalPaid || 0);
-      const approvedCeiling = Number(claim.totalApproved || 0);
-      if (paidAmount > approvedCeiling) {
-        throw new BadRequestException(
-          `Paid amount ${paidAmount} exceeds approved amount ${approvedCeiling}`,
-        );
-      }
-      if (paidAmount <= previouslyPaid) {
-        throw new BadRequestException(
-          `Paid amount ${paidAmount} is not greater than already recorded ${previouslyPaid}; nothing to post`,
-        );
-      }
-      const delta = paidAmount - previouslyPaid;
-
-      const policy = await manager.findOne(InsurancePolicy, {
-        where: { id: claim.policyId, tenantId: requireTenantId(tenantId) },
-        lock: { mode: 'pessimistic_write' },
-      });
-      if (!policy) throw new NotFoundException('Policy not found');
-
-      claim.totalPaid = paidAmount;
-      claim.paymentReference = dto.paymentReference;
-      claim.paidAt = dto.paymentDate ? new Date(dto.paymentDate) : new Date();
-      claim.status = ClaimStatus.PAID;
-
-      policy.usedAmount = Number(policy.usedAmount || 0) + delta;
-      await manager.save(InsurancePolicy, policy);
-
-      const savedClaim = await manager.save(InsuranceClaim, claim);
-
-      // Mirror the settlement onto the invoice inside the SAME txn so a
-      // billing failure rolls back the claim flip and the policy increment.
-      return {
-        saved: savedClaim,
-        // Mirrored into billing after this commits, not before.
-        mirror:
-          savedClaim.invoiceId && delta > 0
-            ? { invoiceId: savedClaim.invoiceId, delta }
-            : null,
-        auditPrevious: { totalPaid: previouslyPaid, status: ClaimStatus.APPROVED },
-        policyUsedAmount: Number(policy.usedAmount),
-        delta,
-      };
-    });
 
     // Mirror the insurer's payment onto the patient's invoice, after the
     // commit.
@@ -1090,7 +1088,7 @@ export class InsuranceService {
     userId?: string,
   ): Promise<PreAuthorization> {
     const tid = requireTenantId(tenantId);
-    return this.dataSource.transaction(async (manager) => {
+    const { saved, preAuthAuditPrevious } = await this.dataSource.transaction(async (manager) => {
       const preAuth = await manager.findOne(PreAuthorization, {
         where: { id, tenantId: tid },
         lock: { mode: 'pessimistic_write' },
@@ -1137,28 +1135,36 @@ export class InsuranceService {
 
       const saved = await manager.save(PreAuthorization, preAuth);
 
-      await this.auditLogService
-        .log({
-          userId,
-          action: approve ? 'PREAUTH_APPROVED' : 'PREAUTH_DENIED',
-          entityType: 'PreAuthorization',
-          entityId: saved.id,
-          oldValue: { status: previousStatus, approvedAmount: previousApproved },
-          newValue: {
-            status: saved.status,
-            approvedAmount: Number(saved.approvedAmount),
-            insurerReference: saved.insurerReference || null,
-            denialReason: saved.denialReason || null,
-          },
-          reason: dto.notes,
-          tenantId: tid,
-        })
-        .catch((err) =>
-          this.logger.error(`Audit log failed for processPreAuth ${saved.id}: ${err.message}`),
-        );
-
-      return saved;
+      return {
+        saved,
+        preAuthAuditPrevious: { status: previousStatus, approvedAmount: previousApproved },
+      };
     });
+
+    // Audit after the commit — it writes on its own connection, so inside the
+    // transaction the log row committed independently of the decision it
+    // recorded. Still best-effort.
+    await this.auditLogService
+      .log({
+        userId,
+        action: approve ? 'PREAUTH_APPROVED' : 'PREAUTH_DENIED',
+        entityType: 'PreAuthorization',
+        entityId: saved.id,
+        oldValue: preAuthAuditPrevious,
+        newValue: {
+          status: saved.status,
+          approvedAmount: Number(saved.approvedAmount),
+          insurerReference: saved.insurerReference || null,
+          denialReason: saved.denialReason || null,
+        },
+        reason: dto.notes,
+        tenantId: tid,
+      })
+      .catch((err) =>
+        this.logger.error(`Audit log failed for processPreAuth ${saved.id}: ${err.message}`),
+      );
+
+    return saved;
   }
 
   // ============ REPORTS ============

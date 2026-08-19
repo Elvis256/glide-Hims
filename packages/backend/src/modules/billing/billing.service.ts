@@ -2045,114 +2045,123 @@ export class BillingService {
     }
 
     // P1: Wrap in transaction with pessimistic lock to prevent race with recordPayment()
-    const cancelled = await this.dataSource.transaction(async (manager) => {
-      const invoice = await manager.findOne(Invoice, {
-        where: { id, tenantId: requireTenantId(tenantId) },
-        lock: { mode: 'pessimistic_write' },
-      });
+    const { saved: cancelled, glFacilityId: cancelGlFacilityId } =
+      await this.dataSource.transaction(async (manager) => {
+        const invoice = await manager.findOne(Invoice, {
+          where: { id, tenantId: requireTenantId(tenantId) },
+          lock: { mode: 'pessimistic_write' },
+        });
 
-      if (!invoice) {
-        throw new NotFoundException('Invoice not found');
-      }
+        if (!invoice) {
+          throw new NotFoundException('Invoice not found');
+        }
 
-      // Load relations separately (pessimistic lock doesn't support joins)
-      const payments = await manager.find(Payment, { where: { invoiceId: id } });
-      invoice.payments = payments;
-      if (invoice.encounterId) {
-        const enc = await manager.findOne(Encounter, { where: { id: invoice.encounterId } });
-        if (enc) invoice.encounter = enc;
-      }
+        // Load relations separately (pessimistic lock doesn't support joins)
+        const payments = await manager.find(Payment, { where: { invoiceId: id } });
+        invoice.payments = payments;
+        if (invoice.encounterId) {
+          const enc = await manager.findOne(Encounter, { where: { id: invoice.encounterId } });
+          if (enc) invoice.encounter = enc;
+        }
 
-      // Segregation of duties: the user who created the invoice cannot cancel it
-      if (userId && invoice.createdById && invoice.createdById === userId) {
-        throw new BadRequestException(
-          'Segregation of duties violation: the user who created the invoice cannot cancel it',
-        );
-      }
-
-      // Segregation of duties: a user who collected any completed payment on this
-      // invoice cannot also cancel it.
-      if (userId) {
-        const collectorOverlap = (invoice.payments || []).some(
-          (p) => p.status === PaymentStatus.COMPLETED && p.receivedById === userId,
-        );
-        if (collectorOverlap) {
+        // Segregation of duties: the user who created the invoice cannot cancel it
+        if (userId && invoice.createdById && invoice.createdById === userId) {
           throw new BadRequestException(
-            'Segregation of duties violation: a user who collected payment on this invoice cannot also cancel it',
+            'Segregation of duties violation: the user who created the invoice cannot cancel it',
           );
         }
-      }
 
-      if (invoice.status === InvoiceStatus.PAID) {
-        throw new BadRequestException('Cannot cancel a paid invoice. Use refund instead.');
-      }
+        // Segregation of duties: a user who collected any completed payment on this
+        // invoice cannot also cancel it.
+        if (userId) {
+          const collectorOverlap = (invoice.payments || []).some(
+            (p) => p.status === PaymentStatus.COMPLETED && p.receivedById === userId,
+          );
+          if (collectorOverlap) {
+            throw new BadRequestException(
+              'Segregation of duties violation: a user who collected payment on this invoice cannot also cancel it',
+            );
+          }
+        }
 
-      // P0: Block cancellation of partially-paid invoices — payments are COMPLETED on a
-      // CANCELLED invoice, creating a reconciliation gap. Require refund of payments first.
-      if (invoice.status === InvoiceStatus.PARTIALLY_PAID) {
-        throw new BadRequestException(
-          'Cannot cancel a partially paid invoice. Refund or void the outstanding payments first, then cancel.',
-        );
-      }
+        if (invoice.status === InvoiceStatus.PAID) {
+          throw new BadRequestException('Cannot cancel a paid invoice. Use refund instead.');
+        }
 
-      if (invoice.status === InvoiceStatus.CANCELLED) {
-        throw new BadRequestException('Invoice is already cancelled');
-      }
+        // P0: Block cancellation of partially-paid invoices — payments are COMPLETED on a
+        // CANCELLED invoice, creating a reconciliation gap. Require refund of payments first.
+        if (invoice.status === InvoiceStatus.PARTIALLY_PAID) {
+          throw new BadRequestException(
+            'Cannot cancel a partially paid invoice. Refund or void the outstanding payments first, then cancel.',
+          );
+        }
 
-      invoice.status = InvoiceStatus.CANCELLED;
-      invoice.notes =
-        `${invoice.notes || ''}\nCancelled${userId ? ` by ${userId}` : ''}: ${reason}`.trim();
+        if (invoice.status === InvoiceStatus.CANCELLED) {
+          throw new BadRequestException('Invoice is already cancelled');
+        }
 
-      const saved = await manager.save(Invoice, invoice);
+        invoice.status = InvoiceStatus.CANCELLED;
+        invoice.notes =
+          `${invoice.notes || ''}\nCancelled${userId ? ` by ${userId}` : ''}: ${reason}`.trim();
 
-      // Post GL reversal: CR Accounts Receivable, DR Revenue (reverses the original posting)
-      if (invoice.encounter?.facilityId && Number(invoice.totalAmount) > 0) {
-        this.financeService
-          .autoPostInvoiceJournal(
+        const saved = await manager.save(Invoice, invoice);
+
+        // GL reversal and audit both run after the commit — see below.
+        return { saved, glFacilityId: invoice.encounter?.facilityId || null };
+      });
+
+    // Post GL reversal (CR Accounts Receivable, DR Revenue) and the audit row
+    // after the cancellation commits.
+    //
+    // Both went through sibling services on their own connections from inside
+    // the transaction, so the reversing journal and the audit row committed
+    // independently of the cancellation: roll it back and the ledger showed
+    // the revenue reversed on an invoice that is still live. Both stay
+    // best-effort.
+    if (cancelGlFacilityId && Number(cancelled.totalAmount) > 0) {
+      this.financeService
+        .autoPostInvoiceJournal(
+          {
+            facilityId: cancelGlFacilityId,
+            invoiceNumber: `${cancelled.invoiceNumber}-REVERSAL`,
+            totalAmount: -Number(cancelled.totalAmount),
+            revenueCategory: cancelled.paymentType || 'consultation',
+            userId: userId || 'system',
+          },
+          tenantId,
+        )
+        .catch((err) =>
+          this.logger.error(
+            `GL reversal failed for cancelled invoice ${cancelled.invoiceNumber}: ${err.message}`,
             {
-              facilityId: invoice.encounter.facilityId,
-              invoiceNumber: `${invoice.invoiceNumber}-REVERSAL`,
-              totalAmount: -Number(invoice.totalAmount),
-              revenueCategory: invoice.paymentType || 'consultation',
-              userId: userId || 'system',
+              invoiceNumber: cancelled.invoiceNumber,
+              totalAmount: cancelled.totalAmount,
+              error: err.stack,
             },
-            tenantId,
-          )
-          .catch((err) =>
-            this.logger.error(
-              `GL reversal failed for cancelled invoice ${invoice.invoiceNumber}: ${err.message}`,
-              {
-                invoiceNumber: invoice.invoiceNumber,
-                totalAmount: invoice.totalAmount,
-                error: err.stack,
-              },
-            ),
-          );
-      }
+          ),
+        );
+    }
 
-      if (userId) {
-        await this.auditLogService
-          .log({
-            userId,
-            action: 'INVOICE_CANCELLED',
-            entityType: 'Invoice',
-            entityId: invoice.id,
-            oldValue: {
-              status: 'previous',
-              totalAmount: Number(invoice.totalAmount),
-              invoiceNumber: invoice.invoiceNumber,
-            },
-            newValue: { status: InvoiceStatus.CANCELLED },
-            reason,
-            tenantId: requireTenantId(tenantId),
-          })
-          .catch((err) =>
-            this.logger.error(`Audit log failed for cancelInvoice ${invoice.id}: ${err.message}`),
-          );
-      }
-
-      return saved;
-    });
+    if (userId) {
+      await this.auditLogService
+        .log({
+          userId,
+          action: 'INVOICE_CANCELLED',
+          entityType: 'Invoice',
+          entityId: cancelled.id,
+          oldValue: {
+            status: 'previous',
+            totalAmount: Number(cancelled.totalAmount),
+            invoiceNumber: cancelled.invoiceNumber,
+          },
+          newValue: { status: InvoiceStatus.CANCELLED },
+          reason,
+          tenantId: requireTenantId(tenantId),
+        })
+        .catch((err) =>
+          this.logger.error(`Audit log failed for cancelInvoice ${cancelled.id}: ${err.message}`),
+        );
+    }
 
     // Enhancement B: put the consumables back, AFTER the cancellation commits.
     //
@@ -2179,7 +2188,12 @@ export class BillingService {
     userId?: string,
     tenantId?: string,
   ): Promise<Invoice> {
-    return this.dataSource.transaction(async (manager) => {
+    const {
+      saved: refunded,
+      refundAmount: refundedAmount,
+      glFacilityId: refundGlFacilityId,
+      refundMethod,
+    } = await this.dataSource.transaction(async (manager) => {
       const invoiceRepo = manager.getRepository(Invoice);
       const paymentRepo = manager.getRepository(Payment);
 
@@ -2249,74 +2263,91 @@ export class BillingService {
 
       const saved = await invoiceRepo.save(invoice);
 
-      // Post GL reversal: CR Revenue, DR Cash (reverses original invoice + payment postings)
-      if (invoice.encounter?.facilityId && refundAmount > 0) {
-        // Reverse the revenue recognition (CR AR, DR Revenue)
-        this.financeService
-          .autoPostInvoiceJournal(
-            {
-              facilityId: invoice.encounter.facilityId,
-              invoiceNumber: `${invoice.invoiceNumber}-REFUND`,
-              totalAmount: -Number(invoice.totalAmount),
-              revenueCategory: invoice.paymentType || 'consultation',
-              userId: userId || 'system',
-            },
-            tenantId,
-          )
-          .catch((err) =>
-            this.logger.error(
-              `GL reversal failed for refunded invoice ${invoice.invoiceNumber}: ${err.message}`,
-              {
-                invoiceNumber: invoice.invoiceNumber,
-                totalAmount: invoice.totalAmount,
-                error: err.stack,
-              },
-            ),
-          );
-
-        // Reverse the cash receipt (DR AR, CR Cash)
-        this.financeService
-          .autoPostPatientPaymentJournal(
-            {
-              facilityId: invoice.encounter.facilityId,
-              receiptNumber: `${invoice.invoiceNumber}-REFUND`,
-              amount: -refundAmount,
-              paymentMethod: completedPayments[0]?.method || 'cash',
-              userId: userId || 'system',
-            },
-            tenantId,
-          )
-          .catch((err) =>
-            this.logger.error(
-              `GL payment reversal failed for refunded invoice ${invoice.invoiceNumber}: ${err.message}`,
-              { invoiceNumber: invoice.invoiceNumber, refundAmount, error: err.stack },
-            ),
-          );
-      }
-
-      if (userId) {
-        await this.auditLogService
-          .log({
-            userId,
-            action: 'INVOICE_REFUNDED',
-            entityType: 'Invoice',
-            entityId: invoice.id,
-            oldValue: {
-              totalAmount: Number(invoice.totalAmount),
-              amountPaid: refundAmount,
-              invoiceNumber: invoice.invoiceNumber,
-            },
-            newValue: { status: InvoiceStatus.REFUNDED, refundAmount },
-            reason: reason || 'No reason provided',
-            tenantId: requireTenantId(tenantId),
-          })
-          .catch((err) =>
-            this.logger.error(`Audit log failed for refundInvoice ${invoice.id}: ${err.message}`),
-          );
-      }
-
-      return saved;
+      // GL reversals and the audit row all run after the commit — see below.
+      return {
+        saved,
+        refundAmount,
+        glFacilityId: invoice.encounter?.facilityId || null,
+        refundMethod: completedPayments[0]?.method || 'cash',
+      };
     });
+
+    // Post the reversals and the audit row once the refund has committed.
+    //
+    // All three went through sibling services on their own connections from
+    // inside the transaction, so they committed independently of the refund
+    // they described: roll it back and the ledger showed revenue and cash
+    // reversed on an invoice that is still paid. All stay best-effort.
+    if (refundGlFacilityId && refundedAmount > 0) {
+      // Reverse the revenue recognition (CR AR, DR Revenue)
+      this.financeService
+        .autoPostInvoiceJournal(
+          {
+            facilityId: refundGlFacilityId,
+            invoiceNumber: `${refunded.invoiceNumber}-REFUND`,
+            totalAmount: -Number(refunded.totalAmount),
+            revenueCategory: refunded.paymentType || 'consultation',
+            userId: userId || 'system',
+          },
+          tenantId,
+        )
+        .catch((err) =>
+          this.logger.error(
+            `GL reversal failed for refunded invoice ${refunded.invoiceNumber}: ${err.message}`,
+            {
+              invoiceNumber: refunded.invoiceNumber,
+              totalAmount: refunded.totalAmount,
+              error: err.stack,
+            },
+          ),
+        );
+
+      // Reverse the cash receipt (DR AR, CR Cash)
+      this.financeService
+        .autoPostPatientPaymentJournal(
+          {
+            facilityId: refundGlFacilityId,
+            receiptNumber: `${refunded.invoiceNumber}-REFUND`,
+            amount: -refundedAmount,
+            paymentMethod: refundMethod,
+            userId: userId || 'system',
+          },
+          tenantId,
+        )
+        .catch((err) =>
+          this.logger.error(
+            `GL payment reversal failed for refunded invoice ${refunded.invoiceNumber}: ${err.message}`,
+            {
+              invoiceNumber: refunded.invoiceNumber,
+              refundAmount: refundedAmount,
+              error: err.stack,
+            },
+          ),
+        );
+    }
+
+    if (userId) {
+      await this.auditLogService
+        .log({
+          userId,
+          action: 'INVOICE_REFUNDED',
+          entityType: 'Invoice',
+          entityId: refunded.id,
+          oldValue: {
+            totalAmount: Number(refunded.totalAmount),
+            amountPaid: refundedAmount,
+            invoiceNumber: refunded.invoiceNumber,
+          },
+          newValue: { status: InvoiceStatus.REFUNDED, refundAmount: refundedAmount },
+          reason,
+          tenantId: requireTenantId(tenantId),
+        })
+        .catch((err) =>
+          this.logger.error(`Audit log failed for refundInvoice ${refunded.id}: ${err.message}`),
+        );
+    }
+
+    return refunded;
   }
 
   /**
@@ -2342,7 +2373,7 @@ export class BillingService {
     userId: string,
     tenantId?: string,
   ): Promise<InvoiceItem> {
-    return this.dataSource.transaction(async (manager) => {
+    const billed = await this.dataSource.transaction(async (manager) => {
       // Find or create invoice for this encounter (with pessimistic lock)
       let invoice = await manager.findOne(Invoice, {
         where: {
@@ -2389,7 +2420,8 @@ export class BillingService {
           this.logger.warn(
             `Duplicate billable item skipped: ${params.referenceType}/${params.referenceId} on invoice ${invoice.invoiceNumber}`,
           );
-          return duplicate;
+          // No audit payload: nothing was added, so nothing to record.
+          return { item: duplicate, audit: null };
         }
       }
 
@@ -2520,28 +2552,44 @@ export class BillingService {
       // billable item, and the request never returned.
       await this.recalculateInvoiceInTxn(manager, invoice.id, tenantId);
 
-      // P1: Audit log for billable item additions
+      return {
+        item,
+        audit: {
+          invoiceId: invoice.id,
+          invoiceNumber: invoice.invoiceNumber,
+          unitPrice: resolvedUnitPrice,
+          amount,
+        } as { invoiceId: string; invoiceNumber: string; unitPrice: number; amount: number } | null,
+      };
+    });
+
+    // P1: Audit log for billable item additions — after the commit.
+    // AuditLogService writes on its own connection, so from inside the
+    // transaction the log row committed independently of the charge it
+    // recorded. Still best-effort.
+    if (billed.audit) {
+      const a = billed.audit;
       this.auditLogService
         .log({
           userId,
           action: 'BILLABLE_ITEM_ADDED',
           entityType: 'InvoiceItem',
-          entityId: item.id,
+          entityId: billed.item.id,
           newValue: {
-            invoiceId: invoice.id,
-            invoiceNumber: invoice.invoiceNumber,
+            invoiceId: a.invoiceId,
+            invoiceNumber: a.invoiceNumber,
             serviceCode: params.serviceCode,
             description: params.description,
             quantity: params.quantity,
-            unitPrice: resolvedUnitPrice,
-            amount,
+            unitPrice: a.unitPrice,
+            amount: a.amount,
           },
           tenantId: requireTenantId(tenantId),
         })
         .catch((err) => this.logger.error(`Audit log failed for addBillableItem: ${err.message}`));
+    }
 
-      return item;
-    });
+    return billed.item;
   }
 
   /** Update an existing billable item by reference (returns true if updated) */
@@ -2557,7 +2605,7 @@ export class BillingService {
     tenantId?: string,
   ): Promise<boolean> {
     // P0: Wrap in transaction with pessimistic lock on parent invoice
-    return this.dataSource.transaction(async (manager) => {
+    const updateResult = await this.dataSource.transaction(async (manager) => {
       const existing = await manager.findOne(InvoiceItem, {
         where: {
           referenceType: params.referenceType,
@@ -2565,14 +2613,14 @@ export class BillingService {
           tenantId: requireTenantId(tenantId),
         },
       });
-      if (!existing) return false;
+      if (!existing) return { updated: false, audit: null };
 
       // P1: Block modifications on terminal invoice statuses
       const invoice = await manager.findOne(Invoice, {
         where: { id: existing.invoiceId },
         lock: { mode: 'pessimistic_write' },
       });
-      if (!invoice) return false;
+      if (!invoice) return { updated: false, audit: null };
       const terminalStatuses: InvoiceStatus[] = [
         InvoiceStatus.PAID,
         InvoiceStatus.CANCELLED,
@@ -2597,29 +2645,45 @@ export class BillingService {
       // Recalculate within the same transaction context
       await this.recalculateInvoiceInTxn(manager, existing.invoiceId, tenantId);
 
-      // P1: Audit log
-      if (userId) {
-        this.auditLogService
-          .log({
-            userId,
-            action: 'BILLABLE_ITEM_UPDATED',
-            entityType: 'InvoiceItem',
-            entityId: existing.id,
-            oldValue: { amount: Number(oldAmount) },
-            newValue: {
-              quantity: existing.quantity,
-              unitPrice: existing.unitPrice,
-              amount: existing.amount,
-            },
-            tenantId: requireTenantId(tenantId),
-          })
-          .catch((err) =>
-            this.logger.error(`Audit log failed for updateBillableItem: ${err.message}`),
-          );
-      }
-
-      return true;
+      return {
+        updated: true,
+        audit: {
+          itemId: existing.id,
+          oldAmount: Number(oldAmount),
+          quantity: existing.quantity,
+          unitPrice: existing.unitPrice,
+          amount: existing.amount,
+        } as {
+          itemId: string;
+          oldAmount: number;
+          quantity: number;
+          unitPrice: number;
+          amount: number;
+        } | null,
+      };
     });
+
+    // P1: Audit log — after the commit. AuditLogService writes on its own
+    // connection, so from inside the transaction the log row committed
+    // independently of the change it recorded. Still best-effort.
+    if (userId && updateResult.audit) {
+      const a = updateResult.audit;
+      this.auditLogService
+        .log({
+          userId,
+          action: 'BILLABLE_ITEM_UPDATED',
+          entityType: 'InvoiceItem',
+          entityId: a.itemId,
+          oldValue: { amount: a.oldAmount },
+          newValue: { quantity: a.quantity, unitPrice: a.unitPrice, amount: a.amount },
+          tenantId: requireTenantId(tenantId),
+        })
+        .catch((err) =>
+          this.logger.error(`Audit log failed for updateBillableItem: ${err.message}`),
+        );
+    }
+
+    return updateResult.updated;
   }
 
   /** Remove a billable item by reference */
@@ -2975,7 +3039,12 @@ export class BillingService {
       throw new BadRequestException('Write-off reason is required');
     }
 
-    return this.dataSource.transaction(async (manager) => {
+    const {
+      saved: writtenOff,
+      writeOffAmount: writtenOffAmount,
+      glFacilityId: writeOffGlFacilityId,
+      invoiceNumber: writtenOffNumber,
+    } = await this.dataSource.transaction(async (manager) => {
       // Lock the invoice row so a concurrent payment / cancel / write-off
       // cannot race against us between status check and status flip.
       const invoice = await manager.findOne(Invoice, {
@@ -3047,54 +3116,68 @@ export class BillingService {
       const saved = await manager.save(Invoice, invoice);
 
       // GL: DR Bad Debt Expense (5503), CR Accounts Receivable (1200).
-      // financeService manages its own connection; failures are logged
-      // loudly but do NOT roll back the invoice flip — operational policy
-      // is that a written-off invoice must not silently revert to OPEN.
-      // The audit log entry below records the discrepancy so reconciliation
-      // can detect a missing GL leg.
-      let glPosted = true;
-      if (invoice.encounter?.facilityId) {
-        try {
-          await this.financeService.autoPostInvoiceJournal(
-            {
-              facilityId: invoice.encounter.facilityId,
-              invoiceNumber: `WRITEOFF-${invoice.invoiceNumber}`,
-              totalAmount: writeOffAmount,
-              revenueCategory: 'write_off',
-              userId,
-            },
-            tenantId,
-          );
-        } catch (err) {
-          glPosted = false;
-          this.logger.error(
-            `GL write-off posting failed for ${invoice.invoiceNumber}: ${err.message}`,
-            err.stack,
-          );
-        }
-      }
-
-      await this.auditLogService
-        .log({
-          userId,
-          action: 'INVOICE_WRITTEN_OFF',
-          entityType: 'Invoice',
-          entityId: invoice.id,
-          oldValue: {
-            balanceDue: writeOffAmount,
-            status: 'previous',
-            invoiceNumber: invoice.invoiceNumber,
-          },
-          newValue: { status: InvoiceStatus.WRITTEN_OFF, writeOffAmount, glPosted },
-          reason,
-          tenantId: requireTenantId(tenantId),
-        })
-        .catch((err) =>
-          this.logger.error(`Audit log failed for writeOffInvoice ${invoice.id}: ${err.message}`),
-        );
-
-      return saved;
+      // The GL leg and the audit row are both raised after this commits.
+      return {
+        saved,
+        writeOffAmount,
+        glFacilityId: invoice.encounter?.facilityId || null,
+        invoiceNumber: invoice.invoiceNumber,
+      };
     });
+
+    // financeService manages its own connection; failures are logged loudly
+    // but do NOT roll back the invoice flip — operational policy is that a
+    // written-off invoice must not silently revert to OPEN. That policy is
+    // exactly why this belongs after the commit: run from inside the
+    // transaction it had the opposite failure too, posting the write-off to
+    // the ledger and then losing the invoice flip to a rollback. The audit
+    // row records glPosted so reconciliation can still detect a missing leg.
+    let glPosted = true;
+    if (writeOffGlFacilityId) {
+      try {
+        await this.financeService.autoPostInvoiceJournal(
+          {
+            facilityId: writeOffGlFacilityId,
+            invoiceNumber: `WRITEOFF-${writtenOffNumber}`,
+            totalAmount: writtenOffAmount,
+            revenueCategory: 'write_off',
+            userId,
+          },
+          tenantId,
+        );
+      } catch (err: any) {
+        glPosted = false;
+        this.logger.error(
+          `GL write-off posting failed for ${writtenOffNumber}: ${err.message}`,
+          err.stack,
+        );
+      }
+    }
+
+    await this.auditLogService
+      .log({
+        userId,
+        action: 'INVOICE_WRITTEN_OFF',
+        entityType: 'Invoice',
+        entityId: writtenOff.id,
+        oldValue: {
+          balanceDue: writtenOffAmount,
+          status: 'previous',
+          invoiceNumber: writtenOffNumber,
+        },
+        newValue: {
+          status: InvoiceStatus.WRITTEN_OFF,
+          writeOffAmount: writtenOffAmount,
+          glPosted,
+        },
+        reason,
+        tenantId: requireTenantId(tenantId),
+      })
+      .catch((err) =>
+        this.logger.error(`Audit log failed for writeOffInvoice ${writtenOff.id}: ${err.message}`),
+      );
+
+    return writtenOff;
   }
 
   // ============ RECEIPT PRINT DATA ============

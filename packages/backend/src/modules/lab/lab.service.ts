@@ -495,10 +495,11 @@ export class LabService {
   }
 
   /**
-   * txn-connection-ok: called after a write from inside amendResult's
-   * transaction, but it only re-reads the sample and its relations — rows
-   * that transaction never touches — so its own connection sees the same
-   * committed state the transaction would.
+   * txn-connection-ok: still called from inside amendResult's transaction
+   * (to resolve reference ranges, before that transaction writes anything),
+   * on its own connection. It only reads the sample and its relations — rows
+   * that transaction never touches — so it sees the same committed state the
+   * transaction would.
    */
   async getSample(id: string, tenantId?: string): Promise<LabSample> {
     const tid = requireTenantId(tenantId);
@@ -1232,7 +1233,7 @@ export class LabService {
     // each other. We open a transaction and acquire a pessimistic write lock
     // on the row before reading-modifying-writing, so the second amender
     // observes the first amender's `previousValues` and value.
-    return this.dataSource.transaction(async (manager) => {
+    const amended = await this.dataSource.transaction(async (manager) => {
       const resultRepo = manager.getRepository(LabResult);
 
       const qb = resultRepo
@@ -1340,33 +1341,41 @@ export class LabService {
         `Lab result amended: ${id} by user ${userId}, reason: ${dto.amendmentReason}`,
       );
 
-      // Re-flag (or bump) critical-result alert if the amendment moved into a
-      // critical band. Idempotent: flag() de-dupes by (resourceType,resourceId).
-      try {
-        const sev = this.toCriticalSeverity(savedResult.abnormalFlag);
-        if (sev) {
-          const sample = await this.getSample(savedResult.sampleId, tenantId);
-          if (sample?.order) {
-            await this.criticalResultsService.flag({
-              resourceType: 'lab',
-              resourceId: savedResult.id,
-              orderId: sample.orderId,
-              patientId: sample.patientId || '',
-              encounterId: sample.order.encounterId,
-              severity: sev,
-              summary: `[AMENDED] ${savedResult.parameter || 'Lab result'}: ${savedResult.value ?? ''}${savedResult.unit ? ' ' + savedResult.unit : ''} (${savedResult.abnormalFlag})`,
-              flaggedById: userId,
-              assignedToId: sample.order.orderedById,
-              tenantId,
-            });
-          }
-        }
-      } catch (e) {
-        this.logger.warn(`Failed to flag amended critical result: ${e.message}`);
-      }
-
       return savedResult;
     });
+
+    // Re-flag (or bump) the critical-result alert if the amendment moved into
+    // a critical band. Idempotent: flag() de-dupes by (resourceType,resourceId).
+    //
+    // This ran inside the transaction, through CriticalResultsService on its
+    // own connection, so the alert committed the moment it was written. An
+    // amendment that then rolled back left a clinician paged about a critical
+    // value that is not in the record. Out here the alert only exists once
+    // the amended result does.
+    try {
+      const sev = this.toCriticalSeverity(amended.abnormalFlag);
+      if (sev) {
+        const sample = await this.getSample(amended.sampleId, tenantId);
+        if (sample?.order) {
+          await this.criticalResultsService.flag({
+            resourceType: 'lab',
+            resourceId: amended.id,
+            orderId: sample.orderId,
+            patientId: sample.patientId || '',
+            encounterId: sample.order.encounterId,
+            severity: sev,
+            summary: `[AMENDED] ${amended.parameter || 'Lab result'}: ${amended.value ?? ''}${amended.unit ? ' ' + amended.unit : ''} (${amended.abnormalFlag})`,
+            flaggedById: userId,
+            assignedToId: sample.order.orderedById,
+            tenantId,
+          });
+        }
+      }
+    } catch (e: any) {
+      this.logger.warn(`Failed to flag amended critical result: ${e.message}`);
+    }
+
+    return amended;
   }
 
   private toCriticalSeverity(
