@@ -530,6 +530,7 @@ export class PharmacyService {
     // completeSale calls on the same sale id cannot both pass the
     // status==PENDING check and double-deduct stock (P0).
     const txnResult = await this.dataSource.transaction(async (manager) => {
+      let glFacilityId: string | null = null;
       const sale = await manager.findOne(PharmacySale, {
         where: { id, tenantId: tid },
         lock: { mode: 'pessimistic_write' },
@@ -962,27 +963,11 @@ export class PharmacyService {
         }
       }
 
-      // Auto-post GL entry within the same transaction: DR Cash/Bank, CR Pharmacy Revenue
-      const facilityIdForGL = sale.store?.facilityId;
-      if (facilityIdForGL) {
-        try {
-          await this.financeService.autoPostPharmacySaleJournal(
-            {
-              facilityId: facilityIdForGL,
-              saleNumber: sale.saleNumber,
-              totalAmount: Number(sale.totalAmount) || 0,
-              paymentMethod: dto.paymentMethod || sale.paymentMethod || 'cash',
-              userId,
-            },
-            tenantId,
-          );
-        } catch (err) {
-          this.logger.error(
-            `GL auto-post failed for sale ${sale.saleNumber}: ${err.message}`,
-            err.stack,
-          );
-        }
-      }
+      // GL is posted after this transaction commits — see below. The comment
+      // here used to claim the journal was written "within the same
+      // transaction", which it never was: FinanceService holds its own
+      // connection.
+      glFacilityId = sale.store?.facilityId || null;
 
       // POS shift recording — for retail-counter sales, record the payment splits
       // against the shift and bump cached totals. This is what X/Z reports read from.
@@ -1047,7 +1032,7 @@ export class PharmacyService {
         );
       }
 
-      return { alreadyCompleted: false as const, sale };
+      return { alreadyCompleted: false as const, sale, glFacilityId };
     });
 
     // Already-completed idempotent return: skip event/retail-upsert/etc.
@@ -1055,6 +1040,32 @@ export class PharmacyService {
       return this.findSale(id, tenantId);
     }
     const sale = txnResult.sale;
+
+    // Post the sale to the General Ledger: DR Cash/Bank, CR Pharmacy Revenue.
+    //
+    // This ran inside the transaction, on FinanceService's own connection, so
+    // the journal committed the moment it was written while the sale beside
+    // it could still roll back — leaving the ledger carrying revenue for a
+    // sale that never completed. Failure is logged, not fatal, as before.
+    if (txnResult.glFacilityId) {
+      try {
+        await this.financeService.autoPostPharmacySaleJournal(
+          {
+            facilityId: txnResult.glFacilityId,
+            saleNumber: sale.saleNumber,
+            totalAmount: Number(sale.totalAmount) || 0,
+            paymentMethod: dto.paymentMethod || sale.paymentMethod || 'cash',
+            userId,
+          },
+          tenantId,
+        );
+      } catch (err: any) {
+        this.logger.error(
+          `GL auto-post failed for sale ${sale.saleNumber}: ${err.message}`,
+          err.stack,
+        );
+      }
+    }
 
     // After-commit: notify async listeners (SMS receipt, analytics, etc.).
     this.eventEmitter.emit('pharmacy.sale.completed', {

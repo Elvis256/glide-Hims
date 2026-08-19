@@ -460,9 +460,7 @@ export class SurgeryService {
         if (checklist.signInCompletedAt) {
           throw new BadRequestException('Sign-in phase is already completed');
         }
-        if (
-          ![SurgeryStatus.SCHEDULED, SurgeryStatus.PRE_OP].includes(surgeryCase.status)
-        ) {
+        if (![SurgeryStatus.SCHEDULED, SurgeryStatus.PRE_OP].includes(surgeryCase.status)) {
           throw new BadRequestException(
             `Sign-in happens before induction — surgery is already ${surgeryCase.status}`,
           );
@@ -477,9 +475,7 @@ export class SurgeryService {
         if (checklist.timeOutCompletedAt) {
           throw new BadRequestException('Time-out phase is already completed');
         }
-        if (
-          ![SurgeryStatus.SCHEDULED, SurgeryStatus.PRE_OP].includes(surgeryCase.status)
-        ) {
+        if (![SurgeryStatus.SCHEDULED, SurgeryStatus.PRE_OP].includes(surgeryCase.status)) {
           throw new BadRequestException(
             `Time-out happens before incision — surgery is already ${surgeryCase.status}`,
           );
@@ -494,9 +490,7 @@ export class SurgeryService {
         if (checklist.signOutCompletedAt) {
           throw new BadRequestException('Sign-out phase is already completed');
         }
-        if (
-          ![SurgeryStatus.IN_PROGRESS, SurgeryStatus.POST_OP].includes(surgeryCase.status)
-        ) {
+        if (![SurgeryStatus.IN_PROGRESS, SurgeryStatus.POST_OP].includes(surgeryCase.status)) {
           throw new BadRequestException(
             `Sign-out happens at the end of surgery — surgery is ${surgeryCase.status}`,
           );
@@ -540,7 +534,7 @@ export class SurgeryService {
 
   async startSurgery(id: string, dto: StartSurgeryDto, tenantId?: string): Promise<SurgeryCase> {
     const tid = requireTenantId(tenantId);
-    return this.dataSource.transaction(async (manager) => {
+    const { saved, previousStatus } = await this.dataSource.transaction(async (manager) => {
       const surgeryCase = await manager.findOne(SurgeryCase, {
         where: { id, tenantId: tid },
         lock: { mode: 'pessimistic_write' },
@@ -548,55 +542,61 @@ export class SurgeryService {
       if (!surgeryCase) throw new NotFoundException('Surgery case not found');
 
       if (
-      surgeryCase.status !== SurgeryStatus.PRE_OP &&
-      surgeryCase.status !== SurgeryStatus.SCHEDULED
-    ) {
-      throw new BadRequestException('Surgery cannot be started from current status');
-    }
+        surgeryCase.status !== SurgeryStatus.PRE_OP &&
+        surgeryCase.status !== SurgeryStatus.SCHEDULED
+      ) {
+        throw new BadRequestException('Surgery cannot be started from current status');
+      }
 
-    // Check if consent is signed for elective surgeries
-    if (surgeryCase.priority === SurgeryPriority.ELECTIVE && !surgeryCase.consentSigned) {
-      throw new BadRequestException('Consent must be signed before starting elective surgery');
-    }
+      // Check if consent is signed for elective surgeries
+      if (surgeryCase.priority === SurgeryPriority.ELECTIVE && !surgeryCase.consentSigned) {
+        throw new BadRequestException('Consent must be signed before starting elective surgery');
+      }
 
-    // Validate pre-op checklist is complete before allowing transition to IN_PROGRESS
-    if (!surgeryCase.preOpChecklist || surgeryCase.preOpChecklist.length === 0) {
-      throw new BadRequestException(
-        'Pre-operative checklist must be completed before starting surgery',
-      );
-    }
-    const uncheckedItems = surgeryCase.preOpChecklist.filter((item) => !item.checked);
-    if (uncheckedItems.length > 0) {
-      throw new BadRequestException(
-        `Pre-operative checklist is incomplete. ${uncheckedItems.length} item(s) not checked: ${uncheckedItems.map((i) => i.item).join(', ')}`,
-      );
-    }
-
-    // WHO checklist gate (opt-in per tenant): incision must not start until
-    // sign-in AND time-out phases are completed
-    if (await this.whoEnforcementEnabled(tid)) {
-      const who = await manager.findOne(SurgerySafetyChecklist, {
-        where: { surgeryCaseId: id, tenantId: tid },
-      });
-      if (!who?.signInCompletedAt || !who?.timeOutCompletedAt) {
+      // Validate pre-op checklist is complete before allowing transition to IN_PROGRESS
+      if (!surgeryCase.preOpChecklist || surgeryCase.preOpChecklist.length === 0) {
         throw new BadRequestException(
-          'WHO Surgical Safety Checklist: sign-in and time-out phases must be completed before starting surgery',
+          'Pre-operative checklist must be completed before starting surgery',
         );
       }
-    }
+      const uncheckedItems = surgeryCase.preOpChecklist.filter((item) => !item.checked);
+      if (uncheckedItems.length > 0) {
+        throw new BadRequestException(
+          `Pre-operative checklist is incomplete. ${uncheckedItems.length} item(s) not checked: ${uncheckedItems.map((i) => i.item).join(', ')}`,
+        );
+      }
 
-    const previousStatus = surgeryCase.status;
-    surgeryCase.status = SurgeryStatus.IN_PROGRESS;
-    surgeryCase.actualStartTime = new Date();
+      // WHO checklist gate (opt-in per tenant): incision must not start until
+      // sign-in AND time-out phases are completed
+      if (await this.whoEnforcementEnabled(tid)) {
+        const who = await manager.findOne(SurgerySafetyChecklist, {
+          where: { surgeryCaseId: id, tenantId: tid },
+        });
+        if (!who?.signInCompletedAt || !who?.timeOutCompletedAt) {
+          throw new BadRequestException(
+            'WHO Surgical Safety Checklist: sign-in and time-out phases must be completed before starting surgery',
+          );
+        }
+      }
 
-    if (dto.anesthesiaNotes) surgeryCase.anesthesiaNotes = dto.anesthesiaNotes;
-    if (dto.nursingTeam) surgeryCase.nursingTeam = dto.nursingTeam;
+      const previousStatus = surgeryCase.status;
+      surgeryCase.status = SurgeryStatus.IN_PROGRESS;
+      surgeryCase.actualStartTime = new Date();
 
-    // Update theatre status atomically with the case
-    await manager.update(Theatre, surgeryCase.theatreId, { status: TheatreStatus.IN_USE });
+      if (dto.anesthesiaNotes) surgeryCase.anesthesiaNotes = dto.anesthesiaNotes;
+      if (dto.nursingTeam) surgeryCase.nursingTeam = dto.nursingTeam;
 
-    const saved = await manager.save(surgeryCase);
+      // Update theatre status atomically with the case
+      await manager.update(Theatre, surgeryCase.theatreId, { status: TheatreStatus.IN_USE });
 
+      const saved = await manager.save(surgeryCase);
+
+      return { saved, previousStatus };
+    });
+
+    // Audit after the commit — it writes on its own connection, so inside the
+    // transaction the log row committed independently of the surgery start it
+    // recorded. Still best-effort.
     this.auditLogService
       .log({
         action: 'START_SURGERY',
@@ -609,7 +609,6 @@ export class SurgeryService {
       .catch(() => {});
 
     return saved;
-    });
   }
 
   async updateIntraOpNotes(
@@ -688,19 +687,22 @@ export class SurgeryService {
 
       const saved = await manager.save(surgeryCase);
 
-      this.auditLogService
-        .log({
-          action: 'COMPLETE_SURGERY',
-          entityType: 'SurgeryCase',
-          entityId: id,
-          tenantId,
-          oldValue: { status: SurgeryStatus.IN_PROGRESS },
-          newValue: { status: SurgeryStatus.POST_OP },
-        })
-        .catch(() => {});
-
       return saved;
     });
+
+    // Audit after the commit — it writes on its own connection, so inside the
+    // transaction the log row committed independently of the completion it
+    // recorded. Still best-effort.
+    this.auditLogService
+      .log({
+        action: 'COMPLETE_SURGERY',
+        entityType: 'SurgeryCase',
+        entityId: id,
+        tenantId,
+        oldValue: { status: SurgeryStatus.IN_PROGRESS },
+        newValue: { status: SurgeryStatus.POST_OP },
+      })
+      .catch(() => {});
 
     // Post billable theatre consumables to the encounter invoice AFTER the
     // commit (BillingService runs its own transactions). Previously
@@ -775,7 +777,7 @@ export class SurgeryService {
    */
   async reconfirmSurgery(id: string, tenantId?: string): Promise<SurgeryCase> {
     const tid = requireTenantId(tenantId);
-    return this.dataSource.transaction(async (manager) => {
+    const reconfirmed = await this.dataSource.transaction(async (manager) => {
       const surgeryCase = await manager.findOne(SurgeryCase, {
         where: { id, tenantId: tid },
         lock: { mode: 'pessimistic_write' },
@@ -809,83 +811,94 @@ export class SurgeryService {
       surgeryCase.preOpNotes = `${surgeryCase.preOpNotes || ''}\n[RECONFIRMED]`.trim();
       const saved = await manager.save(surgeryCase);
 
-      this.auditLogService
-        .log({
-          action: 'RECONFIRM_SURGERY',
-          entityType: 'SurgeryCase',
-          entityId: id,
-          tenantId,
-          oldValue: { status: SurgeryStatus.POSTPONED },
-          newValue: { status: SurgeryStatus.SCHEDULED },
-        })
-        .catch(() => {});
-
       return saved;
     });
+
+    // Audit after the commit — it writes on its own connection, so inside the
+    // transaction the log row committed independently of the reconfirmation
+    // it recorded. Still best-effort.
+    this.auditLogService
+      .log({
+        action: 'RECONFIRM_SURGERY',
+        entityType: 'SurgeryCase',
+        entityId: id,
+        tenantId,
+        oldValue: { status: SurgeryStatus.POSTPONED },
+        newValue: { status: SurgeryStatus.SCHEDULED },
+      })
+      .catch(() => {});
+
+    return reconfirmed;
   }
 
   async cancelSurgery(id: string, dto: CancelSurgeryDto, tenantId?: string): Promise<SurgeryCase> {
     const tid = requireTenantId(tenantId);
-    return this.dataSource.transaction(async (manager) => {
-      const surgeryCase = await manager.findOne(SurgeryCase, {
-        where: { id, tenantId: tid },
-        lock: { mode: 'pessimistic_write' },
-      });
-      if (!surgeryCase) throw new NotFoundException('Surgery case not found');
+    const { saved: cancelled, previousStatus: cancelPreviousStatus } =
+      await this.dataSource.transaction(async (manager) => {
+        const surgeryCase = await manager.findOne(SurgeryCase, {
+          where: { id, tenantId: tid },
+          lock: { mode: 'pessimistic_write' },
+        });
+        if (!surgeryCase) throw new NotFoundException('Surgery case not found');
 
-      if (surgeryCase.status === SurgeryStatus.IN_PROGRESS) {
-        throw new BadRequestException('Cannot cancel surgery that is in progress');
-      }
-
-      if (surgeryCase.status === SurgeryStatus.COMPLETED) {
-        throw new BadRequestException('Cannot cancel completed surgery');
-      }
-
-      const previousStatus = surgeryCase.status;
-
-      if (dto.newDate && dto.newTime) {
-        // Postpone — the new slot must be free (this path skipped the
-        // conflict check entirely before)
-        const conflicts = await this.checkTheatreConflicts(
-          surgeryCase.theatreId,
-          dto.newDate,
-          dto.newTime,
-          surgeryCase.estimatedDurationMinutes,
-          surgeryCase.id,
-          tenantId,
-        );
-        if (conflicts.length > 0) {
-          throw new BadRequestException(
-            `Theatre has ${conflicts.length} conflicting surgery at the requested new time`,
-          );
+        if (surgeryCase.status === SurgeryStatus.IN_PROGRESS) {
+          throw new BadRequestException('Cannot cancel surgery that is in progress');
         }
-        surgeryCase.status = SurgeryStatus.POSTPONED;
-        surgeryCase.scheduledDate = new Date(dto.newDate);
-        surgeryCase.scheduledTime = dto.newTime;
-        surgeryCase.preOpNotes =
-          `${surgeryCase.preOpNotes || ''}\n[POSTPONED] ${dto.reason}`.trim();
-      } else {
-        // Cancel
-        surgeryCase.status = SurgeryStatus.CANCELLED;
-        surgeryCase.preOpNotes =
-          `${surgeryCase.preOpNotes || ''}\n[CANCELLED] ${dto.reason}`.trim();
-      }
 
-      const saved = await manager.save(surgeryCase);
+        if (surgeryCase.status === SurgeryStatus.COMPLETED) {
+          throw new BadRequestException('Cannot cancel completed surgery');
+        }
 
-      this.auditLogService
-        .log({
-          action: 'CANCEL_SURGERY',
-          entityType: 'SurgeryCase',
-          entityId: id,
-          tenantId,
-          oldValue: { status: previousStatus },
-          newValue: { status: saved.status, reason: dto.reason },
-        })
-        .catch(() => {});
+        const previousStatus = surgeryCase.status;
 
-      return saved;
-    });
+        if (dto.newDate && dto.newTime) {
+          // Postpone — the new slot must be free (this path skipped the
+          // conflict check entirely before)
+          const conflicts = await this.checkTheatreConflicts(
+            surgeryCase.theatreId,
+            dto.newDate,
+            dto.newTime,
+            surgeryCase.estimatedDurationMinutes,
+            surgeryCase.id,
+            tenantId,
+          );
+          if (conflicts.length > 0) {
+            throw new BadRequestException(
+              `Theatre has ${conflicts.length} conflicting surgery at the requested new time`,
+            );
+          }
+          surgeryCase.status = SurgeryStatus.POSTPONED;
+          surgeryCase.scheduledDate = new Date(dto.newDate);
+          surgeryCase.scheduledTime = dto.newTime;
+          surgeryCase.preOpNotes =
+            `${surgeryCase.preOpNotes || ''}\n[POSTPONED] ${dto.reason}`.trim();
+        } else {
+          // Cancel
+          surgeryCase.status = SurgeryStatus.CANCELLED;
+          surgeryCase.preOpNotes =
+            `${surgeryCase.preOpNotes || ''}\n[CANCELLED] ${dto.reason}`.trim();
+        }
+
+        const saved = await manager.save(surgeryCase);
+
+        return { saved, previousStatus };
+      });
+
+    // Audit after the commit — it writes on its own connection, so inside the
+    // transaction the log row committed independently of the cancellation it
+    // recorded. Still best-effort.
+    this.auditLogService
+      .log({
+        action: 'CANCEL_SURGERY',
+        entityType: 'SurgeryCase',
+        entityId: id,
+        tenantId,
+        oldValue: { status: cancelPreviousStatus },
+        newValue: { status: cancelled.status, reason: dto.reason },
+      })
+      .catch(() => {});
+
+    return cancelled;
   }
 
   // ============ SCHEDULE & DASHBOARD ============
