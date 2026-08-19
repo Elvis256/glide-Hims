@@ -8,6 +8,7 @@ import {
   ValidateNested,
   IsDateString,
   IsEnum,
+  IsDate,
   Min,
 } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
@@ -60,6 +61,12 @@ export class CreatePaymentVoucherDto {
   @IsUUID()
   purchaseOrderId?: string;
 
+  // @Type alone is a class-transformer decorator; with the global
+  // whitelist+forbidNonWhitelisted ValidationPipe a property carrying no
+  // class-validator decorator is treated as unknown — so every request that
+  // included this REQUIRED field was rejected with "Validation failed", and
+  // omitting it hit the NOT NULL column with a 500. Creation never worked.
+  @IsDate()
   @Type(() => Date)
   paymentDate: Date;
 
@@ -156,6 +163,12 @@ export class CreateSupplierCreditNoteDto {
   @IsUUID()
   supplierId: string;
 
+  // @Type alone is a class-transformer decorator; with the global
+  // whitelist+forbidNonWhitelisted ValidationPipe a property carrying no
+  // class-validator decorator is treated as unknown — so every request that
+  // included this REQUIRED field was rejected with "Validation failed", and
+  // omitting it hit the NOT NULL column with a 500. Creation never worked.
+  @IsDate()
   @Type(() => Date)
   noteDate: Date;
 
