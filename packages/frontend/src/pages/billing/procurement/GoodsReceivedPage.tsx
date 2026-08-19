@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { getApiErrorMessage } from '../../../services/api';
 import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -35,7 +36,7 @@ import {
   type PurchaseOrder,
   type CreateGoodsReceiptDto,
 } from '../../../services/procurement';
-import api from '../../../services/api';
+import api, { getApiErrorMessage } from '../../../services/api';
 import { CatalogItemPicker, type SelectedItem } from '../../../components/catalog';
 import { CategoryContextBanner, useProcurementCategory } from '../../../components/procurement/CategoryContextBanner';
 
@@ -130,11 +131,14 @@ export default function GoodsReceivedPage() {
     },
   });
 
-  // Every one of these used to fail silently: no onError, so a rejected
-  // inspection or a posting that hit a locked stock row simply did nothing
-  // and the storekeeper clicked again.
-  const showError = (fallback: string) => (e: any) =>
-    toast.error(e?.response?.data?.message || fallback);
+  // The QueryClient already installs a global mutation onError, so these
+  // were never silent — but a mutation-level onError REPLACES the global one
+  // rather than running alongside it, so anything defined here has to go
+  // through the same formatter or it loses timeout handling and field-level
+  // validation detail. The value added here is the specific fallback wording
+  // when the server sends no message at all.
+  const showError = (fallback: string) => (e: unknown) =>
+    toast.error(getApiErrorMessage(e, fallback));
 
   const inspectMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: InspectGRNDto }) => 
@@ -1243,7 +1247,7 @@ function CreateDebitNoteAction({
           .join('; '),
       );
     } catch (e: any) {
-      toast.error(e?.response?.data?.message || 'Failed to load preview');
+      toast.error(getApiErrorMessage(err, 'Failed to load preview'));
     } finally {
       setLoading(false);
     }
@@ -1265,7 +1269,7 @@ function CreateDebitNoteAction({
       setPreview(null);
       onCreated();
     } catch (e: any) {
-      toast.error(e?.response?.data?.message || 'Failed to create debit note');
+      toast.error(getApiErrorMessage(err, 'Failed to create debit note'));
     } finally {
       setSubmitting(false);
     }

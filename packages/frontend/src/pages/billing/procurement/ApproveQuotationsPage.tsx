@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { getApiErrorMessage } from '../../../services/api';
 import { toast } from 'sonner';
 import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -114,7 +115,7 @@ export default function ApproveQuotationsPage() {
     // or has already acted. Without this the modal just closed as though it
     // had worked.
     onError: (err: any) =>
-      toast.error(err?.response?.data?.message || 'Failed to approve quotation'),
+      toast.error(getApiErrorMessage(err, 'Failed to approve quotation')),
   });
 
   // Reject mutation
@@ -128,7 +129,7 @@ export default function ApproveQuotationsPage() {
       setComments('');
     },
     onError: (err: any) =>
-      toast.error(err?.response?.data?.message || 'Failed to reject quotation'),
+      toast.error(getApiErrorMessage(err, 'Failed to reject quotation')),
   });
 
   const filteredApprovals = useMemo(() => {

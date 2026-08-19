@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { getApiErrorMessage } from '../../services/api';
 import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -73,9 +74,9 @@ export default function SupplierCreditNotesPage() {
       queryClient.invalidateQueries({ queryKey: ['credit-notes'] });
       toast.success('Note approved');
     },
-    // Approval refuses when the creator tries to approve their own note.
-    // Without this the button simply appeared not to work.
-    onError: (e: any) => toast.error(e.response?.data?.message || 'Failed to approve note'),
+    // Approval refuses when the creator tries to approve their own note —
+    // worth a specific fallback if the server ever sends no message.
+    onError: (err: any) => toast.error(getApiErrorMessage(err, 'Failed to approve note')),
   });
 
   // Payment vouchers this note can be applied against — same supplier, and the
@@ -101,7 +102,7 @@ export default function SupplierCreditNotesPage() {
       setApplyVoucherId('');
       setApplyAmount('');
     },
-    onError: (e: any) => toast.error(e.response?.data?.message || 'Failed to apply credit note'),
+    onError: (err: any) => toast.error(getApiErrorMessage(err, 'Failed to apply credit note')),
   });
 
   const createMutation = useMutation({
@@ -111,7 +112,7 @@ export default function SupplierCreditNotesPage() {
       toast.success('Note created');
       setShowAddModal(false);
     },
-    onError: (e: any) => toast.error(e.response?.data?.message || 'Failed to create note'),
+    onError: (err: any) => toast.error(getApiErrorMessage(err, 'Failed to create note')),
   });
 
   // Only vouchers that can still take a deduction. A paid or cancelled

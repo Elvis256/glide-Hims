@@ -30,7 +30,7 @@ import {
 import { rfqService, type RFQ, type RFQStatus as RFQStatusType, type CreateRFQDto } from '../../../services/rfq';
 import { useAuthStore } from '../../../store/auth';
 import { CategoryContextBanner } from '../../../components/procurement/CategoryContextBanner';
-import api from '../../../services/api';
+import api, { getApiErrorMessage } from '../../../services/api';
 
 type RFQStatus = 'draft' | 'sent' | 'pending_responses' | 'responses_received' | 'closed' | 'cancelled';
 
@@ -128,7 +128,7 @@ export default function RFQPage() {
       toast.success('RFQ created');
       setShowCreateModal(false);
     },
-    onError: (err: any) => toast.error(err?.response?.data?.message || 'Failed to create RFQ'),
+    onError: (err: any) => toast.error(getApiErrorMessage(err, 'Failed to create RFQ')),
   });
 
   // Send RFQ mutation
