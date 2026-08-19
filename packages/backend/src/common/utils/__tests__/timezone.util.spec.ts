@@ -9,6 +9,7 @@ import {
   localDateString,
   localMonthString,
   monthBoundsUtc,
+  localCalendarDate,
 } from '../timezone.util';
 
 describe('hospitalTimeZone', () => {
@@ -203,5 +204,32 @@ describe('monthBoundsUtc / localMonthString', () => {
     // 31 Aug 21:30 UTC is 1 Sep 00:30 in Kampala
     expect(localMonthString(new Date('2026-08-31T21:30:00Z'), KLA)).toBe('2026-09');
     expect(localMonthString(new Date('2026-08-31T20:30:00Z'), KLA)).toBe('2026-08');
+  });
+});
+
+describe('localCalendarDate', () => {
+  const KLA = 'Africa/Kampala';
+
+  it('is UTC midnight of the date the hospital is having', () => {
+    // 21:30 UTC on 18 Aug is already 00:30 on the 19th in Kampala.
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-18T21:30:00Z'));
+    expect(localCalendarDate(KLA).toISOString()).toBe('2026-08-19T00:00:00.000Z');
+    jest.useRealTimers();
+  });
+
+  it('is what setHours(0,0,0,0) got wrong for three hours a day', () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-18T22:00:00Z'));
+    const legacy = new Date();
+    legacy.setHours(0, 0, 0, 0);
+    // The old idiom says the 18th; the hospital says the 19th.
+    expect(legacy.toISOString().slice(0, 10)).toBe('2026-08-18');
+    expect(localCalendarDate(KLA).toISOString().slice(0, 10)).toBe('2026-08-19');
+    jest.useRealTimers();
+  });
+
+  it('agrees with the old idiom during the working day', () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-19T09:00:00Z'));
+    expect(localCalendarDate(KLA).toISOString().slice(0, 10)).toBe('2026-08-19');
+    jest.useRealTimers();
   });
 });

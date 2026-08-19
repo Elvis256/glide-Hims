@@ -215,6 +215,24 @@ export function monthBoundsUtc(
   return { start, end, period: startStr.slice(0, 7) };
 }
 
+/**
+ * The hospital's current calendar date, as UTC midnight of that date.
+ *
+ * For `date` columns only — queue_date, and anything else storing a calendar
+ * day rather than an instant. Those want the date the hospital is having, and
+ * both the pg driver's serialisation and Postgres's DATE() read it off the UTC
+ * calendar, so the value has to be UTC midnight *of that local date* — not the
+ * instant local midnight occurred, which startOfDayUtc gives and which falls
+ * on the previous UTC day.
+ *
+ * The idiom this replaces was `const d = new Date(); d.setHours(0,0,0,0)`,
+ * which is midnight in the server's zone. On a UTC server that is the UTC
+ * date, so between local midnight and 03:00 every "today" was yesterday.
+ */
+export function localCalendarDate(zone: string = hospitalTimeZone()): Date {
+  return new Date(`${localDateString(new Date(), zone)}T00:00:00.000Z`);
+}
+
 /** A given hour of `dateStr` in the hospital's zone — used for census snapshots. */
 export function hourOfDayUtc(
   dateStr: string,
