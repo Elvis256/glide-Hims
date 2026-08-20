@@ -293,6 +293,9 @@ export class ChronicCareService {
         referenceId: condition.id,
       },
       userId,
+      // tenantId was dropped, so requireTenantId threw and the reminder was
+      // never sent — the patient simply never heard from the clinic.
+      tid,
     );
   }
 
@@ -333,6 +336,7 @@ export class ChronicCareService {
             message: dto.message,
           },
           userId,
+          tid,
         );
         results.push({ patientId, success: true, reminderId: result.id });
       } catch (error) {
@@ -415,6 +419,8 @@ export class ChronicCareService {
       reminderDate.setDate(reminderDate.getDate() - condition.reminderDaysBefore);
 
       if (reminderDate > new Date()) {
+        // tenantId was dropped, so scheduling threw and chronic patients
+        // never received their follow-up reminders.
         await this.notificationsService.scheduleReminder(fid, {
           patientId: condition.patientId,
           type: ReminderType.CHRONIC_CHECKUP,
@@ -424,7 +430,7 @@ export class ChronicCareService {
           scheduledFor: reminderDate,
           referenceType: 'chronic_condition',
           referenceId: condition.id,
-        });
+        }, undefined, tid);
         scheduled++;
       }
     }
