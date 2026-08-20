@@ -1347,6 +1347,10 @@ export class BillingService {
           after.thankYou.patientId,
           after.thankYou.patientName,
           after.receiptNumber,
+          // tenantId has never been passed here, so requireTenantId inside
+          // threw on every payment and the .catch swallowed it: the patient
+          // was never actually thanked. Found by walking a real payment.
+          tenantId,
         )
         .then((result) => {
           if (result.success) {
@@ -2900,7 +2904,10 @@ export class BillingService {
       other: 200000,
     };
     try {
-      const targetSetting = await this.settingsService.getByKey('revenue_targets');
+      // Without tenantId this always threw into the catch below, so a
+      // configured revenue target was silently ignored and the hardcoded
+      // defaults were reported as the targets.
+      const targetSetting = await this.settingsService.getByKey('revenue_targets', tenantId);
       const parsed = JSON.parse(targetSetting.value);
       if (parsed && typeof parsed === 'object') revenueTargets = { ...revenueTargets, ...parsed };
     } catch {
@@ -3092,7 +3099,10 @@ export class BillingService {
       // P2: Load configurable threshold from system settings, fall back to default
       let writeOffLimit = BillingService.DEFAULT_WRITE_OFF_LIMIT;
       try {
-        const setting = await this.settingsService.getByKey('write_off_threshold');
+        // Same dropped tenantId: the configured write-off ceiling was never
+        // read, so every tenant silently got the hardcoded default limit —
+        // on a control that caps how much may be written off.
+        const setting = await this.settingsService.getByKey('write_off_threshold', tenantId);
         const parsed = Number(setting?.value);
         if (parsed > 0) writeOffLimit = parsed;
       } catch {

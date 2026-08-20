@@ -132,29 +132,29 @@ export class NotificationsController {
   @AuthWithPermissions('notifications.read')
   @ApiOperation({ summary: 'Get message templates' })
   @ApiQuery({ name: 'facilityId', required: true })
-  async getTemplates(@Query('facilityId') facilityId: string) {
-    return this.notificationsService.getTemplates(facilityId);
+  async getTemplates(@Query('facilityId') facilityId: string, @Request() req: any) {
+    return this.notificationsService.getTemplates(facilityId, req.user?.tenantId);
   }
 
   @Post('templates')
   @AuthWithPermissions('notifications.create')
   @ApiOperation({ summary: 'Create a message template' })
-  async createTemplate(@Body() dto: any) {
-    return this.notificationsService.createTemplate(dto);
+  async createTemplate(@Body() dto: any, @Request() req: any) {
+    return this.notificationsService.createTemplate(dto, req.user?.tenantId);
   }
 
   @Put('templates/:id')
   @AuthWithPermissions('notifications.update')
   @ApiOperation({ summary: 'Update a message template' })
-  async updateTemplate(@Param('id') id: string, @Body() dto: any) {
-    return this.notificationsService.updateTemplate(id, dto);
+  async updateTemplate(@Param('id') id: string, @Body() dto: any, @Request() req: any) {
+    return this.notificationsService.updateTemplate(id, dto, req.user?.tenantId);
   }
 
   @Delete('templates/:id')
   @AuthWithPermissions('notifications.delete')
   @ApiOperation({ summary: 'Delete a message template' })
-  async deleteTemplate(@Param('id') id: string) {
-    return this.notificationsService.deleteTemplate(id);
+  async deleteTemplate(@Param('id') id: string, @Request() req: any) {
+    return this.notificationsService.deleteTemplate(id, req.user?.tenantId);
   }
 
   // Bulk messaging

@@ -1333,7 +1333,15 @@ export class PrescriptionsService {
 
     // Remove from invoice
     try {
-      await this.billingService.removeBillableItem('prescription_item', item.id);
+      // tenantId was dropped, so this always threw into the catch: removing a
+      // prescription item left its charge on the patient's invoice. They
+      // stayed billed for a drug that was cancelled.
+      await this.billingService.removeBillableItem(
+        'prescription_item',
+        item.id,
+        undefined,
+        tenantId,
+      );
     } catch (err) {
       this.logger.warn(
         `Billing item removal failed for prescription item ${item.id}: ${err?.message}`,
