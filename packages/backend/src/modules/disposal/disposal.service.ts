@@ -36,6 +36,7 @@ export class DisposalService {
         'disposal',
         saved.id,
         userId,
+        tenantId,
       );
     } catch (error) {
       // Rollback disposal record if stock deduction fails
