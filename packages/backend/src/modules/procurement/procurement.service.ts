@@ -1389,6 +1389,23 @@ export class ProcurementService {
       );
     }
 
+    // One winning quotation is one purchase order. Nothing guarded this, so
+    // converting the same quotation twice created two identical POs to the
+    // same supplier for the same money — confirmed live before this fix
+    // (PO20260800003 and PO20260800004, both 2.1M to the same vendor).
+    // A cancelled PO does not block: cancelling exists precisely so the
+    // order can be re-raised.
+    const existingPO = await this.poRepo.findOne({
+      where: { quotationId: quotation.id, tenantId: requireTenantId(tenantId), deletedAt: IsNull() },
+      select: ['id', 'orderNumber', 'status'],
+    });
+    if (existingPO && existingPO.status !== POStatus.CANCELLED) {
+      throw new BadRequestException(
+        `Quotation ${quotation.quotationNumber} has already been converted to ${existingPO.orderNumber}. ` +
+          `Cancel that order first if it must be re-raised.`,
+      );
+    }
+
     // Load RFQ items to get item details (codes, names, units)
     const rfqItems = await this.dataSource.getRepository(RFQItem).find({
       where: { rfqId: rfq.id },
@@ -1398,6 +1415,11 @@ export class ProcurementService {
     const poDto: CreatePurchaseOrderDto = {
       facilityId: rfq.facilityId,
       supplierId: quotation.supplierId,
+      // The RFQ knows which requisition raised it; without this the PO had no
+      // purchaseRequestId, so the PR stayed APPROVED with nothing ordered —
+      // free to be converted again, and invisible to auto-completion and to
+      // cancellation's quantity give-back.
+      purchaseRequestId: rfq.purchaseRequestId || undefined,
       expectedDelivery: dto.expectedDelivery,
       paymentTerms: dto.paymentTerms || quotation.paymentTerms || supplier.paymentTerms,
       deliveryAddress: dto.deliveryAddress,
@@ -1440,7 +1462,69 @@ export class ProcurementService {
       createdFrom: 'quotation',
     });
 
+    // Mark the requisition's quantities as ordered, the same bookkeeping
+    // createPOFromPR does — capped at what the PR authorised, since a
+    // quotation can legitimately offer more or less than was asked.
+    if (rfq.purchaseRequestId) {
+      await this.claimPRQuantitiesForPO(rfq.purchaseRequestId, po, tenantId);
+    }
+
     return this.getPurchaseOrder(po.id, tenantId);
+  }
+
+  /**
+   * Records a created PO's quantities against its requisition and re-derives
+   * the PR status. Used by the quotation path, where the PO is built from RFQ
+   * lines rather than from the PR remainder.
+   */
+  private async claimPRQuantitiesForPO(
+    prId: string,
+    po: PurchaseOrder,
+    tenantId?: string,
+  ): Promise<void> {
+    const tid = requireTenantId(tenantId);
+    await this.dataSource.transaction(async (manager) => {
+      const prRepo = manager.getRepository(PurchaseRequest);
+      const prItemRepo = manager.getRepository(PurchaseRequestItem);
+
+      const pr = await prRepo.findOne({
+        where: { id: prId, tenantId: tid, deletedAt: IsNull() },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!pr) return;
+
+      const prItems = await prItemRepo.find({ where: { purchaseRequestId: prId } });
+      const poItems = await manager
+        .getRepository(PurchaseOrderItem)
+        .find({ where: { purchaseOrderId: po.id } });
+
+      for (const poItem of poItems) {
+        const prItem = prItems.find((i) => i.itemId === poItem.itemId);
+        if (!prItem) continue;
+        const authorised =
+          Number(prItem.quantityApproved) || Number(prItem.quantityRequested) || 0;
+        prItem.quantityOrdered = Math.min(
+          authorised,
+          (Number(prItem.quantityOrdered) || 0) + (Number(poItem.quantityOrdered) || 0),
+        );
+        await prItemRepo.save(prItem);
+      }
+
+      const anyOrdered = prItems.some((i) => (Number(i.quantityOrdered) || 0) > 0);
+      const allOrdered = prItems.every(
+        (i) =>
+          (Number(i.quantityOrdered) || 0) >=
+          (Number(i.quantityApproved) || Number(i.quantityRequested) || 0),
+      );
+      if ([PRStatus.APPROVED, PRStatus.PARTIALLY_ORDERED].includes(pr.status)) {
+        pr.status = allOrdered
+          ? PRStatus.FULLY_ORDERED
+          : anyOrdered
+            ? PRStatus.PARTIALLY_ORDERED
+            : pr.status;
+        await prRepo.save(pr);
+      }
+    });
   }
 
   async approvePurchaseOrder(
