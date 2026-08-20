@@ -179,7 +179,7 @@ export class ProcurementGLIntegrationService {
     if (!po) throw new NotFoundException(`PO ${poId} not found`);
 
     const totalAmount = Number(po.totalAmount || 0);
-    await this.budgetService.reserveBudget(po.facilityId, po.id, 'PO', totalAmount);
+    await this.budgetService.reserveBudget(po.facilityId, po.id, 'PO', totalAmount, tid);
 
     this.logger.log(
       `Reserved budget for PO ${poId}. Department: ${departmentId}, Amount: ${totalAmount}`,

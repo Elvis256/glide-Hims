@@ -1104,6 +1104,7 @@ export class SurgeryService {
           'surgery_case',
           dto.surgeryCaseId,
           userId,
+          tenantId,
         );
         saved.isDeductedFromStock = true;
         await this.consumableRepo.save(saved);

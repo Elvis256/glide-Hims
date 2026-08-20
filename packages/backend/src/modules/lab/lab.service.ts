@@ -1213,6 +1213,10 @@ export class LabService {
           followUps.encounterId,
           'Lab results ready for review',
           userId,
+          // tenantId was never passed, so this threw and the .catch logged
+          // it: a released result left the encounter sitting in pending_lab
+          // and the patient was never handed back to the doctor for review.
+          tenantId,
         );
         this.logger.log(
           `Encounter ${followUps.encounterId} returned to doctor for lab results review`,

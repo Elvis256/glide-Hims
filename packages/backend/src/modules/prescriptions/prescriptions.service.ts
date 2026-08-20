@@ -1076,7 +1076,7 @@ export class PrescriptionsService {
           description: intent.description,
           quantity: intent.quantity,
           unitPrice: intent.unitPrice,
-        });
+        }, userId, tenantId);
         if (!updated) {
           await this.billingService.addBillableItem(
             {
@@ -1275,7 +1275,7 @@ export class PrescriptionsService {
         description: `${item.drugName} x ${item.quantity}`,
         quantity: item.quantity,
         unitPrice,
-      });
+      }, undefined, tenantId);
     } catch (err) {
       this.logger.warn(
         `Billing item update failed for prescription item ${item.id}: ${err?.message}`,
