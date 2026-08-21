@@ -60,9 +60,19 @@ function transformPrescription(apiPrescription: APIPrescription): Prescription {
 
   return {
     id: apiPrescription.prescriptionNumber || apiPrescription.id,
-    patientId: apiPrescription.patientId,
+    // This page reads /prescriptions and /prescriptions/patient/:id, neither
+    // of which flattens patientId or doctor the way /prescriptions/queue
+    // does — so every entry was labelled "Unknown Doctor" and the list
+    // printed "Patient ID: undefined".
+    patientId:
+      apiPrescription.patientId ||
+      apiPrescription.encounter?.patient?.id ||
+      apiPrescription.encounter?.patientId,
     date: apiPrescription.createdAt.split('T')[0],
-    prescribingDoctor: apiPrescription.doctor?.fullName || 'Unknown Doctor',
+    prescribingDoctor:
+      apiPrescription.doctor?.fullName ||
+      apiPrescription.prescribedBy?.fullName ||
+      'Unknown Doctor',
     status: statusMap[apiPrescription.status] || 'Active',
     medications: apiPrescription.items.map((item) => ({
       name: item.drugName,
