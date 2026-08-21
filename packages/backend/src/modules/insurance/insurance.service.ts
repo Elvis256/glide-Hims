@@ -35,7 +35,11 @@ import {
   ProcessPreAuthDto,
   RecordPaymentDto,
 } from './dto/insurance.dto';
-import { dayBoundsUtc } from '../../common/utils/timezone.util';
+import {
+  dayBoundsUtc,
+  monthBoundsUtc,
+  localWallClockSql,
+} from '../../common/utils/timezone.util';
 
 @Injectable()
 export class InsuranceService {
@@ -69,7 +73,10 @@ export class InsuranceService {
   async getDashboard(facilityId: string, tenantId?: string) {
     const tid = requireTenantId(tenantId);
     const today = new Date();
-    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    // new Date(y, m, 1) is midnight in the SERVER's zone — 03:00 in Kampala —
+    // so claims raised in the first three hours of the 1st were counted under
+    // the month before.
+    const { start: startOfMonth } = monthBoundsUtc();
     const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
 
     const tenantFilter = { tenantId: tid };
@@ -154,7 +161,13 @@ export class InsuranceService {
       this.claimRepo
         .createQueryBuilder('claim')
         .select(
-          'ROUND(AVG(EXTRACT(EPOCH FROM (claim.paidAt - claim.submittedAt)) / 86400), 1)',
+          // paid_at holds the insurer's payment DATE, stored as midnight, while
+          // submitted_at is a real instant — so subtracting them made a claim
+          // paid the same day it was submitted come out at MINUS 0.9 days, and
+          // understated every other claim by up to a day. Compare calendar days
+          // in the hospital's zone, and never report a negative turnaround.
+          `ROUND(AVG(GREATEST(0, (${localWallClockSql('claim.paidAt', true)})::date` +
+            ` - (${localWallClockSql('claim.submittedAt', true)})::date)), 1)`,
           'avgDays',
         )
         .where('claim.facilityId = :facilityId', { facilityId })
@@ -177,7 +190,7 @@ export class InsuranceService {
       // Monthly trend: last 12 months
       this.claimRepo
         .createQueryBuilder('claim')
-        .select("TO_CHAR(claim.createdAt, 'YYYY-MM')", 'month')
+        .select(`TO_CHAR(${localWallClockSql('claim.createdAt', true)}, 'YYYY-MM')`, 'month')
         .addSelect('COUNT(*)', 'submitted')
         .addSelect(
           `SUM(CASE WHEN claim.status IN ('approved','partially_approved','paid') THEN 1 ELSE 0 END)`,
@@ -190,7 +203,7 @@ export class InsuranceService {
         .where('claim.facilityId = :facilityId', { facilityId })
         .andWhere("claim.createdAt >= NOW() - INTERVAL '12 months'")
         .andWhere(tenantCond, tenantParams)
-        .groupBy("TO_CHAR(claim.createdAt, 'YYYY-MM')")
+        .groupBy(`TO_CHAR(${localWallClockSql('claim.createdAt', true)}, 'YYYY-MM')`)
         .orderBy('month', 'ASC')
         .getRawMany(),
 
@@ -1369,7 +1382,8 @@ export class InsuranceService {
       .addSelect('SUM(claim.totalClaimed)', 'totalClaimed')
       .addSelect('SUM(claim.totalPaid)', 'totalPaid')
       .addSelect(
-        'AVG(EXTRACT(EPOCH FROM (claim.paidAt - claim.submittedAt)) / 86400)',
+        `AVG(GREATEST(0, (${localWallClockSql('claim.paidAt', true)})::date` +
+          ` - (${localWallClockSql('claim.submittedAt', true)})::date))`,
         'avgDaysToPayment',
       )
       .where('claim.facilityId = :facilityId', { facilityId })
@@ -1383,7 +1397,10 @@ export class InsuranceService {
     const performance = await qb
       .groupBy('provider.id')
       .addGroupBy('provider.name')
-      .orderBy('totalClaimed', 'DESC')
+      // Unquoted, Postgres folds the alias to `totalclaimed` and cannot find
+      // the quoted "totalClaimed" it just selected — this report answered every
+      // request with a 500.
+      .orderBy('"totalClaimed"', 'DESC')
       .getRawMany();
 
     return performance;
