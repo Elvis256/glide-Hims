@@ -842,7 +842,12 @@ export class SurgeryService {
     }
   }
 
-  async dischargeFromRecovery(id: string, tenantId?: string): Promise<SurgeryCase> {
+  async dischargeFromRecovery(
+    id: string,
+    tenantId?: string,
+    userId?: string,
+    recoveryNotes?: string,
+  ): Promise<SurgeryCase> {
     const surgeryCase = await this.getCaseById(id, tenantId);
 
     if (surgeryCase.status !== SurgeryStatus.POST_OP) {
@@ -850,6 +855,15 @@ export class SurgeryService {
     }
 
     surgeryCase.status = SurgeryStatus.COMPLETED;
+    // This step used to change the status and record nothing else, so the time
+    // a patient spent in recovery was unknowable and the release was anonymous.
+    surgeryCase.recoveryDischargedAt = new Date();
+    if (userId) surgeryCase.recoveryDischargedById = userId;
+    if (recoveryNotes) {
+      surgeryCase.recoveryNotes = surgeryCase.recoveryNotes
+        ? `${surgeryCase.recoveryNotes}\n${recoveryNotes}`
+        : recoveryNotes;
+    }
     return this.surgeryCaseRepo.save(surgeryCase);
   }
 

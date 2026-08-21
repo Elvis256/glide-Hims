@@ -343,3 +343,11 @@ export class RecordMultipleConsumablesDto {
   @Type(() => RecordConsumableDto)
   items: RecordConsumableDto[];
 }
+
+/** Body for PUT /surgery/cases/:id/discharge-recovery. */
+export class DischargeRecoveryDto {
+  @ApiPropertyOptional({ description: 'Anything to add to the recovery record on release' })
+  @IsOptional()
+  @IsString()
+  recoveryNotes?: string;
+}
