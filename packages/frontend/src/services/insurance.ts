@@ -218,7 +218,9 @@ export const insuranceService = {
     coverageDetails: {
       drugId: string;
       covered: boolean;
-      copayAmount: number;
+      /** Exactly one of these is set — a share of the price, or a flat sum. */
+      copayPercentage?: number;
+      copayAmount?: number;
       requiresPreAuth: boolean;
       rejectionReason?: string;
     }[];

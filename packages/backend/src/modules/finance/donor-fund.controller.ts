@@ -47,6 +47,17 @@ export class DonorFundController {
     return this.donorFundService.findAllDonorFunds(facilityId, req?.user?.tenantId);
   }
 
+  // MUST stay above @Get(':id') — Nest matches routes in
+  // declaration order, so the parameterised route swallowed this literal path
+  // and the inter-facility transfer list answered with a 500.
+  @Get('inter-facility')
+  @AuthWithPermissions('finance.read')
+  @ApiOperation({ summary: 'List inter-facility transactions' })
+  @ApiQuery({ name: 'facilityId', required: false })
+  async findAllInterFacility(@Query('facilityId') facilityId?: string, @Request() req?: any) {
+    return this.donorFundService.findAllInterFacility(facilityId, req?.user?.tenantId);
+  }
+
   @Get(':id')
   @AuthWithPermissions('finance.read')
   @ApiOperation({ summary: 'Get a donor fund by ID' })
@@ -93,13 +104,6 @@ export class DonorFundController {
     );
   }
 
-  @Get('inter-facility')
-  @AuthWithPermissions('finance.read')
-  @ApiOperation({ summary: 'List inter-facility transactions' })
-  @ApiQuery({ name: 'facilityId', required: false })
-  async findAllInterFacility(@Query('facilityId') facilityId?: string, @Request() req?: any) {
-    return this.donorFundService.findAllInterFacility(facilityId, req?.user?.tenantId);
-  }
 
   @Patch('inter-facility/:id/approve')
   @AuthWithPermissions('finance.manage')

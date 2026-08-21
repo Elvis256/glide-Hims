@@ -9,6 +9,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { insuranceService } from '../../services/insurance';
+import { formatCurrency } from '../../lib/currency';
 
 interface PrescriptionItemInput {
   drugId: string;
@@ -24,7 +25,9 @@ interface InsuranceCoverageCheckProps {
 interface CoverageDetail {
   drugId: string;
   covered: boolean;
-  copayAmount: number;
+  /** Exactly one of these is set — a share of the bill, or a flat sum. */
+  copayPercentage?: number;
+  copayAmount?: number;
   requiresPreAuth: boolean;
   rejectionReason?: string;
 }
@@ -159,9 +162,14 @@ export default function InsuranceCoverageCheck({ patientId, items }: InsuranceCo
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  {detail.covered && detail.copayAmount > 0 && (
+                  {detail.covered && !!detail.copayPercentage && (
                     <span className="text-sm text-gray-600">
-                      Copay: {detail.copayAmount}%
+                      Co-pay: {detail.copayPercentage}% of the price
+                    </span>
+                  )}
+                  {detail.covered && !!detail.copayAmount && (
+                    <span className="text-sm text-gray-600">
+                      Co-pay: {formatCurrency(detail.copayAmount)}
                     </span>
                   )}
                   {getStatusBadge(detail)}
