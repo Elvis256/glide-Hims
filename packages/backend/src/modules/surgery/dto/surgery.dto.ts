@@ -295,10 +295,16 @@ export class RecordConsumableDto {
   @Min(0.01)
   quantityUsed: number;
 
-  @ApiProperty()
+  /**
+   * Ignored. The server prices a consumable from the item, so the browser
+   * cannot decide what a patient pays. Still accepted so existing callers do
+   * not start failing the whitelist; read the real price off the response.
+   */
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsNumber()
   @Min(0)
-  unitCost: number;
+  unitCost?: number;
 
   @ApiPropertyOptional()
   @IsOptional()

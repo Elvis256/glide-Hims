@@ -203,6 +203,105 @@ describe('SurgeryService', () => {
   });
 
   // ================================================================
+  // 1b. recordConsumable — the browser does not set the price
+  // ================================================================
+  describe('recordConsumable – pricing', () => {
+    it('prices from the item and ignores the unitCost the client sent', async () => {
+      mockSurgeryCaseRepo.findOne.mockResolvedValue({
+        id: 'case-1',
+        caseNumber: 'SUR-1',
+        facilityId: 'facility-1',
+        tenantId: 'tenant-1',
+      });
+      mockItemRepo.findOne.mockResolvedValue({
+        id: 'item-1',
+        code: 'AMOX',
+        name: 'Amoxicillin 500mg',
+        unit: 'capsule',
+        sellingPrice: 700,
+      });
+      mockConsumableRepo.create.mockImplementation((d: any) => ({ id: 'cons-1', ...d }));
+      mockConsumableRepo.save.mockImplementation((e: any) => Promise.resolve(e));
+
+      const saved = await service.recordConsumable(
+        {
+          surgeryCaseId: 'case-1',
+          itemId: 'item-1',
+          quantityUsed: 2,
+          unitCost: 1, // what a tampered or stale client would send
+          usagePhase: 'intra_op',
+        } as any,
+        'user-1',
+        'tenant-1',
+      );
+
+      expect(saved.unitCost).toBe(700);
+      expect(saved.totalCost).toBe(1400);
+    });
+
+    it('refuses to bill an item that has no selling price', async () => {
+      mockSurgeryCaseRepo.findOne.mockResolvedValue({
+        id: 'case-1',
+        caseNumber: 'SUR-1',
+        facilityId: 'facility-1',
+        tenantId: 'tenant-1',
+      });
+      mockItemRepo.findOne.mockResolvedValue({
+        id: 'item-2',
+        code: 'DRAPE',
+        name: 'Sterile surgical drape',
+        sellingPrice: 0,
+      });
+
+      await expect(
+        service.recordConsumable(
+          {
+            surgeryCaseId: 'case-1',
+            itemId: 'item-2',
+            quantityUsed: 3,
+            usagePhase: 'intra_op',
+          } as any,
+          'user-1',
+          'tenant-1',
+        ),
+      ).rejects.toThrow(/no selling price/);
+    });
+
+    it('still records the item, with a warning, when stock cannot be deducted', async () => {
+      mockSurgeryCaseRepo.findOne.mockResolvedValue({
+        id: 'case-1',
+        caseNumber: 'SUR-1',
+        facilityId: 'facility-1',
+        tenantId: 'tenant-1',
+      });
+      mockItemRepo.findOne.mockResolvedValue({
+        id: 'item-1',
+        code: 'AMOX',
+        name: 'Amoxicillin 500mg',
+        sellingPrice: 700,
+      });
+      mockConsumableRepo.create.mockImplementation((d: any) => ({ id: 'cons-1', ...d }));
+      mockConsumableRepo.save.mockImplementation((e: any) => Promise.resolve(e));
+      mockInventoryService.deductStock.mockRejectedValueOnce(new Error('Insufficient stock'));
+
+      const saved: any = await service.recordConsumable(
+        {
+          surgeryCaseId: 'case-1',
+          itemId: 'item-1',
+          quantityUsed: 5,
+          usagePhase: 'intra_op',
+          deductFromStock: true,
+        } as any,
+        'user-1',
+        'tenant-1',
+      );
+
+      expect(saved.isDeductedFromStock).toBe(false);
+      expect(saved.stockWarning).toMatch(/stock was not deducted/);
+    });
+  });
+
+  // ================================================================
   // 2. scheduleSurgery — theatre conflict
   // ================================================================
   describe('scheduleSurgery – theatre conflict', () => {
