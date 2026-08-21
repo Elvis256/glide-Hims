@@ -180,7 +180,15 @@ export interface MedicationAdministration {
     lastName: string;
     fullName?: string;
   };
-  administeredTime?: string;
+  /**
+   * The entity column, the service and the API all use `administeredAt`.
+   * This was declared as `administeredTime`, which TypeScript accepted
+   * happily and which arrived undefined at runtime — so the medication
+   * schedule's administration history had no time against a given dose,
+   * on a chart where the time IS the entry. IPDNursingNotesPage always read
+   * administeredAt, so the two screens disagreed about the same field.
+   */
+  administeredAt?: string;
   batchNumber?: string;
   notes?: string;
   reason?: string;
@@ -279,9 +287,21 @@ export const ipdService = {
       const response = await api.get<Admission>(`/ipd/patients/${patientId}/current-admission`);
       return response.data;
     },
+    /**
+     * Mirrors DischargeAdmissionDto. It previously declared `dischargeType`,
+     * which that DTO does not accept — and with the global whitelisting
+     * ValidationPipe an unknown property is a 400, so anything calling this
+     * wrapper would have failed. DischargePage posts the correct fields
+     * directly, which is why nothing was broken in practice.
+     */
     discharge: async (
       id: string,
-      data: { dischargeType: string; dischargeSummary: string },
+      data: {
+        dischargeSummary?: string;
+        dischargeDiagnosis?: string;
+        dischargeInstructions?: string;
+        followUpPlan?: string;
+      },
     ): Promise<Admission> => {
       const response = await api.post<Admission>(`/ipd/admissions/${id}/discharge`, data);
       return response.data;
