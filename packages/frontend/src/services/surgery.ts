@@ -105,6 +105,8 @@ export interface SurgeryCase {
   leadSurgeon?: { id: string; firstName: string; lastName: string };
   createdAt: string;
   updatedAt: string;
+  recoveryDischargedAt?: string;
+  recoveryDischargedById?: string;
 }
 
 export interface ScheduleSurgeryDto {
@@ -279,8 +281,8 @@ export const surgeryService = {
     complete: (id: string, data: CompleteSurgeryDto) =>
       api.put<SurgeryCase>(`/surgery/cases/${id}/complete`, data),
 
-    dischargeRecovery: (id: string) =>
-      api.put<SurgeryCase>(`/surgery/cases/${id}/discharge-recovery`),
+    dischargeRecovery: (id: string, data?: { recoveryNotes?: string }) =>
+      api.put<SurgeryCase>(`/surgery/cases/${id}/discharge-recovery`, data ?? {}),
 
     cancel: (id: string, data: CancelSurgeryDto) =>
       api.put<SurgeryCase>(`/surgery/cases/${id}/cancel`, data),

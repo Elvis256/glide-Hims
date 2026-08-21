@@ -210,6 +210,18 @@ export class SurgeryCase {
   @Column({ type: 'text', nullable: true, name: 'discharge_destination' })
   dischargeDestination: string; // ICU, Ward, Home
 
+  /**
+   * When the patient actually left post-anaesthesia recovery for the ward, and
+   * who released them. `dischargeFromTheatre` above is a different moment — the
+   * end of the operation — and dischargeFromRecovery used to record neither, so
+   * recovery time could not be derived and nobody was named on the handover.
+   */
+  @Column({ type: 'timestamp', nullable: true, name: 'recovery_discharged_at' })
+  recoveryDischargedAt?: Date;
+
+  @Column({ type: 'uuid', nullable: true, name: 'recovery_discharged_by_id' })
+  recoveryDischargedById?: string;
+
   // Facility
   @Column({ type: 'uuid', name: 'facility_id' })
   facilityId: string;
