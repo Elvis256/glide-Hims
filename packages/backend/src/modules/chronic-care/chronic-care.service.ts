@@ -15,13 +15,19 @@ import { Patient } from '../../database/entities/patient.entity';
 import { hashPii } from '../../common/crypto/pii-crypto';
 import { Diagnosis } from '../../database/entities/diagnosis.entity';
 import { NotificationsService } from '../notifications/notifications.service';
-import { ReminderType, ReminderChannel } from '../../database/entities/patient-reminder.entity';
+import {
+  ReminderType,
+  ReminderChannel,
+  ReminderStatus,
+  PatientReminder,
+} from '../../database/entities/patient-reminder.entity';
 import {
   RegisterChronicConditionDto,
   UpdateChronicConditionDto,
   ChronicPatientsQueryDto,
   SendBulkReminderDto,
 } from './dto/chronic-care.dto';
+import { localCalendarDate, localDateString } from '../../common/utils/timezone.util';
 
 @Injectable()
 export class ChronicCareService {
@@ -34,6 +40,8 @@ export class ChronicCareService {
     private patientRepo: Repository<Patient>,
     @InjectRepository(Diagnosis)
     private diagnosisRepo: Repository<Diagnosis>,
+    @InjectRepository(PatientReminder)
+    private reminderRepo: Repository<PatientReminder>,
     private notificationsService: NotificationsService,
   ) {}
 
@@ -94,9 +102,26 @@ export class ChronicCareService {
     await this.requirePatient(dto.patientId, tid);
     await this.requireChronicDiagnosis(dto.diagnosisId, tid);
 
+    // Registration is the moment a patient enters the recall system, and it is
+    // when they walk out with a follow-up date in mind. Without this the row
+    // was saved with next_follow_up NULL, so the patient appeared on the
+    // register and in no recall list at all — not overdue, not upcoming, never
+    // reminded. recordVisit already derived the date this way; registration
+    // did not.
+    const nextFollowUp =
+      dto.nextFollowUp ??
+      (dto.followUpIntervalDays
+        ? (() => {
+            const d = localCalendarDate();
+            d.setUTCDate(d.getUTCDate() + dto.followUpIntervalDays!);
+            return d;
+          })()
+        : undefined);
+
     const condition = this.chronicRepo.create({
       facilityId: fid,
       ...dto,
+      nextFollowUp,
       registeredById: userId,
       tenantId: tid,
     });
@@ -146,7 +171,7 @@ export class ChronicCareService {
     }
 
     if (query.overdueFollowUp) {
-      qb.andWhere('cc.nextFollowUp <= :today', { today: new Date() });
+      qb.andWhere('cc.nextFollowUp <= :today', { today: localCalendarDate() });
     }
 
     qb.orderBy('cc.nextFollowUp', 'ASC', 'NULLS LAST');
@@ -195,8 +220,9 @@ export class ChronicCareService {
   async getDashboardStats(facilityId: string, tenantId?: string) {
     const tid = this.requireTenant(tenantId);
     const fid = this.requireFacilityId(facilityId);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // Kampala is UTC+3 and the server is UTC, so setHours(0,0,0,0) is 03:00
+    // local — between midnight and 03:00 a patient due today was not counted.
+    const today = localCalendarDate();
 
     const baseWhere = { facilityId: fid, tenantId: tid };
 
@@ -206,7 +232,11 @@ export class ChronicCareService {
       .andWhere('cc.tenant_id = :tenantId', { tenantId: tid })
       .andWhere('cc.nextFollowUp > :today', { today })
       .andWhere('cc.nextFollowUp <= :nextWeek', {
-        nextWeek: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        nextWeek: (() => {
+          const d = localCalendarDate();
+          d.setUTCDate(d.getUTCDate() + 7);
+          return d;
+        })(),
       });
 
     const breakdownQb = this.chronicRepo
@@ -370,8 +400,10 @@ export class ChronicCareService {
       }
       condition.nextFollowUp = parsed;
     } else if (condition.followUpIntervalDays) {
-      const next = new Date();
-      next.setDate(next.getDate() + condition.followUpIntervalDays);
+      // next_follow_up is a `date` column — count days from the hospital's
+      // calendar day, not the server's UTC instant.
+      const next = localCalendarDate();
+      next.setUTCDate(next.getUTCDate() + condition.followUpIntervalDays);
       condition.nextFollowUp = next;
     }
 
@@ -387,7 +419,7 @@ export class ChronicCareService {
       where: {
         facilityId: fid,
         tenantId: tid,
-        nextFollowUp: LessThanOrEqual(new Date()),
+        nextFollowUp: LessThanOrEqual(localCalendarDate()),
         status: In([ChronicStatus.ACTIVE, ChronicStatus.CONTROLLED, ChronicStatus.UNCONTROLLED]),
       },
       relations: ['patient', 'diagnosis'],
@@ -408,31 +440,96 @@ export class ChronicCareService {
       .andWhere('cc.tenant_id = :tenantId', { tenantId: tid })
       .andWhere('cc.reminderEnabled = true')
       .andWhere('cc.nextFollowUp IS NOT NULL')
-      .andWhere('cc.nextFollowUp > :now', { now: new Date() });
+      .andWhere('cc.nextFollowUp > :now', { now: localCalendarDate() });
 
     const conditions = await qb.getMany();
 
+    // The sweep is re-runnable — a clinic clicks the button twice, or it is put
+    // on a schedule — and scheduleReminder just inserts, so every run used to
+    // add another SMS for the same patient and the same appointment. Skip the
+    // conditions that already have one waiting to go out.
+    const alreadyQueued = new Set(
+      conditions.length
+        ? (
+            await this.reminderRepo.find({
+              where: {
+                tenantId: tid,
+                referenceType: 'chronic_condition',
+                referenceId: In(conditions.map((c) => c.id)),
+                status: In([ReminderStatus.PENDING, ReminderStatus.PROCESSING]),
+              },
+              select: ['referenceId'],
+            })
+          ).map((r) => r.referenceId)
+        : [],
+    );
+
+    const now = new Date();
     let scheduled = 0;
+    let failed = 0;
 
     for (const condition of conditions) {
-      const reminderDate = new Date(condition.nextFollowUp!);
+      // next_follow_up is a `date` column, so TypeORM hands it back as the
+      // string '2026-08-31' — not a Date. Calling toLocaleDateString on it
+      // threw, and one bad row aborted the whole sweep, so NO chronic patient
+      // has ever been sent a follow-up reminder. An earlier fix here restored a
+      // dropped tenantId and left this line one below it untouched.
+      if (alreadyQueued.has(condition.id)) continue;
+
+      const followUp = new Date(`${String(condition.nextFollowUp)}T00:00:00.000Z`);
+      if (isNaN(followUp.getTime())) {
+        this.logger.warn(
+          `Chronic condition ${condition.id} has an unreadable next follow-up (${String(
+            condition.nextFollowUp,
+          )}) — skipped`,
+        );
+        failed++;
+        continue;
+      }
+
+      const reminderDate = new Date(followUp);
       reminderDate.setDate(reminderDate.getDate() - condition.reminderDaysBefore);
 
-      if (reminderDate > new Date()) {
-        // tenantId was dropped, so scheduling threw and chronic patients
-        // never received their follow-up reminders.
-        await this.notificationsService.scheduleReminder(fid, {
-          patientId: condition.patientId,
-          type: ReminderType.CHRONIC_CHECKUP,
-          channel: ReminderChannel.BOTH,
-          subject: `Upcoming Follow-up: ${condition.diagnosis.name}`,
-          message: `Dear ${condition.patient.fullName}, you have an upcoming follow-up for ${condition.diagnosis.name} on ${condition.nextFollowUp?.toLocaleDateString()}. Please ensure to attend.`,
-          scheduledFor: reminderDate,
-          referenceType: 'chronic_condition',
-          referenceId: condition.id,
-        }, undefined, tid);
+      // A patient due in two days with a three-day reminder window used to get
+      // nothing at all — the reminder date had already passed, so the branch
+      // was skipped. That is the patient closest to their appointment. Send it
+      // now instead; the follow-up itself is still ahead of us.
+      const sendAt = reminderDate > now ? reminderDate : now;
+
+      try {
+        await this.notificationsService.scheduleReminder(
+          fid,
+          {
+            patientId: condition.patientId,
+            type: ReminderType.CHRONIC_CHECKUP,
+            channel: ReminderChannel.BOTH,
+            subject: `Upcoming Follow-up: ${condition.diagnosis.name}`,
+            message:
+              `Dear ${condition.patient.fullName}, you have an upcoming follow-up for ` +
+              `${condition.diagnosis.name} on ${localDateString(followUp)}. ` +
+              `Please ensure to attend.`,
+            scheduledFor: sendAt,
+            referenceType: 'chronic_condition',
+            referenceId: condition.id,
+          },
+          undefined,
+          tid,
+        );
         scheduled++;
+      } catch (err: any) {
+        // One unreachable patient must not cost every other patient their
+        // reminder, which is what an unguarded await in this loop did.
+        this.logger.error(
+          `Chronic reminder for condition ${condition.id} failed: ${err?.message ?? err}`,
+        );
+        failed++;
       }
+    }
+
+    if (failed > 0) {
+      this.logger.warn(
+        `Chronic reminder sweep for facility ${fid}: ${scheduled} scheduled, ${failed} failed`,
+      );
     }
 
     return scheduled;
