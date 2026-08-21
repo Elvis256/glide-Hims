@@ -1184,7 +1184,21 @@ export class SurgeryService {
     const item = await this.itemRepo.findOne({ where: itemWhere });
     if (!item) throw new NotFoundException('Item not found');
 
-    const totalCost = dto.quantityUsed * dto.unitCost;
+    // The price a patient is charged for a theatre consumable must not come
+    // from the browser. dto.unitCost was taken on trust and carried straight
+    // through to addBillableItem, and the screen that fills it in ends its
+    // fallback chain at 0 — so a billable supply could reach the invoice at any
+    // price, including free. The item is already loaded here; use its price.
+    const isBillable = dto.isBillable ?? true;
+    const unitCost = Number(item.sellingPrice ?? 0);
+    if (isBillable && !(unitCost > 0)) {
+      throw new BadRequestException(
+        `${item.name} has no selling price, so it cannot be billed from theatre. ` +
+          `Set a price on the item, or record it as non-billable.`,
+      );
+    }
+
+    const totalCost = dto.quantityUsed * unitCost;
 
     const consumable = this.consumableRepo.create({
       surgeryCaseId: dto.surgeryCaseId,
@@ -1194,13 +1208,13 @@ export class SurgeryService {
       category: dto.category || ConsumableCategory.SURGICAL_SUPPLIES,
       quantityUsed: dto.quantityUsed,
       unit: item.unit || 'unit',
-      unitCost: dto.unitCost,
+      unitCost,
       totalCost,
       batchNumber: dto.batchNumber,
       expiryDate: dto.expiryDate ? new Date(dto.expiryDate) : undefined,
       usagePhase: dto.usagePhase,
       usedAt: new Date(),
-      isBillable: dto.isBillable ?? true,
+      isBillable,
       isDeductedFromStock: false,
       notes: dto.notes,
       recordedById: userId,
@@ -1209,7 +1223,14 @@ export class SurgeryService {
 
     const saved = await this.consumableRepo.save(consumable);
 
-    // Deduct from inventory if requested
+    // Deduct from inventory if requested.
+    //
+    // The record itself stands whether or not the stock moves — the item WAS
+    // used on the patient and the chart has to say so. But the failure used to
+    // be logged and swallowed, so theatre consumed an item, the patient was
+    // billed for it, the store's count never changed, and nobody was told. That
+    // is exactly the case someone needs to see: stock is now out of step with
+    // what the theatre actually used. It comes back on the record.
     if (dto.deductFromStock) {
       try {
         await this.inventoryService.deductStock(
@@ -1224,8 +1245,12 @@ export class SurgeryService {
         saved.isDeductedFromStock = true;
         await this.consumableRepo.save(saved);
       } catch (error) {
-        // Log but don't fail - stock might not be available
-        this.logger.warn(`Failed to deduct stock for surgery consumable: ${error.message}`);
+        this.logger.error(
+          `Stock not deducted for ${item.name} on surgery ${surgeryCase.caseNumber}: ${error.message}`,
+        );
+        (saved as SurgeryConsumable & { stockWarning?: string }).stockWarning =
+          `Recorded, but stock was not deducted for ${item.name}: ${error.message}. ` +
+          `The store count is now out of step with what theatre used.`;
       }
     }
 

@@ -196,7 +196,8 @@ export interface RecordConsumableDto {
   itemId: string;
   category?: string;
   quantityUsed: number;
-  unitCost: number;
+  /** Ignored by the server, which prices the consumable from the item. */
+  unitCost?: number;
   batchNumber?: string;
   usagePhase: 'pre_op' | 'intra_op' | 'post_op';
   isBillable?: boolean;
@@ -215,6 +216,11 @@ export interface SurgeryConsumable {
   totalCost?: number;
   usagePhase: string;
   isBillable?: boolean;
+  /**
+   * Present only when the item was recorded but stock could not be deducted —
+   * the chart is right and the store count is not. Not persisted.
+   */
+  stockWarning?: string;
   createdAt: string;
 }
 
