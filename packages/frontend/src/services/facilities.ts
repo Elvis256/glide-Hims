@@ -15,7 +15,6 @@ export interface Facility {
     address?: string;
   };
   settings?: Record<string, unknown>;
-  isActive?: boolean;
   createdAt: string;
 }
 
@@ -32,8 +31,8 @@ export interface Department {
   headUserId?: string;
   location?: string;
   staffCount?: number;
+  // The database and the wire carry `status`; isActive was never sent.
   status?: string;
-  isActive: boolean;
   createdAt: string;
 }
 
@@ -43,7 +42,7 @@ export interface Unit {
   name: string;
   departmentId: string;
   description?: string;
-  isActive: boolean;
+  status?: string;
   createdAt: string;
 }
 

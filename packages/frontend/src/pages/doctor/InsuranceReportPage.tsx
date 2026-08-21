@@ -265,7 +265,13 @@ export default function InsuranceReportPage() {
                 <p><span className="font-semibold">Provider:</span> {(policy as any).provider?.name || 'N/A'}</p>
                 <p><span className="font-semibold">Policy No:</span> {policy.policyNumber}</p>
                 {policy.memberNumber && <p><span className="font-semibold">Member No:</span> {policy.memberNumber}</p>}
-                {policy.principalName && <p><span className="font-semibold">Principal:</span> {policy.principalName}</p>}
+                {/* The API carries the principal's member number, not a name. */}
+                {policy.principalMemberNumber && (
+                  <p>
+                    <span className="font-semibold">Principal Member No:</span>{' '}
+                    {policy.principalMemberNumber}
+                  </p>
+                )}
                 <p><span className="font-semibold">Coverage:</span> {policy.coverageType?.replace(/_/g, ' ')}</p>
                 <p><span className="font-semibold">Status:</span> <span className="capitalize">{policy.status}</span></p>
               </>

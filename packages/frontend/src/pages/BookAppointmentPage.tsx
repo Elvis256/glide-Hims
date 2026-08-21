@@ -57,7 +57,12 @@ export default function BookAppointmentPage() {
   const selectedDoctorData = availableDoctors.find((d: User) => d.id === selectedDoctor);
   // Simple-mode tenants have no departments — department is optional in the
   // backend, so don't gate doctor selection on it when none exist.
-  const activeDepartments = departments.filter((dept: Department) => dept.isActive);
+  // isActive is not a field the API sends, and undefined is falsy — so this
+  // filtered every department out and the department picker on this page was
+  // permanently empty, with no way to book an appointment.
+  const activeDepartments = departments.filter(
+    (dept: Department) => dept.status !== 'inactive',
+  );
 
   const bookMutation = useMutation({
     mutationFn: async () => {

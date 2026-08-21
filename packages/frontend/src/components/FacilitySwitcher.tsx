@@ -45,7 +45,9 @@ export default function FacilitySwitcher({ onlyIfMultiSite = true }: Props) {
       .then((list) => {
         // Only show active facilities, sorted by name (case-insensitive).
         const visible = (list || [])
-          .filter((f) => f.isActive !== false)
+          // Facilities carry `status`; isActive was never sent, so this
+          // filter passed every facility including inactive ones.
+          .filter((f) => f.status !== 'inactive')
           .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
         setFacilities(visible);
 
