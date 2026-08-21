@@ -1140,7 +1140,11 @@ export default function EmergencyPage() {
                   className="w-full border rounded-lg px-3 py-2"
                 >
                   <option value="">Select ward...</option>
-                  {wards.filter(w => w.isActive !== false).map(w => (
+                  {/* Wards carry a status, not an isActive flag. isActive was
+                      always undefined, so `!== false` passed everything and a
+                      ward closed for maintenance still appeared in the
+                      emergency admission picker. */}
+                  {wards.filter((w) => w.status !== 'inactive' && w.status !== 'maintenance').map(w => (
                     <option key={w.id} value={w.id}>{w.name}</option>
                   ))}
                 </select>

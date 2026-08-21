@@ -134,8 +134,15 @@ export default function InsurancePolicySelector({
               <label className="block text-xs font-medium text-gray-600">Select Policy</label>
               {activePolicies.map((policy: InsurancePolicy) => {
                 const isSelected = selectedPolicyId === policy.id;
-                const remaining = (Number(policy.coverageLimit) || 0) - (Number(policy.usedAmount) || 0);
-                const isExpiringSoon = new Date(policy.endDate) < new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+                // annualLimit / expiryDate are what the API sends. Reading
+                // coverageLimit made remaining come out as 0 - usedAmount,
+                // i.e. negative, on the picker a cashier uses to choose a
+                // policy; and new Date(undefined) is Invalid Date, so the
+                // expiring-soon warning could never fire.
+                const remaining = (Number(policy.annualLimit) || 0) - (Number(policy.usedAmount) || 0);
+                const isExpiringSoon = policy.expiryDate
+                  ? new Date(policy.expiryDate) < new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+                  : false;
                 const coverageIncompat = !isCoverageCompatible(encounterType, policy.coverageType);
 
                 return (
@@ -172,9 +179,9 @@ export default function InsurancePolicySelector({
                           }`}>
                             {policy.coverageType}
                           </span>
-                          {policy.copayPercent != null && policy.copayPercent > 0 && (
+                          {policy.copayPercentage != null && policy.copayPercentage > 0 && (
                             <span className="text-gray-500">
-                              {policy.copayPercent}% copay
+                              {policy.copayPercentage}% copay
                             </span>
                           )}
                           {isExpiringSoon && (
@@ -191,7 +198,7 @@ export default function InsurancePolicySelector({
                           )}
                         </div>
                       </div>
-                      {policy.coverageLimit != null && Number(policy.coverageLimit) > 0 && (
+                      {policy.annualLimit != null && Number(policy.annualLimit) > 0 && (
                         <div className="text-right text-xs ml-2">
                           <div className="text-gray-500">Balance</div>
                           <div className={`font-medium ${remaining > 0 ? 'text-green-600' : 'text-red-600'}`}>

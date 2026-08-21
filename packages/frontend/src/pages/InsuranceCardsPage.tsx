@@ -52,7 +52,9 @@ const mapPolicyStatus = (status: InsurancePolicy['status']): InsuranceCard['stat
 // Transform InsurancePolicy to InsuranceCard for UI display
 const policyToCard = (policy: InsurancePolicy): InsuranceCard => ({
   id: policy.id,
-  patientName: policy.patient?.fullName || policy.principalName || 'Unknown Patient',
+  // There is no principal *name* on the payload — only
+  // principalMemberNumber — so this fallback was always undefined.
+  patientName: policy.patient?.fullName || 'Unknown Patient',
   patientMrn: policy.patient?.mrn || policy.patientId,
   provider: policy.provider?.name || 'Unknown Provider',
   policyNumber: policy.policyNumber,

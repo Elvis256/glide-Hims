@@ -133,8 +133,10 @@ export default function BuildingsFloorsPage() {
 
   // --- Stats ---
   const stats = useMemo(() => {
-    const activeDepts = departments.filter((d) => d.isActive).length;
-    const activeUnits = units.filter((u) => u.isActive).length;
+    // Same phantom field: undefined is falsy, so both counters read 0 no
+    // matter how many departments and units were active.
+    const activeDepts = departments.filter((d) => d.status !== 'inactive').length;
+    const activeUnits = units.filter((u) => u.status !== 'inactive').length;
     return { departments: activeDepts, units: activeUnits, total: departments.length + units.length };
   }, [departments, units]);
 
@@ -225,7 +227,7 @@ export default function BuildingsFloorsPage() {
                         <h3 className="font-semibold text-gray-900">{dept.name}</h3>
                         <p className="text-sm text-gray-500">
                           Code: {dept.code}
-                          {!dept.isActive && (
+                          {dept.status === 'inactive' && (
                             <span className="ml-2 text-xs text-red-500">(Inactive)</span>
                           )}
                         </p>
@@ -275,7 +277,7 @@ export default function BuildingsFloorsPage() {
                               {unit.description && (
                                 <span className="ml-2 text-sm text-gray-400">{unit.description}</span>
                               )}
-                              {!unit.isActive && (
+                              {unit.status === 'inactive' && (
                                 <span className="ml-2 text-xs text-red-500">(Inactive)</span>
                               )}
                             </div>
@@ -332,7 +334,7 @@ export default function BuildingsFloorsPage() {
                     <div className="bg-gray-50 rounded-lg p-3">
                       <p className="text-sm text-gray-500">Status</p>
                       <p className="text-xl font-bold text-blue-600">
-                        {dept.isActive ? 'Active' : 'Inactive'}
+                        {dept.status === 'inactive' ? 'Inactive' : 'Active'}
                       </p>
                     </div>
                   </div>

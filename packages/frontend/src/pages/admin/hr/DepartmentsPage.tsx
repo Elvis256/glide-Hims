@@ -187,7 +187,7 @@ export default function DepartmentsPage() {
       building: 'Main Building',
       staffCount: (d as any).staffCount || 0,
       parentId: d.parentId,
-      status: d.isActive !== false ? 'Active' as const : 'Inactive' as const,
+      status: d.status !== 'inactive' ? ('Active' as const) : ('Inactive' as const),
       subDepartments: (d.children || []).map((child: APIDept) => ({
         id: child.id,
         name: child.name,

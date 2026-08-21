@@ -497,7 +497,7 @@ export default function AdmissionsPage() {
                       <div className="flex items-center gap-2">
                         <Bed className="w-4 h-4 text-green-500" />
                         <span className="text-sm text-gray-600">
-                          {ward.totalBeds ?? ward.capacity ?? 0} total beds
+                          {ward.totalBeds ?? 0} total beds
                         </span>
                       </div>
                     </div>
