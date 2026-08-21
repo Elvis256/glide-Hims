@@ -124,9 +124,29 @@ export class IpdService {
     qb.andWhere('ward.tenant_id = :tenantId', { tenantId: tid });
 
     const wards = await qb.getRawMany();
+
+    // Count the beds a patient can actually be put in, rather than deriving
+    // it as total - occupied.
+    //
+    // A bed being unoccupied does not make it available: it may be in
+    // cleaning, maintenance, or reserved. On this dev data every one of ICU's
+    // three unoccupied beds was in cleaning, so the board advertised three
+    // free ICU beds when there were none — the difference between "we have
+    // space" and "we do not" during an emergency admission.
+    const freeRows = await this.bedRepo
+      .createQueryBuilder('bed')
+      .select('bed.wardId', 'wardId')
+      .addSelect('COUNT(*)', 'freeBeds')
+      .where('bed.status = :status', { status: BedStatus.AVAILABLE })
+      .andWhere('bed.tenant_id = :tenantId', { tenantId: tid })
+      .andWhere('bed.deleted_at IS NULL')
+      .groupBy('bed.wardId')
+      .getRawMany();
+    const freeByWard = new Map(freeRows.map((r) => [r.wardId, Number(r.freeBeds) || 0]));
+
     return wards.map((w) => ({
       ...w,
-      availableBeds: w.totalBeds - w.occupiedBeds,
+      availableBeds: freeByWard.get(w.id) ?? 0,
       occupancyRate: w.totalBeds > 0 ? Math.round((w.occupiedBeds / w.totalBeds) * 100) : 0,
     }));
   }

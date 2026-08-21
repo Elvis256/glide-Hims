@@ -317,10 +317,10 @@ export default function MedicationSchedulePage() {
           isIV,
           isPRN,
           allergies: allergiesMap.get(admission.patientId) || [],
-          administrationHistory: med.administeredTime
+          administrationHistory: med.administeredAt
             ? [
                 {
-                  time: med.administeredTime,
+                  time: med.administeredAt,
                   status: med.status,
                   givenBy: med.administeredBy?.fullName,
                   notes: med.notes,
