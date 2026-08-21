@@ -49,7 +49,10 @@ export interface Admission {
   wardId: string;
   ward?: Ward;
   type: 'emergency' | 'elective' | 'transfer';
-  admittingDiagnosis: string; // display alias for admissionDiagnosis
+  // The payload carries admissionDiagnosis only. admittingDiagnosis was
+  // labelled a "display alias" but nothing ever populated it, so every
+  // consumer read undefined — the nursing handover's situation line said
+  // "admitted with undefined".
   admissionDiagnosis?: string;
   admissionReason?: string;
   attendingDoctorId?: string;
@@ -59,7 +62,6 @@ export interface Admission {
     specialization?: string;
   };
   status: 'admitted' | 'discharged' | 'transferred' | 'deceased';
-  priority: 'high' | 'medium' | 'low';
   // Entity fields are admissionDate/dischargeDate — admittedAt/dischargedAt
   // never existed on the backend and rendered as "Invalid Date".
   admissionDate: string;

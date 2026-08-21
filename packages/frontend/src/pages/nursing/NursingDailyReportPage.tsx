@@ -86,7 +86,7 @@ export default function NursingDailyReportPage() {
       id: admission.id,
       time: new Date(admission.admissionDate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
       type: 'admission' as const,
-      description: admission.admittingDiagnosis || 'Patient admitted',
+      description: admission.admissionDiagnosis || 'Patient admitted',
       patient: admission.patient?.fullName,
     }));
   }, [admissionsData]);

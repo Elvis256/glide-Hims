@@ -239,10 +239,14 @@ export default function ShiftHandoverPage() {
         gender: admission.patient?.gender || 'Unknown',
         bed: admission.bed?.bedNumber || '',
         ward: admission.ward?.name || '',
-        diagnosis: admission.admittingDiagnosis,
+        diagnosis: admission.admissionDiagnosis,
         acuity,
         flags,
-        situation: existing?.situation || `${admission.patient?.fullName}, ${admission.bed?.bedNumber}, admitted with ${admission.admittingDiagnosis}`,
+        // admittingDiagnosis is not a field the API sends, so this line
+        // read "admitted with undefined" on every handover.
+        situation:
+          existing?.situation ||
+          `${admission.patient?.fullName}, ${admission.bed?.bedNumber}, admitted with ${admission.admissionDiagnosis ?? 'diagnosis not recorded'}`,
         background: existing?.background || 'Relevant medical history to be documented',
         assessment: existing?.assessment || 'Current condition assessment pending',
         recommendation: existing?.recommendation || 'Continue current plan of care',
