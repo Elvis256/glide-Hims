@@ -91,6 +91,10 @@ function createMockRepo(): Partial<Repository<any>> {
     andWhere: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockReturnThis(),
     addOrderBy: jest.fn().mockReturnThis(),
+    // getWardOccupancy groups beds by ward to count the genuinely available
+    // ones; without groupBy the chain breaks at runtime rather than at compile
+    // time, which is how this mock silently fell behind the code.
+    groupBy: jest.fn().mockReturnThis(),
     setLock: jest.fn().mockReturnThis(),
     skip: jest.fn().mockReturnThis(),
     take: jest.fn().mockReturnThis(),
