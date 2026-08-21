@@ -1375,8 +1375,66 @@ export class UsersService {
     return { created, skipped };
   }
 
+  /**
+   * Spreading the entity into a plain object steps around the global
+   * ClassSerializerInterceptor, so the entity's own `@Exclude()` markers do not
+   * apply here — this deny-list is the only thing standing between the users
+   * API and the raw row, and it had drifted. `tokenVersion` (the token-
+   * revocation counter) was being published, and so were every staff member's
+   * salary, allowances, deductions, bank account number, national ID, home
+   * address, date of birth, emergency contact and leave balances — to anyone
+   * holding `users.read`.
+   *
+   * Payroll and personal data belong to the HR module, which reads them from
+   * Employee, not from here. If a field is added to User it is published by
+   * default, so anything sensitive must be added below as well as marked on the
+   * entity.
+   */
   private sanitizeUser(user: User) {
-    const { passwordHash, mfaSecret, userRoles, ...sanitized } = user;
+    const {
+      passwordHash,
+      mfaSecret,
+      backupCodes,
+      tokenVersion,
+      userRoles,
+      // lockout state
+      failedLoginAttempts,
+      lockedUntil,
+      // payroll / personal — HR reads these from Employee
+      basicSalary,
+      allowances,
+      deductions,
+      bankName,
+      bankAccountNumber,
+      nationalId,
+      address,
+      dateOfBirth,
+      emergencyContactName,
+      emergencyContactPhone,
+      annualLeaveBalance,
+      sickLeaveBalance,
+      leaveLastAccruedMonth,
+      ...sanitized
+    } = user;
+    void passwordHash;
+    void mfaSecret;
+    void backupCodes;
+    void tokenVersion;
+    void failedLoginAttempts;
+    void lockedUntil;
+    void basicSalary;
+    void allowances;
+    void deductions;
+    void bankName;
+    void bankAccountNumber;
+    void nationalId;
+    void address;
+    void dateOfBirth;
+    void emergencyContactName;
+    void emergencyContactPhone;
+    void annualLeaveBalance;
+    void sickLeaveBalance;
+    void leaveLastAccruedMonth;
     return {
       ...sanitized,
       roles:

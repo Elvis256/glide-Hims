@@ -1039,6 +1039,13 @@ export class AuthService {
       isSystemAdmin: user.isSystemAdmin || false,
       mfaEnabled: user.mfaEnabled,
       lastLoginAt: user.lastLoginAt,
+      // PATCH /auth/profile writes these three and echoes them back, but the
+      // read side omitted them — so My Profile loaded blank every time, and a
+      // staff member who had just saved an emergency contact watched it
+      // disappear on the very next fetch. The value was stored all along.
+      address: user.address,
+      emergencyContactName: user.emergencyContactName,
+      emergencyContactPhone: user.emergencyContactPhone,
       roles: userRoles.map((ur) => ({
         role: ur.role.name,
         facility: ur.facility?.name,

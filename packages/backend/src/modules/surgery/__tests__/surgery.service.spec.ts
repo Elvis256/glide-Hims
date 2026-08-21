@@ -237,6 +237,136 @@ describe('SurgeryService', () => {
       );
     });
 
+    // A theatre can only run one case at a time and that was enforced; a
+    // surgeon cannot be in two theatres at once and that was not. The two
+    // manager.find calls are told apart by `where.theatreId` — the theatre
+    // check is scoped to a theatre, the staff check is not.
+    it('should refuse a lead surgeon already operating in another theatre', async () => {
+      const dto = buildScheduleDto({
+        theatreId: 'theatre-1',
+        scheduledTime: '09:00',
+        estimatedDurationMinutes: 120,
+        leadSurgeonId: 'surgeon-1',
+      });
+
+      const qb = {
+        setLock: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue({ id: 'theatre-1' }),
+        getCount: jest.fn().mockResolvedValue(0),
+      };
+      mockManager.createQueryBuilder.mockReturnValue(qb);
+
+      mockManager.find.mockImplementation((_entity: any, opts: any) =>
+        Promise.resolve(
+          opts?.where?.theatreId
+            ? [] // theatre-1 itself is free
+            : [
+                {
+                  id: 'other-theatre-case',
+                  caseNumber: 'SUR20260821-0002',
+                  theatreId: 'theatre-2',
+                  leadSurgeonId: 'surgeon-1',
+                  scheduledTime: '09:30',
+                  estimatedDurationMinutes: 60,
+                  status: SurgeryStatus.SCHEDULED,
+                },
+              ],
+        ),
+      );
+
+      await expect(service.scheduleSurgery(dto, 'user-1', 'tenant-1')).rejects.toThrow(
+        /lead surgeon is already booked on SUR20260821-0002/,
+      );
+    });
+
+    it('should catch a clash across roles — leading one case, anaesthetising another', async () => {
+      const dto = buildScheduleDto({
+        theatreId: 'theatre-1',
+        scheduledTime: '09:00',
+        estimatedDurationMinutes: 120,
+        leadSurgeonId: 'surgeon-9',
+        anesthesiologistId: 'surgeon-1',
+      });
+
+      const qb = {
+        setLock: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue({ id: 'theatre-1' }),
+        getCount: jest.fn().mockResolvedValue(0),
+      };
+      mockManager.createQueryBuilder.mockReturnValue(qb);
+
+      mockManager.find.mockImplementation((_entity: any, opts: any) =>
+        Promise.resolve(
+          opts?.where?.theatreId
+            ? []
+            : [
+                {
+                  id: 'other',
+                  caseNumber: 'SUR20260821-0003',
+                  theatreId: 'theatre-2',
+                  leadSurgeonId: 'surgeon-1',
+                  scheduledTime: '09:30',
+                  estimatedDurationMinutes: 60,
+                  status: SurgeryStatus.SCHEDULED,
+                },
+              ],
+        ),
+      );
+
+      await expect(service.scheduleSurgery(dto, 'user-1', 'tenant-1')).rejects.toThrow(
+        /anaesthetist is already booked/,
+      );
+    });
+
+    it('should allow the same slot in another theatre for a different surgeon', async () => {
+      const dto = buildScheduleDto({
+        theatreId: 'theatre-1',
+        scheduledTime: '09:00',
+        estimatedDurationMinutes: 120,
+        leadSurgeonId: 'surgeon-2',
+      });
+
+      const qb = {
+        setLock: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        // First getOne: the locked theatre; second: case-number MAX lookup
+        getOne: jest
+          .fn()
+          .mockResolvedValueOnce({ id: 'theatre-1' })
+          .mockResolvedValue(null),
+        getCount: jest.fn().mockResolvedValue(0),
+      };
+      mockManager.createQueryBuilder.mockReturnValue(qb);
+
+      mockManager.find.mockImplementation((_entity: any, opts: any) =>
+        Promise.resolve(
+          opts?.where?.theatreId
+            ? []
+            : [
+                {
+                  id: 'other',
+                  caseNumber: 'SUR20260821-0004',
+                  theatreId: 'theatre-2',
+                  leadSurgeonId: 'surgeon-1',
+                  scheduledTime: '09:30',
+                  estimatedDurationMinutes: 60,
+                  status: SurgeryStatus.SCHEDULED,
+                },
+              ],
+        ),
+      );
+
+      await expect(service.scheduleSurgery(dto, 'user-1', 'tenant-1')).resolves.toBeDefined();
+    });
+
     it('should throw NotFoundException when theatre does not exist', async () => {
       const dto = buildScheduleDto();
 

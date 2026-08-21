@@ -14,7 +14,15 @@ import {
 } from '../../database/entities/surgery-safety-checklist.entity';
 import { SystemSettingsService } from '../system-settings/system-settings.service';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, In, MoreThanOrEqual, LessThanOrEqual, DataSource } from 'typeorm';
+import {
+  Repository,
+  Between,
+  In,
+  MoreThanOrEqual,
+  LessThanOrEqual,
+  DataSource,
+  EntityManager,
+} from 'typeorm';
 import { Theatre, TheatreStatus, TheatreType } from '../../database/entities/theatre.entity';
 import {
   SurgeryCase,
@@ -161,6 +169,69 @@ export class SurgeryService {
     SurgeryStatus.IN_PROGRESS,
   ];
 
+  /**
+   * A theatre can only run one case at a time and that was enforced. A surgeon
+   * cannot be in two theatres at once and that was not: booking the same lead
+   * surgeon into OT-1 at 14:00 and OT-2 at 14:30 was accepted without a murmur,
+   * because the only overlap check was keyed on theatreId. The same held for
+   * the assistant and the anaesthetist.
+   *
+   * Locking: the caller already holds a pessimistic write lock on the theatre
+   * row, which serialises same-theatre scheduling. Two DIFFERENT theatres take
+   * different row locks, so this check needs its own. The advisory keys are
+   * taken in sorted order, after the theatre lock, so concurrent schedules that
+   * share staff queue rather than deadlock.
+   */
+  private async assertStaffFree(
+    manager: EntityManager,
+    dto: { scheduledDate: string; scheduledTime: string; estimatedDurationMinutes: number },
+    staff: { role: string; id?: string }[],
+    tid: string,
+    excludeCaseId?: string,
+  ): Promise<void> {
+    const people = staff.filter((s): s is { role: string; id: string } => !!s.id);
+    if (people.length === 0) return;
+
+    // Deterministic order prevents lock cycles between concurrent schedules
+    // that share more than one person.
+    for (const id of [...new Set(people.map((p) => p.id))].sort()) {
+      await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+        `surgery_staff_${tid}_${dto.scheduledDate}_${id}`,
+      ]);
+    }
+
+    const sameDay = await manager.find(SurgeryCase, {
+      where: {
+        scheduledDate: new Date(dto.scheduledDate),
+        status: In(SurgeryService.SLOT_BLOCKING_STATUSES),
+        tenantId: tid,
+      },
+    });
+
+    const start = this.timeToMinutes(dto.scheduledTime);
+    const end = start + dto.estimatedDurationMinutes;
+
+    for (const person of people) {
+      const clash = sameDay.find((c) => {
+        if (excludeCaseId && c.id === excludeCaseId) return false;
+        const involved =
+          c.leadSurgeonId === person.id ||
+          c.assistantSurgeonId === person.id ||
+          c.anesthesiologistId === person.id;
+        if (!involved) return false;
+        const cs = this.timeToMinutes(c.scheduledTime);
+        return start < cs + c.estimatedDurationMinutes && end > cs;
+      });
+      if (clash) {
+        throw new BadRequestException(
+          `The ${person.role} is already booked on ${clash.caseNumber} at ${String(
+            clash.scheduledTime,
+          ).slice(0, 5)} for ${clash.estimatedDurationMinutes} minutes`,
+        );
+      }
+    }
+  }
+
   async scheduleSurgery(
     dto: ScheduleSurgeryDto,
     userId: string,
@@ -206,6 +277,17 @@ export class SurgeryService {
           `Theatre has ${conflicts.length} conflicting surgery at the requested time`,
         );
       }
+
+      await this.assertStaffFree(
+        manager,
+        dto,
+        [
+          { role: 'lead surgeon', id: dto.leadSurgeonId },
+          { role: 'assistant surgeon', id: dto.assistantSurgeonId },
+          { role: 'anaesthetist', id: dto.anesthesiologistId },
+        ],
+        tid,
+      );
 
       const caseNumber = await this.generateCaseNumber(tid, manager);
 
@@ -808,6 +890,24 @@ export class SurgeryService {
         );
       }
 
+      // The held slot may have been taken by the surgeon rather than by the
+      // theatre while the case sat postponed.
+      await this.assertStaffFree(
+        manager,
+        {
+          scheduledDate: dateStr,
+          scheduledTime: surgeryCase.scheduledTime,
+          estimatedDurationMinutes: surgeryCase.estimatedDurationMinutes,
+        },
+        [
+          { role: 'lead surgeon', id: surgeryCase.leadSurgeonId },
+          { role: 'assistant surgeon', id: surgeryCase.assistantSurgeonId },
+          { role: 'anaesthetist', id: surgeryCase.anesthesiologistId },
+        ],
+        tid,
+        surgeryCase.id,
+      );
+
       surgeryCase.status = SurgeryStatus.SCHEDULED;
       surgeryCase.preOpNotes = `${surgeryCase.preOpNotes || ''}\n[RECONFIRMED]`.trim();
       const saved = await manager.save(surgeryCase);
@@ -868,6 +968,21 @@ export class SurgeryService {
               `Theatre has ${conflicts.length} conflicting surgery at the requested new time`,
             );
           }
+          await this.assertStaffFree(
+            manager,
+            {
+              scheduledDate: dto.newDate,
+              scheduledTime: dto.newTime,
+              estimatedDurationMinutes: surgeryCase.estimatedDurationMinutes,
+            },
+            [
+              { role: 'lead surgeon', id: surgeryCase.leadSurgeonId },
+              { role: 'assistant surgeon', id: surgeryCase.assistantSurgeonId },
+              { role: 'anaesthetist', id: surgeryCase.anesthesiologistId },
+            ],
+            tid,
+            surgeryCase.id,
+          );
           surgeryCase.status = SurgeryStatus.POSTPONED;
           surgeryCase.scheduledDate = new Date(dto.newDate);
           surgeryCase.scheduledTime = dto.newTime;
