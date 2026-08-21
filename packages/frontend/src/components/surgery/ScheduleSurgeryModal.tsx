@@ -53,6 +53,25 @@ export default function ScheduleSurgeryModal({ theatres, onClose, onScheduled }:
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
 
+  // GET /surgery/check-conflicts existed and worked, but nothing in the app
+  // called it — the only way to discover a clash was to fill the form in and
+  // have the POST come back 400. Ask while the slot is still being chosen.
+  const slotChosen =
+    !!form.theatreId && !!form.scheduledDate && !!form.scheduledTime &&
+    Number(form.estimatedDurationMinutes) > 0;
+
+  const { data: clashes = [] } = useQuery({
+    queryKey: ['surgery-conflicts', form.theatreId, form.scheduledDate, form.scheduledTime, form.estimatedDurationMinutes],
+    queryFn: async () =>
+      (await surgeryService.checkConflicts({
+        theatreId: form.theatreId,
+        date: form.scheduledDate,
+        time: form.scheduledTime,
+        duration: Number(form.estimatedDurationMinutes),
+      })).data as Array<{ caseNumber: string; scheduledTime: string; estimatedDurationMinutes: number; procedureName: string }>,
+    enabled: slotChosen,
+  });
+
   const mutation = useMutation({
     mutationFn: () =>
       surgeryService.cases.schedule({
@@ -202,6 +221,18 @@ export default function ScheduleSurgeryModal({ theatres, onClose, onScheduled }:
                 <input id={`${fid}-duration-min`} type="number" min="10" step="10" value={form.estimatedDurationMinutes} onChange={set('estimatedDurationMinutes')} className="w-full px-3 py-2 border rounded-lg" />
               </div>
             </div>
+            {clashes.length > 0 && (
+              <div role="status" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                <p className="font-medium">This theatre is already booked at that time</p>
+                <ul className="mt-1 space-y-0.5">
+                  {clashes.map((c) => (
+                    <li key={c.caseNumber}>
+                      {c.caseNumber} — {c.procedureName}, {String(c.scheduledTime).slice(0, 5)} for {c.estimatedDurationMinutes} min
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             <div>
               <label htmlFor={`${fid}-anesthesia`} className="block text-sm font-medium text-gray-700 mb-1">Anesthesia</label>
               <select id={`${fid}-anesthesia`} value={form.anesthesiaType} onChange={set('anesthesiaType')} className="w-full px-3 py-2 border rounded-lg">
