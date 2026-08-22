@@ -658,14 +658,19 @@ export class VitalsService {
         try {
           const targets: string[] = [];
           if (params.facilityId) {
-            const nurseIds = await this.inAppNotifications
+            // Doctors are included here, unlike the encounter path above: this
+            // one fires where there is no attending provider to tell yet —
+            // emergency triage most of all, where a critical vital IS the
+            // reason a doctor is needed. Nurses alone were being told that a
+            // patient had a GCS of 3.
+            const staffIds = await this.inAppNotifications
               .getUserIdsByRole(
-                ['charge_nurse', 'nurse_supervisor', 'nurse'],
+                ['charge_nurse', 'nurse_supervisor', 'nurse', 'doctor', 'medical_officer'],
                 params.facilityId,
                 params.tenantId,
               )
               .catch(() => [] as string[]);
-            targets.push(...nurseIds);
+            targets.push(...staffIds);
           }
           const unique = [...new Set(targets)].filter(Boolean);
           if (unique.length > 0) {

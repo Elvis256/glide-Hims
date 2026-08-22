@@ -81,7 +81,8 @@ export interface DischargeEmergencyDto {
 
 export interface AdmitFromEmergencyDto {
   wardId: string;
-  bedId?: string;
+  /** Required: the API creates the IPD admission, and an admission needs a bed. */
+  bedId: string;
   primaryDiagnosis: string;
   admissionNotes?: string;
 }
@@ -110,7 +111,8 @@ export interface EmergencyCase {
   pastMedicalHistory?: string;
   arrivalMode: ArrivalMode;
   arrivalTime: string;
-  triageLevel: TriageLevel;
+  /** null until a nurse triages the case — an unassessed patient has no acuity. */
+  triageLevel: TriageLevel | null;
   status: TriageStatus;
   bloodPressureSystolic?: number;
   bloodPressureDiastolic?: number;

@@ -35,6 +35,15 @@ const triageLevelColors: Record<number, string> = {
   5: 'bg-blue-500 text-white',      // Non-Urgent
 };
 
+// A case nobody has assessed has no level. It used to be registered as a 4 and
+// wear the same green badge as a patient a nurse had looked at and judged
+// stable.
+const UNTRIAGED_COLOR = 'bg-slate-700 text-white';
+const triageBadgeColor = (level?: number | null) =>
+  level == null ? UNTRIAGED_COLOR : triageLevelColors[level];
+const triageBadgeLabel = (level?: number | null) =>
+  level == null ? 'Untriaged' : `Level ${level}`;
+
 const triageLevelNames: Record<number, string> = {
   1: 'Resuscitation',
   2: 'Emergent',
@@ -272,26 +281,14 @@ export default function EmergencyPage() {
     onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to close the case')),
   });
 
-  // Admit mutation: creates a REAL IPD admission (ward+bed) first, then marks
-  // the emergency case admitted — otherwise the patient never appears on any
-  // ward worklist and the bed is never occupied.
+  // One call. The emergency admit endpoint creates the IPD admission itself —
+  // bed lock, duplicate-admission check, ward worklist and all — so the browser
+  // no longer makes two separate writes that could half-succeed.
   const admitMutation = useMutation({
     mutationFn: async (emergencyCase: EmergencyCase) => {
-      const patientId = emergencyCase.encounter?.patient?.id;
-      if (!patientId) throw new Error('This case has no linked patient record');
-      await ipdService.admissions.create({
-        patientId,
-        encounterId: emergencyCase.encounterId,
-        wardId: admitForm.wardId,
-        bedId: admitForm.bedId,
-        type: 'emergency',
-        admissionDiagnosis: admitForm.primaryDiagnosis,
-        admissionReason: admitForm.admissionNotes || emergencyCase.chiefComplaint,
-        attendingDoctorId: emergencyCase.attendingDoctorId,
-      });
       const response = await emergencyService.admitCase(emergencyCase.id, {
         wardId: admitForm.wardId,
-        bedId: admitForm.bedId || undefined,
+        bedId: admitForm.bedId,
         primaryDiagnosis: admitForm.primaryDiagnosis,
         admissionNotes: admitForm.admissionNotes || undefined,
       });
@@ -338,8 +335,12 @@ export default function EmergencyPage() {
   });
 
   // Sort by triage level (critical first), then by time
+  // Untriaged sorts above everything: unknown acuity, and the clock is running.
+  const acuityRank = (level?: number | null) => (level == null ? 0 : level);
   const sortedCases = [...filteredCases].sort((a, b) => {
-    if (a.triageLevel !== b.triageLevel) return a.triageLevel - b.triageLevel;
+    if (acuityRank(a.triageLevel) !== acuityRank(b.triageLevel)) {
+      return acuityRank(a.triageLevel) - acuityRank(b.triageLevel);
+    }
     return new Date(a.arrivalTime).getTime() - new Date(b.arrivalTime).getTime();
   });
 
@@ -507,8 +508,8 @@ export default function EmergencyPage() {
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className={`px-2 py-0.5 text-xs font-bold rounded ${triageLevelColors[c.triageLevel]}`}>
-                          Level {c.triageLevel}
+                        <span className={`px-2 py-0.5 text-xs font-bold rounded ${triageBadgeColor(c.triageLevel)}`}>
+                          {triageBadgeLabel(c.triageLevel)}
                         </span>
                         <span className="font-medium text-gray-900">{c.caseNumber}</span>
                         <span className={`px-2 py-0.5 text-xs rounded-full ${statusColors[c.status]}`}>
@@ -557,8 +558,10 @@ export default function EmergencyPage() {
               {/* Patient Info */}
               <div className="bg-gray-50 rounded-lg p-3">
                 <div className="flex items-center gap-3">
-                  <div className={`w-12 h-12 rounded-full flex items-center justify-center ${triageLevelColors[selectedCase.triageLevel]}`}>
-                    <span className="text-lg font-bold">{selectedCase.triageLevel}</span>
+                  <div className={`w-12 h-12 rounded-full flex items-center justify-center ${triageBadgeColor(selectedCase.triageLevel)}`}>
+                    <span className={selectedCase.triageLevel == null ? 'text-[10px] font-bold' : 'text-lg font-bold'}>
+                      {selectedCase.triageLevel ?? 'N/T'}
+                    </span>
                   </div>
                   <div>
                     <p className="font-medium">{selectedCase.encounter?.patient?.fullName || 'Unknown Patient'}</p>
