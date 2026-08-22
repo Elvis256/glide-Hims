@@ -19,6 +19,7 @@ import {
 import { QueueManagementService } from '../queue-management/queue-management.service';
 import { ServicePoint } from '../../database/entities/queue.entity';
 import { requireTenantId } from '../../common/utils/tenant.util';
+import { localDateString } from '../../common/utils/timezone.util';
 
 @Injectable()
 export class AppointmentsService {
@@ -33,16 +34,30 @@ export class AppointmentsService {
     private queueService?: QueueManagementService,
   ) {}
 
+  /** The prefix today's appointment numbers share, on the hospital's calendar. */
+  private appointmentNumberPrefix(): string {
+    // toISOString() is UTC: for the first three hours of the local day every
+    // number carried yesterday's date, and the sequence restarted at the wrong
+    // moment.
+    return `APT${localDateString(new Date()).replace(/-/g, '')}`;
+  }
+
   private async generateAppointmentNumber(
     manager: import('typeorm').EntityManager,
     tenantId: string,
   ): Promise<string> {
-    const today = new Date();
-    const datePrefix = today.toISOString().slice(0, 10).replace(/-/g, '');
-    const count = await manager.count(Appointment, {
-      where: { appointmentNumber: Like(`APT${datePrefix}%`), tenantId },
-    });
-    return `APT${datePrefix}${String(count + 1).padStart(4, '0')}`;
+    const datePrefix = this.appointmentNumberPrefix();
+    // MAX+1, not COUNT+1: appointments are hard-deleted, and a count regresses
+    // after a delete straight into the UNIQUE constraint on the number.
+    const last = await manager
+      .createQueryBuilder(Appointment, 'a')
+      .select('MAX(a.appointmentNumber)', 'max')
+      .where('a.appointmentNumber LIKE :prefix', { prefix: `${datePrefix}%` })
+      .andWhere('a.tenant_id = :tenantId', { tenantId })
+      .getRawOne<{ max: string | null }>();
+
+    const sequence = last?.max ? parseInt(last.max.slice(datePrefix.length), 10) + 1 : 1;
+    return `${datePrefix}${String(sequence).padStart(4, '0')}`;
   }
 
   async create(
@@ -58,13 +73,32 @@ export class AppointmentsService {
     // concurrent creates drawing the same count-based appointment number
     // (appointment_number is UNIQUE, so the loser used to get a 500).
     return this.dataSource.transaction(async (manager) => {
-      await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
-        `appt_create_${tid}_${dto.appointmentDate}`,
-      ]);
+      // TWO locks, taken in a fixed order so concurrent bookings queue instead
+      // of deadlocking:
+      //
+      //  - the slot lock serialises bookings that could double-book the doctor;
+      //  - the NUMBER lock serialises the shared daily sequence.
+      //
+      // Only the first existed, keyed on the appointment's date — while the
+      // number is drawn from TODAY's counter. Two receptionists booking
+      // follow-ups for two different future dates therefore took different
+      // locks, read the same sequence and collided on the UNIQUE appointment
+      // number: one of them got "An unexpected error occurred". Four concurrent
+      // bookings for four different dates lost two.
+      const lockKeys = [
+        `appt_slot_${tid}_${dto.appointmentDate}`,
+        `appt_number_${tid}_${this.appointmentNumberPrefix()}`,
+      ].sort();
+      for (const key of lockKeys) {
+        await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [key]);
+      }
 
+      // Deliberately NOT scoped to facilityId: a doctor cannot be in two
+      // places at once, so a clash at the tenant's other facility is still a
+      // clash. Same reasoning as the theatre staff conflict check.
       this.assertNoDoctorConflict(
         await manager.find(Appointment, {
-          where: { doctorId: dto.doctorId, appointmentDate: dto.appointmentDate as any, facilityId, tenantId: tid },
+          where: { doctorId: dto.doctorId, appointmentDate: dto.appointmentDate as any, tenantId: tid },
         }),
         dto.startTime,
         dto.endTime,
@@ -244,7 +278,7 @@ export class AppointmentsService {
     if (slotChanged) {
       this.assertNoDoctorConflict(
         await this.appointmentRepository.find({
-          where: { doctorId, appointmentDate: appointmentDate as any, facilityId, tenantId: tid },
+          where: { doctorId, appointmentDate: appointmentDate as any, tenantId: tid },
         }),
         startTime,
         endTime,
@@ -307,7 +341,9 @@ export class AppointmentsService {
 
   async getStats(facilityId: string, date?: string, tenantId?: string) {
     const tid = requireTenantId(tenantId);
-    const targetDate = date || new Date().toISOString().slice(0, 10);
+    // The hospital's today, not the server's — between midnight and 03:00
+    // local, "today's appointments" was yesterday's list.
+    const targetDate = date || localDateString(new Date());
 
     const qb = this.appointmentRepository
       .createQueryBuilder('appointment')
