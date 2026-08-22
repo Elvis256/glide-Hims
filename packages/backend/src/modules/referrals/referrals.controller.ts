@@ -130,6 +130,7 @@ export class ReferralsController {
     return this.referralsService.complete(
       id,
       dto,
+      req.user?.id || req.user?.sub,
       req.user?.tenantId,
       req.user?.facilityId || req.headers['x-facility-id'],
     );
@@ -145,6 +146,7 @@ export class ReferralsController {
     return this.referralsService.cancel(
       id,
       reason,
+      req.user?.id || req.user?.sub,
       req.user?.tenantId,
       req.user?.facilityId || req.headers['x-facility-id'],
     );
