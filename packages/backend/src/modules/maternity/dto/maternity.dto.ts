@@ -421,6 +421,19 @@ export class RecordBabyOutcomeDto {
   @IsBoolean()
   bcgGiven?: boolean;
 
+  // The entity has carried these two columns all along, but no DTO field
+  // reached them: OPV-0 and tetracycline eye ointment are both given in the
+  // delivery room, and neither could be recorded.
+  @ApiPropertyOptional({ description: 'OPV-0 given at birth' })
+  @IsOptional()
+  @IsBoolean()
+  opv0Given?: boolean;
+
+  @ApiPropertyOptional({ description: 'Eye prophylaxis given at birth' })
+  @IsOptional()
+  @IsBoolean()
+  eyeProphylaxis?: boolean;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()

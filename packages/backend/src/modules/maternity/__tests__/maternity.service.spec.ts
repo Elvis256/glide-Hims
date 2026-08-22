@@ -23,6 +23,7 @@ import {
 import { PostnatalVisit } from '../../../database/entities/postnatal-visit.entity';
 import { BabyWellnessCheck } from '../../../database/entities/baby-wellness-check.entity';
 import { ImmunizationSchedule } from '../../../database/entities/immunization-schedule.entity';
+import { Patient } from '../../../database/entities/patient.entity';
 import { AuditLogService } from '../../../common/interceptors/audit-log.service';
 import { DataSource } from 'typeorm';
 
@@ -59,6 +60,7 @@ describe('MaternityService', () => {
   let pncRepo: MockRepo;
   let babyWellnessRepo: MockRepo;
   let immunizationRepo: MockRepo;
+  let patientRepo: MockRepo;
   let mockDataSource: { transaction: jest.Mock };
 
   const tenantId = 'tenant-uuid-1';
@@ -74,6 +76,14 @@ describe('MaternityService', () => {
     pncRepo = createMockRepo();
     babyWellnessRepo = createMockRepo();
     immunizationRepo = createMockRepo();
+    // registerAntenatal reads the patient to check she exists and is not male
+    patientRepo = createMockRepo();
+    patientRepo.findOne!.mockResolvedValue({
+      id: patientId,
+      fullName: 'Test Mother',
+      gender: 'female',
+      dateOfBirth: new Date('1996-01-01'),
+    });
 
     // DataSource.transaction mock delegates to the same repo mocks
     // so tests can set up expectations on labourRepo, ancRepo, etc.
@@ -87,6 +97,7 @@ describe('MaternityService', () => {
           [PostnatalVisit, pncRepo],
           [BabyWellnessCheck, babyWellnessRepo],
           [ImmunizationSchedule, immunizationRepo],
+          [Patient, patientRepo],
         ]);
         // Entity-aware delegation so tests keep asserting on the repo mocks.
         // manager.save(instance) routes to the repo of the last entity class

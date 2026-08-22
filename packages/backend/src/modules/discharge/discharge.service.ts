@@ -1,4 +1,11 @@
-import { Injectable, NotFoundException, BadRequestException, Logger, Optional } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  Logger,
+  Optional,
+  Inject,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, DataSource } from 'typeorm';
 import {
@@ -29,7 +36,12 @@ export class DischargeService {
     private encounterRepository: Repository<Encounter>,
     private dataSource: DataSource,
     private vitalsService: VitalsService,
+    // @Inject is required next to @Optional here: a union parameter type emits
+    // `Object` as its design type, leaving Nest no token, so this silently
+    // injected undefined and discharge medication reconciliation — guarded by
+    // `if (this.medReconciliationService ...)` below — never ran once.
     @Optional()
+    @Inject(MedicationReconciliationService)
     private medReconciliationService: MedicationReconciliationService | null,
   ) {}
 
