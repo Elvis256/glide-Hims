@@ -1699,16 +1699,34 @@ export class FinanceService {
     if (!tenantId) {
       throw new ForbiddenException('Tenant context is required for AR aging report');
     }
-    // Use DataSource to run raw query for aging buckets
+    // Raw SQL, so nothing checked these names against the schema and the report
+    // had never run: `invoices` has no customer_type and no customer_name, and
+    // the paid column is `amount_paid`, not `paid_amount`. Who owes the money
+    // comes from payment_type and the patient the invoice belongs to.
+    //
+    // The parameter numbering was wrong too: with no facilityId the tenant was
+    // still read as $2 while only one parameter was pushed, so that branch
+    // could never have run either. The placeholders are numbered from the
+    // params array now.
+    // An invoice carries no facility of its own — it reaches one through the
+    // encounter it was raised against, which is why the original
+    // `i.facility_id = $2` could not have worked either.
+    const params: any[] = [tenantId];
+    let facilityClause = '';
+    if (facilityId) {
+      params.push(facilityId);
+      facilityClause = `AND enc.facility_id = $${params.length}`;
+    }
+
     const query = `
-      SELECT 
-        i.customer_type,
-        i.customer_name,
+      SELECT
+        i.payment_type AS customer_type,
+        p.full_name AS customer_name,
         i.id AS invoice_id,
         i.invoice_number,
         i.total_amount,
-        COALESCE(i.paid_amount, 0) AS paid_amount,
-        (i.total_amount - COALESCE(i.paid_amount, 0)) AS balance_due,
+        COALESCE(i.amount_paid, 0) AS paid_amount,
+        (i.total_amount - COALESCE(i.amount_paid, 0)) AS balance_due,
         i.due_date,
         CURRENT_DATE - i.due_date::date AS days_overdue,
         CASE
@@ -1719,16 +1737,15 @@ export class FinanceService {
           ELSE '90+'
         END AS aging_bucket
       FROM invoices i
+      LEFT JOIN patients p ON p.id = i.patient_id
+      LEFT JOIN encounters enc ON enc.id = i.encounter_id
       WHERE i.status NOT IN ('cancelled', 'refunded', 'paid')
-        AND (i.total_amount - COALESCE(i.paid_amount, 0)) > 0
-        ${facilityId ? 'AND i.facility_id = $1' : ''}
-        AND i.tenant_id = $2
+        AND i.deleted_at IS NULL
+        AND (i.total_amount - COALESCE(i.amount_paid, 0)) > 0
+        AND i.tenant_id = $1
+        ${facilityClause}
       ORDER BY (CURRENT_DATE - i.due_date::date) DESC
     `;
-
-    const params: any[] = [];
-    if (facilityId) params.push(facilityId);
-    params.push(tenantId);
 
     const results = await this.accountRepo.manager.query(query, params);
 
@@ -1877,6 +1894,15 @@ export class FinanceService {
 
   // ============ STATUTORY REPORTS ============
 
+  /**
+   * VAT, PAYE and NSSF returns for URA.
+   *
+   * These are raw SQL, so nothing checked the column names against the entity:
+   * every one of them asked for `jel.credit_amount` / `jel.debit_amount`, and
+   * the columns are `credit` and `debit`. All three returns — and the AR aging
+   * report below — answered 500 from the day they were written. No statutory
+   * return this system produced has ever contained a figure.
+   */
   async getStatutoryReport(
     type: 'vat' | 'paye' | 'nssf',
     facilityId: string,
@@ -1887,13 +1913,26 @@ export class FinanceService {
     if (!tenantId) {
       throw new ForbiddenException('Tenant context is required for statutory reports');
     }
+    // startDate/endDate are documented as required but nothing enforced it, so
+    // omitting one reached `new Date(undefined).toISOString()` at the bottom of
+    // the function and threw RangeError: Invalid time value — a 500 for a
+    // missing parameter.
+    const validDate = (v: string) => !!v && !Number.isNaN(new Date(v).getTime());
+    if (!validDate(startDate) || !validDate(endDate)) {
+      throw new BadRequestException(
+        'startDate and endDate are required and must be valid dates (YYYY-MM-DD)',
+      );
+    }
+    if (new Date(startDate) > new Date(endDate)) {
+      throw new BadRequestException('startDate must not be after endDate');
+    }
     // Always include tenant filter to enforce tenant isolation
     const tenantFilter = 'AND je.tenant_id = $4';
     const params = [facilityId, startDate, endDate, tenantId];
 
     if (type === 'vat') {
       const outputVat = await this.journalRepo.query(
-        `SELECT COALESCE(SUM(jel.credit_amount), 0) as total
+        `SELECT COALESCE(SUM(jel.credit), 0) as total
          FROM journal_entry_lines jel
          JOIN journal_entries je ON jel.journal_entry_id = je.id
          JOIN chart_of_accounts coa ON jel.account_id = coa.id
@@ -1904,7 +1943,7 @@ export class FinanceService {
         params,
       );
       const inputVat = await this.journalRepo.query(
-        `SELECT COALESCE(SUM(jel.debit_amount), 0) as total
+        `SELECT COALESCE(SUM(jel.debit), 0) as total
          FROM journal_entry_lines jel
          JOIN journal_entries je ON jel.journal_entry_id = je.id
          JOIN chart_of_accounts coa ON jel.account_id = coa.id
@@ -1929,8 +1968,8 @@ export class FinanceService {
 
     if (type === 'paye') {
       const payroll = await this.journalRepo.query(
-        `SELECT COALESCE(SUM(jel.debit_amount), 0) as gross_salary,
-                COALESCE(SUM(CASE WHEN coa.account_code = '2301' THEN jel.credit_amount ELSE 0 END), 0) as paye_withheld
+        `SELECT COALESCE(SUM(jel.debit), 0) as gross_salary,
+                COALESCE(SUM(CASE WHEN coa.account_code = '2301' THEN jel.credit ELSE 0 END), 0) as paye_withheld
          FROM journal_entry_lines jel
          JOIN journal_entries je ON jel.journal_entry_id = je.id
          JOIN chart_of_accounts coa ON jel.account_id = coa.id
@@ -1951,7 +1990,7 @@ export class FinanceService {
 
     // NSSF
     const nssf = await this.journalRepo.query(
-      `SELECT COALESCE(SUM(jel.debit_amount), 0) as gross_salary
+      `SELECT COALESCE(SUM(jel.debit), 0) as gross_salary
        FROM journal_entry_lines jel
        JOIN journal_entries je ON jel.journal_entry_id = je.id
        JOIN chart_of_accounts coa ON jel.account_id = coa.id

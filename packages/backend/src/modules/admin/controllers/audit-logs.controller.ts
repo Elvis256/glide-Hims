@@ -1,4 +1,4 @@
-import { Controller, Get, Query, Request, Res } from '@nestjs/common';
+import { Controller, Get, Logger, Query, Request, Res } from '@nestjs/common';
 import { ApiOperation, ApiTags, ApiQuery, ApiBearerAuth } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -10,6 +10,8 @@ import { AuditLog } from '../../../database/entities/audit-log.entity';
 @ApiBearerAuth()
 @Controller('admin/audit-logs')
 export class AuditLogsController {
+  private readonly logger = new Logger(AuditLogsController.name);
+
   constructor(
     @InjectRepository(AuditLog)
     private readonly repo: Repository<AuditLog>,
@@ -219,6 +221,18 @@ export class AuditLogsController {
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
 
+    // Fetch the first page BEFORE a single byte goes out. Everything that can
+    // fail about this query — a malformed userId, an unparseable date — fails
+    // here, while a normal error response is still possible. Streaming first
+    // and querying second meant a bad filter value threw after the headers had
+    // gone, the exception filter tried to send JSON over a committed response,
+    // and ERR_HTTP_HEADERS_SENT killed the Node process: one malformed id in
+    // this query string took the whole API down for everyone.
+    const page = (offset: number) =>
+      qb.orderBy('a.createdAt', 'DESC').skip(offset).take(PAGE_SIZE).getMany();
+
+    let rows = await page(0);
+
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader(
       'Content-Disposition',
@@ -227,20 +241,32 @@ export class AuditLogsController {
     res.write(cols.join(',') + '\n');
 
     let offset = 0;
-    let hasMore = true;
-    while (hasMore) {
-      const rows = await qb.orderBy('a.createdAt', 'DESC').skip(offset).take(PAGE_SIZE).getMany();
-      for (const r of rows as any[]) {
-        const flat = {
-          ...r,
-          username: r.user?.username,
-          fullName: r.user?.fullName,
-        };
-        res.write(cols.map((c) => escape(flat[c])).join(',') + '\n');
+    try {
+      let hasMore = true;
+      while (hasMore) {
+        for (const r of rows as any[]) {
+          const flat = {
+            ...r,
+            username: r.user?.username,
+            fullName: r.user?.fullName,
+          };
+          res.write(cols.map((c) => escape(flat[c])).join(',') + '\n');
+        }
+        offset += rows.length;
+        hasMore = rows.length === PAGE_SIZE && offset < 50000;
+        if (hasMore) rows = await page(offset);
       }
-      offset += rows.length;
-      hasMore = rows.length === PAGE_SIZE && offset < 50000;
+      res.end();
+    } catch (err) {
+      // Later pages can still fail — a dropped connection, a statement
+      // timeout. The rows already sent cannot be taken back, so end the
+      // response rather than let it reach the exception filter, and make the
+      // truncation visible in the file itself.
+      this.logger.error(
+        `Audit log export failed after ${offset} rows: ${(err as Error).message}`,
+      );
+      res.write('# EXPORT INCOMPLETE — this file was truncated by a server error\n');
+      res.end();
     }
-    res.end();
   }
 }

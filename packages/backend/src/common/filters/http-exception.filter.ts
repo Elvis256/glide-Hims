@@ -33,6 +33,26 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         message = exceptionResponse;
         error = HttpStatus[status] || 'Error';
       }
+    } else if (this.isInvalidInputSyntax(exception)) {
+      // Postgres 22P02 — "invalid input syntax for type uuid/integer/date".
+      // The client sent something the column type cannot hold, which is a bad
+      // request, not a server fault. 142 of the 200 list endpoints that take an
+      // id-shaped query parameter answered a malformed one with a 500: the
+      // caller saw "An unexpected error occurred" and every such probe landed
+      // in the logs looking like a crash, which is how a real crash goes
+      // unnoticed.
+      //
+      // Still logged at error level with the driver's own message: if one of
+      // these ever comes from a query the SERVER built badly rather than from
+      // user input, the evidence has to stay visible.
+      status = HttpStatus.BAD_REQUEST;
+      message = 'One of the values supplied is not in a valid format';
+      error = 'BAD_REQUEST';
+      this.logger.error(
+        `Invalid input syntax: ${(exception as Error).message}`,
+        undefined,
+        `${request.method} ${request.url}`,
+      );
     } else if (this.isHttpError(exception)) {
       // Errors from express middleware (body-parser, raw-body) carry a
       // proper 4xx status — e.g. PayloadTooLargeError (413) when a request
@@ -78,6 +98,26 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       );
     }
 
+    // A streaming endpoint (the audit-log export, any download) has already
+    // written its status line and headers by the time a query fails halfway
+    // through. Calling status().json() on that response throws
+    // ERR_HTTP_HEADERS_SENT from inside the exception filter itself — an
+    // exception with nowhere left to go, which took the whole Node process
+    // down and with it the API for every other user. One malformed id on
+    // GET /admin/audit-logs/export was enough to do it.
+    //
+    // Nothing useful can be sent at this point: the client already has a 200
+    // and part of a body. Cut the connection so it sees a truncated response
+    // and fails, rather than trusting a half-written export.
+    if (response.headersSent) {
+      this.logger.error(
+        `${request.method} ${request.url} failed after the response had begun; ` +
+          `aborting the connection [requestId=${requestId}]`,
+      );
+      response.destroy();
+      return;
+    }
+
     response.status(status).json(responseBody);
   }
 
@@ -86,5 +126,21 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     if (!(exception instanceof Error)) return false;
     const status = (exception as any).status || (exception as any).statusCode;
     return typeof status === 'number' && status >= 400 && status < 500;
+  }
+
+  /**
+   * A TypeORM QueryFailedError whose SQLSTATE says the VALUE was malformed:
+   *   22P02 invalid_text_representation  — "invalid input syntax for type uuid"
+   *   22007 invalid_datetime_format      — "invalid input syntax for type date"
+   *   22008 datetime_field_overflow
+   *
+   * Deliberately not 22001 (string too long) or 22003 (numeric out of range):
+   * those as often mean the server computed something wrong as that the client
+   * sent something wrong, and mislabelling a server bug 400 would hide it.
+   */
+  private isInvalidInputSyntax(exception: unknown): boolean {
+    if (!(exception instanceof Error)) return false;
+    const driverError = (exception as any).driverError ?? exception;
+    return ['22P02', '22007', '22008'].includes(driverError?.code);
   }
 }

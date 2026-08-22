@@ -1,11 +1,11 @@
 import { NestFactory, Reflector } from '@nestjs/core';
 import {
-  ValidationPipe,
   BadRequestException,
   Logger,
   ClassSerializerInterceptor,
 } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
+import { AbsentAwareValidationPipe } from './common/pipes/absent-aware-validation.pipe';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import { readFileSync, existsSync } from 'fs';
@@ -120,7 +120,7 @@ async function bootstrap() {
 
   // Global validation pipe
   app.useGlobalPipes(
-    new ValidationPipe({
+    new AbsentAwareValidationPipe({
       whitelist: true,
       forbidNonWhitelisted: true,
       transform: true,
