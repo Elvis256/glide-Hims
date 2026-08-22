@@ -736,6 +736,10 @@ export class SetupService {
         userId: user.id,
         roleId: superAdminRole.id,
         facilityId: facility.id,
+        // A NULL tenant_id here is invisible to every tenant-filtered read of
+        // user_roles, so the founding admin of a new tenant would show no roles
+        // and receive no role-targeted notification. See UsersService.assignRole.
+        tenantId: tenant.id,
       });
       await queryRunner.manager.save(userRole);
 
@@ -1077,6 +1081,10 @@ export class SetupService {
         userId: user.id,
         roleId: superAdminRole.id,
         facilityId: facility.id,
+        // A NULL tenant_id here is invisible to every tenant-filtered read of
+        // user_roles, so the founding admin of a new tenant would show no roles
+        // and receive no role-targeted notification. See UsersService.assignRole.
+        tenantId: tenant.id,
       });
       await queryRunner.manager.save(userRole);
 
@@ -1378,6 +1386,10 @@ export class SetupService {
         userId: user.id,
         roleId: superAdminRole.id,
         facilityId: facility.id,
+        // A NULL tenant_id here is invisible to every tenant-filtered read of
+        // user_roles, so the founding admin of a new tenant would show no roles
+        // and receive no role-targeted notification. See UsersService.assignRole.
+        tenantId: tenant.id,
       });
       await queryRunner.manager.save(userRole);
 

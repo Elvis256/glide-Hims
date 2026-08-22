@@ -79,14 +79,14 @@ export class EmergencyController {
   @AuthWithPermissions('emergency.update')
   @ApiOperation({ summary: 'Discharge emergency case' })
   dischargeCase(@Param('id') id: string, @Body() dto: DischargeEmergencyDto, @Request() req: any) {
-    return this.emergencyService.dischargeCase(id, dto, req.user?.tenantId);
+    return this.emergencyService.dischargeCase(id, dto, req.user?.id, req.user?.tenantId);
   }
 
   @Put('cases/:id/admit')
   @AuthWithPermissions('emergency.update')
   @ApiOperation({ summary: 'Admit emergency case to IPD' })
   admitToWard(@Param('id') id: string, @Body() dto: AdmitFromEmergencyDto, @Request() req: any) {
-    return this.emergencyService.admitToWard(id, dto, req.user?.tenantId);
+    return this.emergencyService.admitToWard(id, dto, req.user?.id, req.user?.tenantId);
   }
 
   // ========== QUEUES ==========

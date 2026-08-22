@@ -18,6 +18,7 @@ import { Patient } from '../../../database/entities/patient.entity';
 import { Facility } from '../../../database/entities/facility.entity';
 import { VitalsService } from '../../vitals/vitals.service';
 import { AuditLogService } from '../../../common/interceptors/audit-log.service';
+import { IpdService } from '../../ipd/ipd.service';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -52,6 +53,8 @@ const mockManager = {
     setLock: jest.fn().mockReturnThis(),
     where: jest.fn().mockReturnThis(),
     andWhere: jest.fn().mockReturnThis(),
+    // registerCase joins the encounter to find an open case for this patient
+    innerJoin: jest.fn().mockReturnThis(),
     getOne: jest.fn(),
     getCount: jest.fn().mockResolvedValue(0),
   })),
@@ -68,6 +71,7 @@ describe('EmergencyService', () => {
   let patientRepo: ReturnType<typeof createMockRepository>;
   let vitalsService: { recordFromSource: jest.Mock };
   let auditLogService: { log: jest.Mock };
+  let ipdService: { createAdmission: jest.Mock };
   let dataSource: { transaction: jest.Mock; createQueryRunner: jest.Mock };
 
   const FACILITY_ID = 'facility-001';
@@ -84,6 +88,13 @@ describe('EmergencyService', () => {
 
     vitalsService = { recordFromSource: jest.fn().mockResolvedValue(undefined) };
     auditLogService = { log: jest.fn().mockResolvedValue(undefined) };
+    // admitToWard creates the real IPD admission rather than only flipping a
+    // status, so the service now depends on IpdService.
+    ipdService = {
+      createAdmission: jest
+        .fn()
+        .mockResolvedValue({ id: 'admission-001', admissionNumber: 'ADM202608220001' }),
+    };
 
     // dataSource.transaction invokes the callback with our mockManager
     dataSource = {
@@ -99,6 +110,8 @@ describe('EmergencyService', () => {
       setLock: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
+      // registerCase joins the encounter to look for an open case on this patient
+      innerJoin: jest.fn().mockReturnThis(),
       getOne: jest.fn(),
       getCount: jest.fn().mockResolvedValue(0),
     });
@@ -112,6 +125,7 @@ describe('EmergencyService', () => {
         { provide: DataSource, useValue: dataSource },
         { provide: VitalsService, useValue: vitalsService },
         { provide: AuditLogService, useValue: auditLogService },
+        { provide: IpdService, useValue: ipdService },
       ],
     }).compile();
 
@@ -337,7 +351,7 @@ describe('EmergencyService', () => {
       treatmentNotes: 'Follow up in 3 days',
     } as any;
 
-    const result = await service.dischargeCase(CASE_ID, dto, TENANT_ID);
+    const result = await service.dischargeCase(CASE_ID, dto, USER_ID, TENANT_ID);
 
     expect(result.status).toBe(TriageStatus.DISCHARGED);
     expect(encounterRepo.update).toHaveBeenCalledWith(
@@ -361,7 +375,7 @@ describe('EmergencyService', () => {
 
     const dto = { primaryDiagnosis: 'N/A' } as any;
 
-    await expect(service.dischargeCase(CASE_ID, dto, TENANT_ID)).rejects.toThrow(
+    await expect(service.dischargeCase(CASE_ID, dto, USER_ID, TENANT_ID)).rejects.toThrow(
       BadRequestException,
     );
   });
@@ -378,7 +392,7 @@ describe('EmergencyService', () => {
 
     const dto = { primaryDiagnosis: 'N/A' } as any;
 
-    await expect(service.dischargeCase(CASE_ID, dto, TENANT_ID)).rejects.toThrow(
+    await expect(service.dischargeCase(CASE_ID, dto, USER_ID, TENANT_ID)).rejects.toThrow(
       BadRequestException,
     );
   });
@@ -417,7 +431,7 @@ describe('EmergencyService', () => {
 
     const dto = { primaryDiagnosis: 'N/A' } as any;
 
-    await expect(service.dischargeCase('nonexistent-id', dto, TENANT_ID)).rejects.toThrow(
+    await expect(service.dischargeCase('nonexistent-id', dto, USER_ID, TENANT_ID)).rejects.toThrow(
       NotFoundException,
     );
   });
