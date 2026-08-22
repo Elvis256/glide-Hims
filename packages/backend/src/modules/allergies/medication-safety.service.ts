@@ -76,7 +76,11 @@ export class MedicationSafetyService {
     @Optional()
     @Inject(forwardRef(() => PatientActiveMedicationService))
     private readonly activeMedService: PatientActiveMedicationService | null,
+    // Same trap as activeMedService above: without an explicit token a union
+    // parameter type injects undefined, and the drug–disease interaction check
+    // guarded on it below was skipped on every prescription.
     @Optional()
+    @Inject(DrugDiseaseService)
     private readonly drugDiseaseService: DrugDiseaseService | null,
   ) {}
 

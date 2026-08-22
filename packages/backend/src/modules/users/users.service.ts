@@ -373,6 +373,11 @@ export class UsersService {
           userId: savedUser.id,
           roleId: roleId,
           facilityId: facilityId || undefined,
+          // Same reason as assignRole(): a NULL tenant_id here is invisible to
+          // every tenant-filtered read of user_roles — getUserRoles() shows the
+          // user no roles, and getUserIdsByRole() never finds them, so no
+          // role-targeted notification ever reaches anyone created this way.
+          tenantId: savedUser.tenantId || tenantId,
         });
         await queryRunner.manager.save(userRole);
       }
@@ -1661,6 +1666,9 @@ export class UsersService {
                 userId: savedUser.id,
                 roleId: role.id,
                 facilityId: facilityId || undefined,
+                // NULL tenant_id here hides the row from every tenant-filtered
+                // read — see create() and assignRole().
+                tenantId: savedUser.tenantId || tenantId,
               });
               await queryRunner.manager.save(userRole);
             }

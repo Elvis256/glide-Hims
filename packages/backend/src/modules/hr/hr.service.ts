@@ -529,6 +529,10 @@ export class HrService {
           userId: savedUser.id,
           roleId: dto.roleId,
           facilityId: dto.facilityId,
+          // NULL tenant_id here hides the row from every tenant-filtered read
+          // of user_roles — the staff member ends up with no visible role and
+          // receives no role-targeted notification. See UsersService.assignRole.
+          tenantId: requireTenantId(tenantId),
         });
         await this.userRoleRepo.save(userRole);
       }
