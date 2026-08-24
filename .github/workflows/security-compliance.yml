@@ -49,11 +49,16 @@ jobs:
           cache: 'pnpm'
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Generate CycloneDX SBOMs
+      - name: Generate CycloneDX SBOM
+        # cdxgen, not cyclonedx-npm. This is a pnpm workspace and there is no
+        # package-lock.json, so cyclonedx-npm cannot produce anything: it exits
+        # 254 with "No evidence: no package lock file nor npm shrinkwrap file".
+        # This job could never have passed, which nobody noticed because no
+        # Actions run on this repository has ever reached a runner.
         run: |
           mkdir -p compliance/evidence/releases/sbom
-          npx -y @cyclonedx/cyclonedx-npm --output-file compliance/evidence/releases/sbom/root-bom.json
-          npx -y @cyclonedx/cyclonedx-npm --package-lock-only --ignore-npm-errors --output-file compliance/evidence/releases/sbom/lockfile-bom.json
+          npx -y @cyclonedx/cdxgen@11 -t pnpm --no-recurse \
+            -o compliance/evidence/releases/sbom/root-bom.json
       - name: Upload SBOM artifacts
         uses: actions/upload-artifact@v4
         with:
