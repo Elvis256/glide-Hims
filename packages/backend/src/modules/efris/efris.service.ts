@@ -28,16 +28,28 @@ export class EfrisService {
     @InjectRepository(EfrisConfig) private configRepo: Repository<EfrisConfig>,
   ) {}
 
-  async getConfig(tenantId: string): Promise<EfrisConfig | null> {
-    return this.configRepo.findOne({ where: { tenantId } });
+  async getConfig(tenantId: string): Promise<(EfrisConfig & { apiKeyConfigured: boolean }) | null> {
+    const cfg = await this.configRepo.findOne({ where: { tenantId } });
+    if (!cfg) return null;
+    // The key itself is @Exclude()d from the response, so the page has no way
+    // to tell "no key set" from "key set but hidden". Say so explicitly.
+    return Object.assign(cfg, { apiKeyConfigured: !!cfg.apiKeyEncrypted });
   }
 
   async upsertConfig(dto: UpsertEfrisConfigDto, tenantId: string): Promise<EfrisConfig> {
     let cfg = await this.configRepo.findOne({ where: { tenantId } });
+    // Only apply what was actually sent. class-transformer materialises absent
+    // optional properties as undefined, and a blind Object.assign would then
+    // write that over stored values — which matters most for the credential,
+    // since the page can no longer read it back to re-send it. Saving the form
+    // without retyping the key must not erase the key.
+    const provided = Object.fromEntries(
+      Object.entries(dto).filter(([, v]) => v !== undefined && v !== ''),
+    );
     if (cfg) {
-      Object.assign(cfg, dto);
+      Object.assign(cfg, provided);
     } else {
-      cfg = this.configRepo.create({ ...dto, tenantId });
+      cfg = this.configRepo.create({ ...(provided as Partial<EfrisConfig>), tenantId });
     }
     return this.configRepo.save(cfg);
   }
