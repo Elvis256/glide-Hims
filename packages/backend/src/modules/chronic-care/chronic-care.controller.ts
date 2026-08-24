@@ -25,6 +25,7 @@ import {
 import { ChronicStatus } from '../../database/entities/patient-chronic-condition.entity';
 import { RequireModule } from '../auth/decorators/module.decorator';
 import { ModuleGuard } from '../auth/guards/module.guard';
+import { FacilityId } from '../../common/decorators/facility-id.decorator';
 
 @ApiTags('Chronic Care')
 @ApiBearerAuth()
@@ -39,7 +40,7 @@ export class ChronicCareController {
   @AuthWithPermissions('chronic.read')
   @ApiOperation({ summary: 'Get chronic care dashboard statistics' })
   @ApiQuery({ name: 'facilityId', required: true })
-  async getDashboard(@Query('facilityId') facilityId: string, @Request() req: any) {
+  async getDashboard(@FacilityId() facilityId: string, @Request() req: any) {
     return this.chronicCareService.getDashboardStats(facilityId, req.user?.tenantId);
   }
 
@@ -61,7 +62,7 @@ export class ChronicCareController {
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
   async getPatients(
-    @Query('facilityId') facilityId: string,
+    @FacilityId() facilityId: string,
     @Query() query: ChronicPatientsQueryDto,
     @Request() req: any,
   ) {
@@ -81,7 +82,7 @@ export class ChronicCareController {
   @ApiQuery({ name: 'facilityId', required: true })
   @ApiQuery({ name: 'limit', required: false })
   async getOverdue(
-    @Query('facilityId') facilityId: string,
+    @FacilityId() facilityId: string,
     @Query('limit') limit?: number,
     @Request() req?: any,
   ) {
@@ -93,7 +94,7 @@ export class ChronicCareController {
   @ApiOperation({ summary: 'Register patient with chronic condition' })
   @ApiQuery({ name: 'facilityId', required: true })
   async register(
-    @Query('facilityId') facilityId: string,
+    @FacilityId() facilityId: string,
     @Body() dto: RegisterChronicConditionDto,
     @CurrentUser() user: any,
     @Request() req: any,
@@ -125,7 +126,7 @@ export class ChronicCareController {
   @ApiQuery({ name: 'facilityId', required: true })
   async sendReminder(
     @Param('id') id: string,
-    @Query('facilityId') facilityId: string,
+    @FacilityId() facilityId: string,
     @CurrentUser() user: any,
     @Request() req: any,
   ) {
@@ -137,7 +138,7 @@ export class ChronicCareController {
   @ApiOperation({ summary: 'Send reminders to multiple patients' })
   @ApiQuery({ name: 'facilityId', required: true })
   async sendBulkReminders(
-    @Query('facilityId') facilityId: string,
+    @FacilityId() facilityId: string,
     @Body() dto: SendBulkReminderDto,
     @CurrentUser() user: any,
     @Request() req: any,
@@ -149,7 +150,7 @@ export class ChronicCareController {
   @AuthWithPermissions('chronic.create')
   @ApiOperation({ summary: 'Auto-schedule reminders for upcoming follow-ups' })
   @ApiQuery({ name: 'facilityId', required: true })
-  async scheduleReminders(@Query('facilityId') facilityId: string, @Request() req: any) {
+  async scheduleReminders(@FacilityId() facilityId: string, @Request() req: any) {
     const count = await this.chronicCareService.scheduleUpcomingReminders(
       facilityId,
       req.user?.tenantId,

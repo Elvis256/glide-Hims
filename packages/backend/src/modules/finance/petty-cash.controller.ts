@@ -20,6 +20,7 @@ import {
 } from './dto/petty-cash.dto';
 import { RequireModule } from '../auth/decorators/module.decorator';
 import { ModuleGuard } from '../auth/guards/module.guard';
+import { FacilityId } from '../../common/decorators/facility-id.decorator';
 
 @ApiTags('Petty Cash')
 @ApiBearerAuth()
@@ -40,7 +41,7 @@ export class PettyCashController {
   @AuthWithPermissions('finance.read')
   @ApiOperation({ summary: 'List petty cash funds' })
   @ApiQuery({ name: 'facilityId', required: false })
-  async findAllFunds(@Query('facilityId') facilityId: string, @Request() req: any) {
+  async findAllFunds(@FacilityId() facilityId: string, @Request() req: any) {
     return this.pettyCashService.findAllFunds(facilityId, req.user?.tenantId);
   }
 

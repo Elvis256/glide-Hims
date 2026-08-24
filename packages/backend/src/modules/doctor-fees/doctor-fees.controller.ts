@@ -16,6 +16,7 @@ import { RequireModule } from '../auth/decorators/module.decorator';
 import { ModuleGuard } from '../auth/guards/module.guard';
 import { DoctorFeesService } from './doctor-fees.service';
 import { UpsertDoctorFeeProfileDto } from './doctor-fees.dto';
+import { FacilityId } from '../../common/decorators/facility-id.decorator';
 
 @ApiTags('Doctor Fees')
 @RequireModule('finance')
@@ -64,7 +65,7 @@ export class DoctorFeesController {
   preview(
     @Query('doctorId') doctorId: string | undefined,
     @Query('departmentId') departmentId: string | undefined,
-    @Query('facilityId') facilityId: string,
+    @FacilityId() facilityId: string,
     @Query('patientId') patientId: string | undefined,
     @Request() req: any,
   ) {

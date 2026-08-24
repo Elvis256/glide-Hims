@@ -14,6 +14,7 @@ import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { SyncService } from './sync.service';
 import { PushChangesDto, PullChangesDto, ResolveConflictDto } from './dto/sync.dto';
 import { SyncableEntity } from '../../database/entities/sync-queue.entity';
+import { FacilityId } from '../../common/decorators/facility-id.decorator';
 
 @ApiTags('Offline Sync')
 @ApiBearerAuth()
@@ -37,7 +38,7 @@ export class SyncController {
   @ApiQuery({ name: 'entityTypes', required: false, isArray: true, enum: SyncableEntity })
   @ApiQuery({ name: 'limit', required: false })
   pullChanges(
-    @Query('facilityId') facilityId: string,
+    @FacilityId() facilityId: string,
     @Query('clientId') clientId: string,
     @Query('since') since: number,
     @Query('entityTypes') entityTypes?: SyncableEntity[],
@@ -60,7 +61,7 @@ export class SyncController {
   @ApiQuery({ name: 'facilityId', required: true })
   @ApiQuery({ name: 'clientId', required: false })
   getConflicts(
-    @Query('facilityId') facilityId: string,
+    @FacilityId() facilityId: string,
     @Query('clientId') clientId?: string,
     @Request() req?: any,
   ) {
@@ -84,7 +85,7 @@ export class SyncController {
   @ApiQuery({ name: 'facilityId', required: true })
   @ApiQuery({ name: 'clientId', required: true })
   getSyncStatus(
-    @Query('facilityId') facilityId: string,
+    @FacilityId() facilityId: string,
     @Query('clientId') clientId: string,
     @Request() req?: any,
   ) {
@@ -97,7 +98,7 @@ export class SyncController {
   @ApiQuery({ name: 'facilityId', required: true })
   @ApiQuery({ name: 'clientId', required: true })
   retryFailed(
-    @Query('facilityId') facilityId: string,
+    @FacilityId() facilityId: string,
     @Query('clientId') clientId: string,
     @Request() req?: any,
   ) {
