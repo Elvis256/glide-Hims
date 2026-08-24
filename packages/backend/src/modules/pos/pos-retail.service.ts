@@ -142,18 +142,29 @@ export class PosRetailService {
         restockable: boolean;
       }> = [];
 
+      // Quantities claimed by EARLIER LINES OF THIS SAME REQUEST. The map above
+      // only knows about previously-committed returns, so each line was checked
+      // against the untouched balance and a repeated line passed every time:
+      // returning 5 and 5 of a quantity of 5 was accepted, refunding 100,000 on
+      // a 50,000 sale and restocking ten of five. The prior-returns check, the
+      // row lock and the concurrent-return guard were all correct — the
+      // duplicate simply never met them. Charged against the same balance now.
+      const claimedInThisRequest = new Map<string, number>();
+
       for (const line of dto.items) {
         const saleItem = sale.items.find((i) => i.id === line.saleItemId);
         if (!saleItem) {
           throw new BadRequestException(`Sale item ${line.saleItemId} not found in sale`);
         }
         const alreadyReturned = returnedQtyMap.get(saleItem.id) || 0;
-        const returnable = saleItem.quantity - alreadyReturned;
+        const claimed = claimedInThisRequest.get(saleItem.id) || 0;
+        const returnable = saleItem.quantity - alreadyReturned - claimed;
         if (line.qtyReturned <= 0 || line.qtyReturned > returnable) {
           throw new BadRequestException(
             `Cannot return ${line.qtyReturned} of "${saleItem.itemName}" — returnable qty is ${returnable}`,
           );
         }
+        claimedInThisRequest.set(saleItem.id, claimed + line.qtyReturned);
         const lineGross = (Number(saleItem.grossAmount) / saleItem.quantity) * line.qtyReturned;
         totalRefund += lineGross;
         returnItemsData.push({

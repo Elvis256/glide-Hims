@@ -1,4 +1,6 @@
 import { Entity, Column, ManyToOne, JoinColumn, Index, Unique } from 'typeorm';
+import { Exclude } from 'class-transformer';
+import { piiColumnTransformer } from '../../common/crypto/pii-crypto';
 import { BaseEntity } from './base.entity';
 import { User } from './user.entity';
 import { PosShift, PosRegister } from './pos.entity';
@@ -140,7 +142,22 @@ export class EfrisConfig extends BaseEntity {
   @Column({ name: 'production_url', nullable: true })
   productionUrl: string;
 
-  @Column({ name: 'api_key_encrypted', type: 'text', nullable: true })
+  /**
+   * The URA credential. The column has always been called `api_key_encrypted`
+   * and nothing encrypted it: the DTO took a plain string, upsertConfig
+   * Object.assign'd it straight in, and GET /efris/config handed it back
+   * verbatim to anyone holding `efris.config`. Now genuinely encrypted at rest
+   * (the transformer passes legacy plaintext through unchanged on read) and
+   * @Exclude()d from every response, the way NotificationConfig already treats
+   * smtpPassword and smsApiKey.
+   */
+  @Exclude()
+  @Column({
+    name: 'api_key_encrypted',
+    type: 'text',
+    nullable: true,
+    transformer: piiColumnTransformer,
+  })
   apiKeyEncrypted: string;
 
   @Column({ name: 'is_enabled', default: false })

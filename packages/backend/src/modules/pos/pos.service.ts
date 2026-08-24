@@ -115,11 +115,11 @@ export class PosService {
       });
       if (!shift) throw new NotFoundException('No open shift found');
 
-      // Count ALL payment types for expected balance
-      const totalSales = add(
-        add(Number(shift.cashSales), Number(shift.mobileMoneySales)),
-        Number(shift.cardSales),
-      );
+      // Only cash belongs in the drawer: mobile money and card never touch it,
+      // so they must not move the expected balance. (A `totalSales` was
+      // computed here and then used by nothing — the comment claimed the
+      // expected balance counted all payment types, and it never did. It was
+      // right not to; the comment was wrong.)
       const expectedBalance = add(Number(shift.openingBalance), Number(shift.cashSales));
       const cashDifference = subtract(dto.closingBalance, expectedBalance);
 
@@ -201,40 +201,13 @@ export class PosService {
     return qb.getMany();
   }
 
-  async recordSaleInShift(
-    cashierId: string,
-    tenantId: string,
-    paymentMethod: string,
-    amount: number,
-  ) {
-    await this.dataSource.transaction(async (manager) => {
-      const shift = await manager.findOne(PosShift, {
-        where: { cashierId, tenantId, status: 'open' },
-        lock: { mode: 'pessimistic_write' },
-      });
-      if (!shift) {
-        this.logger.warn(`No open shift for cashier ${cashierId} — sale not tracked in shift`);
-        return;
-      }
-
-      shift.transactionCount += 1;
-      switch (paymentMethod) {
-        case 'cash':
-          shift.cashSales = add(Number(shift.cashSales), amount);
-          break;
-        case 'mobile_money':
-          shift.mobileMoneySales = add(Number(shift.mobileMoneySales), amount);
-          break;
-        case 'card':
-          shift.cardSales = add(Number(shift.cardSales), amount);
-          break;
-        default:
-          shift.cashSales = add(Number(shift.cashSales), amount);
-      }
-
-      await manager.save(PosShift, shift);
-    });
-  }
+  // recordSaleInShift was removed on 2026-08-24. It had no callers — every sale
+  // goes through PosShiftGuardService.recordSale — and the two disagreed on the
+  // case that matters: this one's `default:` branch added credit and insurance
+  // amounts to `cashSales`, while the live path deliberately adds nothing.
+  // Since expectedBalance = openingBalance + cashSales, wiring this up again
+  // would have made the drawer short by the value of every non-cash sale at
+  // close, and blamed the cashier for it. Use PosShiftGuardService.
 
   // ─── Wholesale Customers ──────────────────────────────────────────────────
 
