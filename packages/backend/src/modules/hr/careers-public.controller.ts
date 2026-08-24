@@ -98,7 +98,9 @@ export class CareersPublicController {
   ) {
     const resolvedTenantId = await this.resolveTenantId(tenantSlug, tenantId);
     return withTenant(resolvedTenantId, () =>
-      this.hrService.createJobApplication({ ...dto, jobPostingId: id }, resolvedTenantId),
+      this.hrService.createJobApplication({ ...dto, jobPostingId: id }, resolvedTenantId, {
+        publicSubmission: true,
+      }),
     );
   }
 }
