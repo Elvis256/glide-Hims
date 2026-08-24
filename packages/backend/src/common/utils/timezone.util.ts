@@ -139,6 +139,22 @@ export function localDateString(instant: Date, zone: string = hospitalTimeZone()
   return `${at('year')}-${at('month')}-${at('day')}`;
 }
 
+/** The wall-clock time where the hospital is, as HH:MM:SS. */
+export function localTimeString(instant: Date, zone: string = hospitalTimeZone()): string {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: zone,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(instant);
+  const at = (type: string) => parts.find((p) => p.type === type)?.value ?? '00';
+  // en-GB renders midnight as 24 in some ICU versions; a `time` column will not
+  // take 24:00:00.
+  const hour = at('hour') === '24' ? '00' : at('hour');
+  return `${hour}:${at('minute')}:${at('second')}`;
+}
+
 /**
  * The instants bounding the hospital's day containing `value`.
  *

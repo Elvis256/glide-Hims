@@ -6,11 +6,13 @@ import {
   Param,
   ParseUUIDPipe,
   Req,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { IsString, IsOptional, MaxLength } from 'class-validator';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 import { PatientDebtService } from './patient-debt.service';
 
 class VisitBlockReasonDto {
@@ -22,6 +24,7 @@ class VisitBlockReasonDto {
 
 @ApiTags('Patient Debt')
 @RequireModule('billing')
+@UseGuards(ModuleGuard)
 @Controller('patients/:patientId/debt')
 export class PatientDebtController {
   constructor(private readonly debtService: PatientDebtService) {}

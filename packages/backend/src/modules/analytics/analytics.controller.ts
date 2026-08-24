@@ -8,6 +8,7 @@ import {
   ParseIntPipe,
   DefaultValuePipe,
   BadRequestException,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { DataSource } from 'typeorm';
@@ -15,10 +16,12 @@ import { AnalyticsService } from './analytics.service';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
 @ApiTags('Analytics')
 @ApiBearerAuth()
 @RequireModule('reports')
+@UseGuards(ModuleGuard)
 @Controller('analytics')
 export class AnalyticsController {
   private readonly logger = new Logger(AnalyticsController.name);

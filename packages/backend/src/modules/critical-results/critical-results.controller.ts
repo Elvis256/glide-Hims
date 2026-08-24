@@ -1,8 +1,9 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query, Req } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Request } from 'express';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 import {
   AcknowledgeCriticalResultDto,
   CancelCriticalResultDto,
@@ -16,6 +17,7 @@ interface AuthenticatedRequest extends Request {
 
 @ApiTags('critical-results')
 @RequireModule('diagnostics')
+@UseGuards(ModuleGuard)
 @Controller('critical-results')
 export class CriticalResultsController {
   constructor(private readonly svc: CriticalResultsService) {}

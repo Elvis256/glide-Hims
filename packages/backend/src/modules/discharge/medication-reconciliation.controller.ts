@@ -1,7 +1,8 @@
-import { Controller, Get, Post, Patch, Body, Param } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, Param, UseGuards } from '@nestjs/common';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 import { MedicationReconciliationService } from './medication-reconciliation.service';
 import { IsOptional, IsEnum, IsString, MaxLength } from 'class-validator';
 import { ReconciliationItemStatus } from '../../database/entities/medication-reconciliation.entity';
@@ -35,6 +36,7 @@ export class UpdateReconciliationItemDto {
 }
 
 @RequireModule('ipd')
+@UseGuards(ModuleGuard)
 @Controller('medication-reconciliations')
 export class MedicationReconciliationController {
   constructor(private readonly service: MedicationReconciliationService) {}

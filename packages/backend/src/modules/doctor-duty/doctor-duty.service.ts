@@ -1,4 +1,10 @@
-import { Injectable, Logger, NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, LessThan, Repository } from 'typeorm';
@@ -11,6 +17,7 @@ import {
   DoctorDutyFilterDto,
 } from './dto/doctor-duty.dto';
 import { requireTenantId } from '../../common/utils/tenant.util';
+import { localDateString, localTimeString } from '../../common/utils/timezone.util';
 
 @Injectable()
 export class DoctorDutyService {
@@ -24,6 +31,49 @@ export class DoctorDutyService {
     private readonly dataSource: DataSource,
   ) {}
 
+  /**
+   * The role predicate the duty board itself uses. Kept in one place so that
+   * "who can be checked in" and "who getAllDoctors lists" cannot drift apart.
+   */
+  private static readonly DOCTOR_ROLE_MATCH =
+    '(LOWER(role.name) LIKE :doctor OR LOWER(role.name) LIKE :consultant OR LOWER(role.name) LIKE :physician)';
+  private static readonly DOCTOR_ROLE_PARAMS = {
+    doctor: '%doctor%',
+    consultant: '%consultant%',
+    physician: '%physician%',
+  };
+
+  /**
+   * Refuse to put somebody on the doctors' duty board who is not a doctor here.
+   *
+   * `doctorId` was taken on trust: any uuid was written straight into the row.
+   * Checking in a lab technician returned 201 and put "Lab Tech 1 — on duty,
+   * room LAB" on the doctors' board; an id belonging to no user at all reached
+   * Postgres, tripped the foreign key and came back a 500. Because the id was
+   * never scoped to the tenant either, a user from another hospital would have
+   * been joined and their name rendered on this hospital's board.
+   */
+  private async assertIsDoctor(doctorId: string, tenantId: string): Promise<void> {
+    const doctor = await this.userRepo
+      .createQueryBuilder('user')
+      .leftJoin('user.userRoles', 'userRoles')
+      .leftJoin('userRoles.role', 'role')
+      .where('user.id = :doctorId', { doctorId })
+      .andWhere('user.tenant_id = :tenantId', { tenantId })
+      .andWhere('user.status = :status', { status: 'active' })
+      .andWhere(
+        DoctorDutyService.DOCTOR_ROLE_MATCH,
+        DoctorDutyService.DOCTOR_ROLE_PARAMS,
+      )
+      .getOne();
+
+    if (!doctor) {
+      throw new BadRequestException(
+        'That user is not an active doctor at this organisation and cannot be put on the duty roster.',
+      );
+    }
+  }
+
   async checkIn(
     dto: CheckInDto,
     markedById: string,
@@ -31,7 +81,8 @@ export class DoctorDutyService {
     tenantId?: string,
   ): Promise<DoctorDuty> {
     const tid = requireTenantId(tenantId);
-    const today = new Date().toISOString().split('T')[0];
+    await this.assertIsDoctor(dto.doctorId, tid);
+    const today = localDateString(new Date());
 
     return this.dataSource.transaction(async (manager) => {
       // Serialize per doctor+day — the check-then-insert below raced,
@@ -57,7 +108,7 @@ export class DoctorDutyService {
       if (existing) {
         // Update existing record
         existing.status = DutyStatus.ON_DUTY;
-        existing.checkInTime = new Date().toTimeString().split(' ')[0];
+        existing.checkInTime = localTimeString(new Date());
         existing.roomNumber = dto.roomNumber || existing.roomNumber;
         existing.departmentId = dto.departmentId || existing.departmentId;
         if (dto.maxPatients != null) existing.maxPatients = dto.maxPatients;
@@ -71,7 +122,7 @@ export class DoctorDutyService {
         departmentId: dto.departmentId,
         dutyDate: new Date(today),
         status: DutyStatus.ON_DUTY,
-        checkInTime: new Date().toTimeString().split(' ')[0],
+        checkInTime: localTimeString(new Date()),
         roomNumber: dto.roomNumber,
         ...(dto.maxPatients != null ? { maxPatients: dto.maxPatients } : {}),
         markedById,
@@ -86,10 +137,20 @@ export class DoctorDutyService {
    * Nightly sweep: duty rows from previous days left ON_DUTY (doctor forgot
    * to check out) stayed on the duty board forever. Runs cross-tenant in
    * system context by design (same as the other maintenance crons).
+   *
+   * The day this compares against is the WARD'S, not the server's. Every
+   * "today" in this service came from `new Date().toISOString()`, which is the
+   * UTC date, and the hospital is on UTC+3. So a doctor starting a night shift
+   * at 01:00 local was filed under yesterday — and then this sweep, running at
+   * 00:30 UTC, which is 03:30 in the ward, saw a duty row dated "before today"
+   * and marked them OFF_DUTY two and a half hours into the shift. The doctor
+   * who is physically in the building disappears from the duty board, and the
+   * board is what the queue, the escalation paths and the on-call lookup all
+   * read to decide who is here.
    */
   @Cron('30 0 * * *', { name: 'doctor-duty-auto-checkout' })
   async autoCheckoutStaleDuties(): Promise<void> {
-    const today = new Date().toISOString().split('T')[0];
+    const today = localDateString(new Date());
     const stale = await this.doctorDutyRepo.find({
       where: {
         status: In([DutyStatus.ON_DUTY, DutyStatus.ON_BREAK, DutyStatus.IN_CONSULTATION]),
@@ -117,7 +178,7 @@ export class DoctorDutyService {
     }
 
     duty.status = DutyStatus.OFF_DUTY;
-    duty.checkOutTime = new Date().toTimeString().split(' ')[0];
+    duty.checkOutTime = localTimeString(new Date());
     if (notes) duty.notes = notes;
 
     return this.doctorDutyRepo.save(duty);
@@ -125,6 +186,15 @@ export class DoctorDutyService {
 
   async updateStatus(id: string, status: DutyStatus, tenantId?: string): Promise<DoctorDuty> {
     const tid = requireTenantId(tenantId);
+    // The handler pulls a bare @Body('status') with no DTO behind it, so an
+    // absent field arrived as undefined, TypeORM skipped it on save, and the
+    // caller got a 200 and an unchanged row — "set status" reporting success
+    // while doing nothing.
+    if (!status || !Object.values(DutyStatus).includes(status)) {
+      throw new BadRequestException(
+        `status must be one of: ${Object.values(DutyStatus).join(', ')}`,
+      );
+    }
     const duty = await this.doctorDutyRepo.findOne({
       where: { id, tenantId: tid },
     });
@@ -141,7 +211,7 @@ export class DoctorDutyService {
     filter?: DoctorDutyFilterDto,
     tenantId?: string,
   ): Promise<DoctorDuty[]> {
-    const date = filter?.date || new Date().toISOString().split('T')[0];
+    const date = filter?.date || localDateString(new Date());
 
     const query = this.doctorDutyRepo
       .createQueryBuilder('duty')
@@ -178,10 +248,7 @@ export class DoctorDutyService {
       .leftJoinAndSelect('user.userRoles', 'userRoles')
       .leftJoinAndSelect('userRoles.role', 'role')
       .where('(userRoles.facilityId = :facilityId OR userRoles.facilityId IS NULL)', { facilityId })
-      .andWhere(
-        '(LOWER(role.name) LIKE :doctor OR LOWER(role.name) LIKE :consultant OR LOWER(role.name) LIKE :physician)',
-        { doctor: '%doctor%', consultant: '%consultant%', physician: '%physician%' },
-      )
+      .andWhere(DoctorDutyService.DOCTOR_ROLE_MATCH, DoctorDutyService.DOCTOR_ROLE_PARAMS)
       .andWhere('user.status = :status', { status: 'active' })
       .orderBy('user.fullName', 'ASC');
 
@@ -195,7 +262,7 @@ export class DoctorDutyService {
     date?: string,
     tenantId?: string,
   ): Promise<any[]> {
-    const targetDate = date || new Date().toISOString().split('T')[0];
+    const targetDate = date || localDateString(new Date());
 
     // Get all doctors
     const doctors = await this.getAllDoctors(facilityId, tenantId);
@@ -238,7 +305,7 @@ export class DoctorDutyService {
     tenantId?: string,
   ): Promise<void> {
     const tid = requireTenantId(tenantId);
-    const today = new Date().toISOString().split('T')[0];
+    const today = localDateString(new Date());
     await this.doctorDutyRepo.update(
       { doctorId, facilityId, dutyDate: new Date(today), tenantId: tid },
       { currentQueueCount: count },
@@ -252,7 +319,19 @@ export class DoctorDutyService {
     tenantId?: string,
   ): Promise<DoctorDuty> {
     const tid = requireTenantId(tenantId);
-    const date = dto.dutyDate || new Date().toISOString().split('T')[0];
+    await this.assertIsDoctor(dto.doctorId, tid);
+    const date = dto.dutyDate || localDateString(new Date());
+
+    // (doctor, facility, duty_date) is UNIQUE. checkIn takes an advisory lock
+    // and updates the existing row; this path did neither, so rostering the
+    // same doctor twice for one day hit the constraint and came back a 500 —
+    // an unexpected error for what is simply "already rostered".
+    const existing = await this.doctorDutyRepo.findOne({
+      where: { doctorId: dto.doctorId, facilityId, dutyDate: new Date(date), tenantId: tid },
+    });
+    if (existing) {
+      throw new ConflictException('That doctor is already rostered at this facility for that day.');
+    }
 
     const duty = this.doctorDutyRepo.create({
       ...dto,
