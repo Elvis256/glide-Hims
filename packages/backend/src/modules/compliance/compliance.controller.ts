@@ -1,8 +1,12 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Query, UseGuards, ParseEnumPipe } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ApiTags } from '@nestjs/swagger';
-import { ComplianceRecord, ComplianceRecordType } from './compliance-record.entity';
+import {
+  ComplianceRecord,
+  ComplianceRecordType,
+  COMPLIANCE_RECORD_TYPES,
+} from './compliance-record.entity';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequireModule } from '../auth/decorators/module.decorator';
@@ -38,7 +42,14 @@ export class ComplianceController {
   @Post(':type')
   @AuthWithPermissions('audit.read')
   async create(
-    @Param('type') type: ComplianceRecordType,
+    // Validated against the enum, not taken on trust. `record_type` is
+    // varchar(30); anything longer reached Postgres and came back as
+    // "value too long for type character varying(30)" — a 500 for what is
+    // plainly a bad request. The global filter deliberately does not map
+    // SQLSTATE 22001, because a string overflow is as often the server
+    // computing something wrong as it is bad input, so this is guarded at the
+    // parameter instead of by loosening that rule for everyone.
+    @Param('type', new ParseEnumPipe(COMPLIANCE_RECORD_TYPES)) type: ComplianceRecordType,
     @Body() payload: Record<string, any>,
     @CurrentUser() user: any,
   ) {

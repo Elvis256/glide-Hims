@@ -432,7 +432,7 @@ export class NotificationsService {
     const patient = await this.patientRepo.findOne({
       where: { id: dto.patientId, tenantId: tid },
     });
-    if (!patient) throw new Error('Patient not found');
+    if (!patient) throw new NotFoundException('Patient not found');
 
     const reminder = this.reminderRepo.create({
       facilityId,
@@ -484,7 +484,7 @@ export class NotificationsService {
         }));
 
       if (!patient) {
-        throw new Error('Patient not found');
+        throw new NotFoundException('Patient not found');
       }
 
       const emailConfig = configs.find(
@@ -632,7 +632,7 @@ export class NotificationsService {
     const reminder = await this.reminderRepo.findOne({
       where: { id, tenantId: tid },
     });
-    if (!reminder) throw new Error('Reminder not found');
+    if (!reminder) throw new NotFoundException('Reminder not found');
 
     reminder.status = ReminderStatus.CANCELLED;
     return this.reminderRepo.save(reminder);
