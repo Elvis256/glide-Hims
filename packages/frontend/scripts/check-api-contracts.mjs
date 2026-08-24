@@ -74,10 +74,22 @@ const ENDPOINTS = {
   'supplier-finance.ts:PaymentVoucher': `supplier-finance/payments?facilityId=${FAC}`,
   'supplier-finance.ts:CreditNote': `supplier-finance/credit-notes?facilityId=${FAC}`,
   'encounters.ts:Encounter': 'encounters?limit=1',
-  'prescriptions.ts:Prescription': 'prescriptions?limit=1',
+  // /prescriptions/queue, not /prescriptions. The queue FLATTENS patient,
+  // patientId, doctor and doctorId onto the prescription; the list nests the
+  // patient under encounter.patient instead. The interface describes the
+  // flattened shape, so probing the list reported five fields as missing that
+  // the queue sends. Two endpoints, two shapes — the caveat in this file's
+  // header, in practice.
+  'prescriptions.ts:Prescription': 'prescriptions/queue',
   'inventory.ts:InventoryItem': 'inventory/items?limit=1',
   'stores.ts:InventoryItem': 'stores/inventory?limit=1',
-  'hr.ts:Employee': 'hr/employees?limit=1',
+  // /hr/staff, not /hr/employees. Two endpoints, two shapes, one interface:
+  // /hr/employees returns the employees table (firstName, lastName,
+  // employeeNumber) while /hr/staff returns the user-joined view the Employee
+  // interface actually describes (fullName, username, roles, facility,
+  // lastLoginAt). Probing the wrong one reported six fields as missing that
+  // every consumer receives — and every consumer calls staff.list().
+  'hr.ts:Employee': 'hr/staff?limit=1',
   'radiology.ts:ImagingOrder': `radiology/orders?facilityId=${FAC}`,
   'lab.ts:LabTest': 'lab/tests',
   'patients.ts:Patient': 'patients?limit=1',

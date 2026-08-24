@@ -15,7 +15,6 @@ const synthFullName = (e: any): any => {
 export interface Employee {
   id: string;
   facilityId?: string;
-  employeeCode?: string;
   employeeNumber?: string;  // New field from merged user/employee
   userId?: string;
   firstName?: string;
