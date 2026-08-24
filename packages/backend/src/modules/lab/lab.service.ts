@@ -7,7 +7,16 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, Like, DataSource, EntityManager, ILike, In, DeepPartial } from 'typeorm';
+import {
+  Repository,
+  Between,
+  Like,
+  DataSource,
+  EntityManager,
+  ILike,
+  In,
+  DeepPartial,
+} from 'typeorm';
 import { LabTest, LabTestStatus } from '../../database/entities/lab-test.entity';
 import { LabSample, SampleStatus } from '../../database/entities/lab-sample.entity';
 import { LabResult, ResultStatus, AbnormalFlag } from '../../database/entities/lab-result.entity';
@@ -33,6 +42,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { EncountersService } from '../encounters/encounters.service';
 import { CriticalResultsService } from '../critical-results/critical-results.service';
 import { requireTenantId } from '../../common/utils/tenant.util';
+import { localDateString, sqlSafeTimeZone, dayBoundsUtc } from '../../common/utils/timezone.util';
 
 @Injectable()
 export class LabService {
@@ -57,8 +67,11 @@ export class LabService {
   ) {}
 
   private async generateSampleNumber(manager: EntityManager, tenantId?: string): Promise<string> {
-    const today = new Date();
-    const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
+    // The hospital's date, not the server's: on UTC+3 a sample collected at
+    // 01:00 was numbered under the previous day, so the number on the tube
+    // disagreed with the collection date on the form. Lock key and sequence
+    // lookup both derive from this string, so they stay consistent.
+    const dateStr = localDateString(new Date()).replace(/-/g, '');
     const lockKey = `lab_sample_num_${dateStr}_${tenantId || 'global'}`;
 
     // Use advisory lock to prevent concurrent generation collisions
@@ -484,6 +497,13 @@ export class LabService {
     return { data, total, limit: take, offset: skip };
   }
 
+  /**
+   * txn-connection-ok: still called from inside amendResult's transaction
+   * (to resolve reference ranges, before that transaction writes anything),
+   * on its own connection. It only reads the sample and its relations — rows
+   * that transaction never touches — so it sees the same committed state the
+   * transaction would.
+   */
   async getSample(id: string, tenantId?: string): Promise<LabSample> {
     const tid = requireTenantId(tenantId);
     const where: any = { id, tenantId: tid };
@@ -897,19 +917,12 @@ export class LabService {
               refRange.criticalHigh !== undefined ? Number(refRange.criticalHigh) : undefined;
           }
         }
-        abnormalFlag = this.calculateAbnormalFlag(
-          dto.numericValue,
-          refMin,
-          refMax,
-          critLow,
-          critHigh,
+        abnormalFlag = this.reconcileAbnormalFlag(
+          this.calculateAbnormalFlag(dto.numericValue, refMin, refMax, critLow, critHigh),
+          dto.abnormalFlag,
+          rangeResolved,
+          `enterResult: sample ${sample.sampleNumber}, parameter=${dto.parameter}`,
         );
-        if (!rangeResolved && abnormalFlag === AbnormalFlag.NORMAL) {
-          this.logger.warn(
-            `enterResult: reference ranges not resolved for sample ${sample.sampleNumber}, parameter=${dto.parameter}. Flagging ABNORMAL fail-closed.`,
-          );
-          abnormalFlag = AbnormalFlag.ABNORMAL;
-        }
       }
 
       const result = this.resultRepo.create({
@@ -1040,6 +1053,7 @@ export class LabService {
           summary: `${savedResult.parameter || 'Lab result'}: ${savedResult.value ?? ''}${savedResult.unit ? ' ' + savedResult.unit : ''} (${savedResult.abnormalFlag})`,
           flaggedById: userId,
           assignedToId: sample.order.orderedById,
+          facilityId: sample.order.encounter?.facilityId ?? sample.facilityId ?? null,
           tenantId,
         });
       }
@@ -1057,7 +1071,13 @@ export class LabService {
     // concurrent release calls could both observe status=VALIDATED, both
     // pass the guard, and both fire patient SMS + encounter return-to-doctor
     // side effects. We also keep the sample lock for the cascade write.
-    return this.dataSource.transaction(async (manager) => {
+    // Filled inside the transaction, acted on after it commits.
+    const followUps: {
+      sms: { patient: any; facilityId: string; message: string } | null;
+      encounterId: string | null;
+    } = { sms: null, encounterId: null };
+
+    const released = await this.dataSource.transaction(async (manager) => {
       const resultQb = manager
         .getRepository(LabResult)
         .createQueryBuilder('lr')
@@ -1129,7 +1149,7 @@ export class LabService {
         });
         this.logger.log(`Sample completed: ${lockedSample.sampleNumber}`);
 
-        // Notify patient via SMS that lab results are ready (fire-and-forget)
+        // Gather what the follow-ups need; they run after the commit below.
         try {
           const fullSample = await manager.findOne(LabSample, {
             where: { id: result.sampleId },
@@ -1146,49 +1166,61 @@ export class LabService {
           if (patient && facilityId) {
             const fname = String(patient.fullName || 'patient').split(' ')[0];
             const facName = facility?.name || 'the facility';
-            const msg =
-              `Hello ${fname}, your lab results from ${facName} are ready. ` +
-              `Please visit the facility or log in to your patient portal to view them.`;
-            this.notificationsService
-              .sendSmsToPatient({
-                patient,
-                facilityId,
-                message: msg,
-                tenantId,
-              })
-              .catch((e) => this.logger.warn(`Patient lab-ready SMS failed: ${e.message}`));
+            followUps.sms = {
+              patient,
+              facilityId,
+              message:
+                `Hello ${fname}, your lab results from ${facName} are ready. ` +
+                `Please visit the facility or log in to your patient portal to view them.`,
+            };
           }
+          followUps.encounterId = fullSample?.order?.encounterId || null;
         } catch (e) {
-          this.logger.warn(`Patient lab-ready SMS lookup failed: ${(e as Error).message}`);
+          this.logger.warn(`Patient lab-ready follow-up lookup failed: ${(e as Error).message}`);
         }
 
         // Billing is handled at order-creation time in orders.service.ts.
         // Do NOT bill again here to avoid duplicate invoice items.
-
-        // Return patient to doctor for results review
-        const fullSampleForOrder = await manager.findOne(LabSample, {
-          where: { id: result.sampleId },
-          relations: ['order'],
-        });
-        if (fullSampleForOrder?.order?.encounterId) {
-          try {
-            await this.encountersService.returnToDoctor(
-              fullSampleForOrder.order.encounterId,
-              'Lab results ready for review',
-              userId,
-            );
-            this.logger.log(
-              `Encounter ${fullSampleForOrder.order.encounterId} returned to doctor for lab results review`,
-            );
-          } catch (e) {
-            this.logger.warn(`Failed to return encounter to doctor: ${e.message}`);
-          }
-        }
       }
 
       this.logger.log(`Lab result released: ${id} by user ${userId}`);
       return savedResult;
     });
+
+    // Both of these used to run inside the transaction, on their own
+    // connections, before the release had committed.
+    //
+    // The SMS is the one that cannot be taken back: if the release then
+    // rolled back, the patient had already been told their results were
+    // ready for a result that was not released. returnToDoctor writes
+    // encounter state through another service, so it had the same problem in
+    // a recoverable form. Neither failure blocks the release, as before.
+    if (followUps.sms) {
+      this.notificationsService
+        .sendSmsToPatient({ ...followUps.sms, tenantId })
+        .catch((e) => this.logger.warn(`Patient lab-ready SMS failed: ${e.message}`));
+    }
+
+    if (followUps.encounterId) {
+      try {
+        await this.encountersService.returnToDoctor(
+          followUps.encounterId,
+          'Lab results ready for review',
+          userId,
+          // tenantId was never passed, so this threw and the .catch logged
+          // it: a released result left the encounter sitting in pending_lab
+          // and the patient was never handed back to the doctor for review.
+          tenantId,
+        );
+        this.logger.log(
+          `Encounter ${followUps.encounterId} returned to doctor for lab results review`,
+        );
+      } catch (e) {
+        this.logger.warn(`Failed to return encounter to doctor: ${e.message}`);
+      }
+    }
+
+    return released;
   }
 
   async amendResult(
@@ -1202,7 +1234,7 @@ export class LabService {
     // each other. We open a transaction and acquire a pessimistic write lock
     // on the row before reading-modifying-writing, so the second amender
     // observes the first amender's `previousValues` and value.
-    return this.dataSource.transaction(async (manager) => {
+    const amended = await this.dataSource.transaction(async (manager) => {
       const resultRepo = manager.getRepository(LabResult);
 
       const qb = resultRepo
@@ -1265,19 +1297,22 @@ export class LabService {
               refRange.criticalHigh !== undefined ? Number(refRange.criticalHigh) : undefined;
           }
         }
-        result.abnormalFlag = this.calculateAbnormalFlag(
-          dto.numericValue,
-          result.referenceMin,
-          result.referenceMax,
-          critLow,
-          critHigh,
+        result.abnormalFlag = this.reconcileAbnormalFlag(
+          this.calculateAbnormalFlag(
+            dto.numericValue,
+            result.referenceMin,
+            result.referenceMax,
+            critLow,
+            critHigh,
+          ),
+          // An amendment carries no flag of its own — AmendResultDto is a new
+          // value and a reason. Deliberately not carrying the OLD flag forward
+          // as a floor: correcting a wrongly-critical result is exactly what
+          // amendment is for, and a floor would make that impossible.
+          undefined,
+          rangeResolved,
+          `amendResult: result ${result.id}, parameter=${result.parameter}`,
         );
-        if (!rangeResolved && result.abnormalFlag === AbnormalFlag.NORMAL) {
-          this.logger.warn(
-            `amendResult: reference ranges not resolved for result ${result.id}, parameter=${result.parameter}. Flagging ABNORMAL fail-closed.`,
-          );
-          result.abnormalFlag = AbnormalFlag.ABNORMAL;
-        }
       }
 
       result.amendmentReason = dto.amendmentReason;
@@ -1310,33 +1345,42 @@ export class LabService {
         `Lab result amended: ${id} by user ${userId}, reason: ${dto.amendmentReason}`,
       );
 
-      // Re-flag (or bump) critical-result alert if the amendment moved into a
-      // critical band. Idempotent: flag() de-dupes by (resourceType,resourceId).
-      try {
-        const sev = this.toCriticalSeverity(savedResult.abnormalFlag);
-        if (sev) {
-          const sample = await this.getSample(savedResult.sampleId, tenantId);
-          if (sample?.order) {
-            await this.criticalResultsService.flag({
-              resourceType: 'lab',
-              resourceId: savedResult.id,
-              orderId: sample.orderId,
-              patientId: sample.patientId || '',
-              encounterId: sample.order.encounterId,
-              severity: sev,
-              summary: `[AMENDED] ${savedResult.parameter || 'Lab result'}: ${savedResult.value ?? ''}${savedResult.unit ? ' ' + savedResult.unit : ''} (${savedResult.abnormalFlag})`,
-              flaggedById: userId,
-              assignedToId: sample.order.orderedById,
-              tenantId,
-            });
-          }
-        }
-      } catch (e) {
-        this.logger.warn(`Failed to flag amended critical result: ${e.message}`);
-      }
-
       return savedResult;
     });
+
+    // Re-flag (or bump) the critical-result alert if the amendment moved into
+    // a critical band. Idempotent: flag() de-dupes by (resourceType,resourceId).
+    //
+    // This ran inside the transaction, through CriticalResultsService on its
+    // own connection, so the alert committed the moment it was written. An
+    // amendment that then rolled back left a clinician paged about a critical
+    // value that is not in the record. Out here the alert only exists once
+    // the amended result does.
+    try {
+      const sev = this.toCriticalSeverity(amended.abnormalFlag);
+      if (sev) {
+        const sample = await this.getSample(amended.sampleId, tenantId);
+        if (sample?.order) {
+          await this.criticalResultsService.flag({
+            resourceType: 'lab',
+            resourceId: amended.id,
+            orderId: sample.orderId,
+            patientId: sample.patientId || '',
+            encounterId: sample.order.encounterId,
+            severity: sev,
+            summary: `[AMENDED] ${amended.parameter || 'Lab result'}: ${amended.value ?? ''}${amended.unit ? ' ' + amended.unit : ''} (${amended.abnormalFlag})`,
+            flaggedById: userId,
+            assignedToId: sample.order.orderedById,
+            facilityId: sample.order.encounter?.facilityId ?? sample.facilityId ?? null,
+            tenantId,
+          });
+        }
+      }
+    } catch (e: any) {
+      this.logger.warn(`Failed to flag amended critical result: ${e.message}`);
+    }
+
+    return amended;
   }
 
   private toCriticalSeverity(
@@ -1360,8 +1404,8 @@ export class LabService {
     tenantId?: string,
   ): Promise<{ pending: number; completed: number }> {
     const tid = requireTenantId(tenantId);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // Bounded by the lab's own day; see the turnaround stats above.
+    const { start: today } = dayBoundsUtc(new Date());
 
     const pendingQuery = this.sampleRepo
       .createQueryBuilder('s')
@@ -1411,7 +1455,9 @@ export class LabService {
       .createQueryBuilder('s')
       .where('s.facilityId = :facilityId', { facilityId })
       .andWhere('s.status = :status', { status: SampleStatus.COMPLETED })
-      .andWhere('DATE(s.completedTime) = CURRENT_DATE');
+      .andWhere(
+        `DATE(s.completedTime AT TIME ZONE '${sqlSafeTimeZone()}') = DATE(NOW() AT TIME ZONE '${sqlSafeTimeZone()}')`,
+      );
     completedTodayQb.andWhere('s.tenant_id = :tenantId', { tenantId: tid });
     const completedToday = await completedTodayQb.getCount();
 
@@ -1433,10 +1479,14 @@ export class LabService {
 
     // Validate days parameter to prevent injection and ensure reasonable bounds
     const safeDays = Math.min(Math.max(Math.floor(days), 1), 365);
+    const tz = sqlSafeTimeZone();
 
     const qb = this.sampleRepo
       .createQueryBuilder('s')
-      .select('DATE(s.collectionTime)', 'date')
+      // Group by the lab's own day. DATE() resolves in the session timezone,
+      // which is UTC, so samples collected before 03:00 in Kampala were
+      // grouped onto the previous day's turnaround figure.
+      .select(`DATE(s.collectionTime AT TIME ZONE '${tz}')`, 'date')
       .addSelect('AVG(EXTRACT(EPOCH FROM (s.completedTime - s.collectionTime)) / 60)', 'avgMinutes')
       .addSelect('COUNT(*)', 'count')
       .where('s.facilityId = :facilityId', { facilityId })
@@ -1447,7 +1497,10 @@ export class LabService {
 
     qb.andWhere('s.tenant_id = :tenantId', { tenantId: tid });
 
-    const results = await qb.groupBy('DATE(s.collectionTime)').orderBy('date', 'DESC').getRawMany();
+    const results = await qb
+      .groupBy(`DATE(s.collectionTime AT TIME ZONE '${tz}')`)
+      .orderBy('date', 'DESC')
+      .getRawMany();
 
     return results;
   }
@@ -1465,6 +1518,65 @@ export class LabService {
     if (value < min) return AbnormalFlag.LOW;
     if (value > max) return AbnormalFlag.HIGH;
     return AbnormalFlag.NORMAL;
+  }
+
+  /**
+   * How loudly a flag speaks. Only ABNORMAL and the two CRITICALs reach
+   * CriticalResultsService (see toCriticalSeverity), so LOW/HIGH rank below
+   * ABNORMAL here even though clinically they read as "out of range" — this
+   * ranking is about who gets told, not about how ill the patient is.
+   */
+  private flagRank(f?: AbnormalFlag): number {
+    switch (f) {
+      case AbnormalFlag.CRITICAL_LOW:
+      case AbnormalFlag.CRITICAL_HIGH:
+        return 3;
+      case AbnormalFlag.ABNORMAL:
+        return 2;
+      case AbnormalFlag.LOW:
+      case AbnormalFlag.HIGH:
+        return 1;
+      default:
+        return 0;
+    }
+  }
+
+  /**
+   * Reconcile the flag the bench entered with the one the reference ranges
+   * compute, and never let the quieter of the two win.
+   *
+   * Two ways a critical result used to go silent:
+   *
+   * 1. The computed flag OVERWROTE an explicit one. A technician looking at a
+   *    sodium of 105 mmol/L and marking it critical_low was overruled, because
+   *    the panel has no configured threshold for Sodium, and stored as `low`.
+   *    `low` maps to no critical severity at all, so nobody was told.
+   * 2. The fail-closed guard only rescued NORMAL. A value OUTSIDE the caller's
+   *    reference range with no critical threshold configured came out LOW or
+   *    HIGH and fell straight through it — which is the dangerous case, not the
+   *    safe one. Proven live: on one U&E sample, potassium 1.9 raised an alert
+   *    and sodium 105 raised nothing, the only difference being that somebody
+   *    had configured a threshold for potassium.
+   *
+   * Configuring thresholds for every parameter is the real fix, and a hospital
+   * will never finish doing it. Until then an unresolved range means "we do not
+   * know", and not knowing must be at least ABNORMAL, which does alert.
+   */
+  private reconcileAbnormalFlag(
+    computed: AbnormalFlag,
+    declared: AbnormalFlag | undefined,
+    rangeResolved: boolean,
+    context: string,
+  ): AbnormalFlag {
+    let flag = this.flagRank(declared) > this.flagRank(computed) ? declared! : computed;
+
+    if (!rangeResolved && this.flagRank(flag) < this.flagRank(AbnormalFlag.ABNORMAL)) {
+      this.logger.warn(
+        `${context}: reference ranges not resolved; raising ${flag} to ABNORMAL fail-closed.`,
+      );
+      flag = AbnormalFlag.ABNORMAL;
+    }
+    return flag;
   }
 
   async getCriticalResults(

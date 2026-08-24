@@ -8,7 +8,7 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In, Between, DataSource, IsNull } from 'typeorm';
+import { Repository, In, Between, DataSource, IsNull, EntityManager } from 'typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import {
   PurchaseRequest,
@@ -70,6 +70,7 @@ import {
   ProcurementApprovalChain,
   ApprovalChainStatus,
 } from '../../database/entities/procurement-approval-chain.entity';
+import { localDayStart } from '../../common/utils/timezone.util';
 
 @Injectable()
 export class ProcurementService {
@@ -581,7 +582,7 @@ export class ProcurementService {
 
   async submitPurchaseRequest(id: string, tenantId?: string): Promise<PurchaseRequest> {
     const tid = requireTenantId(tenantId);
-    return this.dataSource.transaction(async (manager) => {
+    const result = await this.dataSource.transaction(async (manager) => {
       const prRepo = manager.getRepository(PurchaseRequest);
 
       const where: any = { id, deletedAt: IsNull() };
@@ -612,21 +613,36 @@ export class ProcurementService {
       pr.status = PRStatus.PENDING_APPROVAL;
       pr.totalEstimated = totalEstimated;
       const saved = await prRepo.save(pr);
-
-      // Phase 2B: Create approval chain (org-aware resolver if configured)
-      try {
-        await this.createApprovalChain(pr.id, 'PR', totalEstimated, pr.facilityId, tenantId, {
-          requesterId: pr.requestedById,
-          departmentId: pr.departmentId,
-          category: (pr as any).category || null,
-        });
-      } catch (error) {
-        this.logger.warn(`Failed to create approval chain for PR ${pr.id}: ${error.message}`);
-        // Don't fail PR submission if approval chain fails
-      }
-
-      return saved;
+      return { saved, totalEstimated };
     });
+
+    // Phase 2B: approval chain, raised AFTER the requisition is committed.
+    //
+    // It writes through its own connection and through ApprovalsService, so
+    // inside the transaction those rows commit independently: roll the
+    // submission back and the chain survives, pointing at a requisition that
+    // does not exist. Out here a rollback simply means no chain was created.
+    // Failure still does not fail the submission, as before.
+    try {
+      await this.createApprovalChain(
+        result.saved.id,
+        'PR',
+        result.totalEstimated,
+        result.saved.facilityId,
+        tenantId,
+        {
+          requesterId: result.saved.requestedById,
+          departmentId: result.saved.departmentId,
+          category: (result.saved as any).category || null,
+        },
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Failed to create approval chain for PR ${result.saved.id}: ${error.message}`,
+      );
+    }
+
+    return result.saved;
   }
 
   async approvePurchaseRequest(
@@ -637,7 +653,7 @@ export class ProcurementService {
     userRoles?: string[],
   ): Promise<PurchaseRequest> {
     const tid = requireTenantId(tenantId);
-    return this.dataSource.transaction(async (manager) => {
+    const { approved, approvalAudit } = await this.dataSource.transaction(async (manager) => {
       const prRepo = manager.getRepository(PurchaseRequest);
       const prItemRepo = manager.getRepository(PurchaseRequestItem);
       const chainRepo = manager.getRepository(ProcurementApprovalChain);
@@ -729,23 +745,15 @@ export class ProcurementService {
       nextChain.comments = dto.comments;
       await chainRepo.save(nextChain);
 
-      // Phase 3: Log approval for audit trail
-      try {
-        await this.auditService.logPRApprove({
-          prId: id,
-          requestNumber: pr.requestNumber,
-          approvalLevel: nextChain.approvalLevel,
-          requiredRole: nextChain.requiredRole,
-          actualRole: userRoleNames.join(', '),
-          userId,
-          tenantId,
-          comments: dto.comments,
-          amount: pr.totalEstimated,
-        });
-      } catch (error) {
-        this.logger.warn(`Failed to log PR approval: ${error.message}`);
-        // Don't fail approval if audit log fails
-      }
+      // Phase 3: audit trail — raised after this transaction commits, since
+      // AuditService writes on its own connection and the row would otherwise
+      // outlive an approval that rolled back.
+      const approvalAudit = {
+        requestNumber: pr.requestNumber,
+        approvalLevel: nextChain.approvalLevel,
+        requiredRole: nextChain.requiredRole,
+        actualRole: userRoleNames.join(', '),
+      };
 
       // Update approved quantities if provided
       let totalEstimatedApproved = 0;
@@ -764,14 +772,28 @@ export class ProcurementService {
           }
         }
       } else {
-        // Default: approve all requested quantities
+        // Default: carry forward whatever the previous level authorised,
+        // falling back to the requested quantity on the first approval.
+        //
+        // This used to reset quantityApproved to quantityRequested every
+        // time. On a multi-level chain that silently undid the level below:
+        // a manager cutting 100 units to 50 had the cut reversed the moment
+        // the director approved, because the director's approval carries no
+        // item list and took this branch.
         for (const item of pr.items) {
-          item.quantityApproved = item.quantityRequested;
-          totalEstimatedApproved += item.quantityRequested * Number(item.unitPriceEstimated || 0);
+          const carried = item.quantityApproved ?? item.quantityRequested;
+          item.quantityApproved = carried;
+          totalEstimatedApproved += carried * Number(item.unitPriceEstimated || 0);
         }
       }
 
       // Phase 2A: Validate sufficient budget available
+      //
+      // txn-connection-ok: read-only. It sums budget allocations, posted
+      // expense and live reservations — none of which this approval writes.
+      // It has to be a read on committed state anyway: the question is
+      // whether the facility can afford this, given everything already
+      // committed elsewhere.
       try {
         await this.budgetService.validateBudgetSufficient(
           pr.facilityId,
@@ -791,7 +813,7 @@ export class ProcurementService {
 
       // Check if approval chain is complete
       const pendingChains = await chainRepo.find({
-        where: { documentId: id, status: ApprovalChainStatus.PENDING },
+        where: { documentId: id, status: ApprovalChainStatus.PENDING, tenantId: tid },
       });
 
       if (pendingChains.length === 0) {
@@ -807,8 +829,29 @@ export class ProcurementService {
         );
       }
 
-      return prRepo.save(pr);
+      return { approved: await prRepo.save(pr), approvalAudit };
     });
+
+    if (approvalAudit) {
+      try {
+        await this.auditService.logPRApprove({
+          prId: id,
+          requestNumber: approvalAudit.requestNumber,
+          approvalLevel: approvalAudit.approvalLevel,
+          requiredRole: approvalAudit.requiredRole,
+          actualRole: approvalAudit.actualRole,
+          userId,
+          tenantId,
+          comments: dto.comments,
+          amount: approved.totalEstimated,
+        });
+      } catch (error) {
+        this.logger.warn(`Failed to log PR approval: ${error.message}`);
+        // Don't fail approval if audit log fails
+      }
+    }
+
+    return approved;
   }
 
   async rejectPurchaseRequest(
@@ -818,7 +861,7 @@ export class ProcurementService {
     tenantId?: string,
   ): Promise<PurchaseRequest> {
     const tid = requireTenantId(tenantId);
-    return this.dataSource.transaction(async (manager) => {
+    const rejected = await this.dataSource.transaction(async (manager) => {
       const prRepo = manager.getRepository(PurchaseRequest);
       const chainRepo = manager.getRepository(ProcurementApprovalChain);
 
@@ -855,23 +898,27 @@ export class ProcurementService {
       pr.approvedAt = new Date();
       pr.rejectionReason = dto.rejectionReason;
 
-      // Phase 3: Log rejection for audit trail
-      try {
-        await this.auditService.logPRReject({
-          prId: id,
-          requestNumber: pr.requestNumber,
-          rejectedById: userId,
-          rejectionReason: dto.rejectionReason,
-          tenantId,
-        });
-      } catch (error) {
-        this.logger.warn(`Failed to log PR rejection: ${error.message}`);
-        // Don't fail rejection if audit log fails
-      }
-
       this.logger.log(`PR ${id} rejected by user ${userId}`);
       return prRepo.save(pr);
     });
+
+    // Phase 3: audit trail — after the commit. AuditService writes on its own
+    // connection, so from inside the transaction the rejection record
+    // committed independently of the rejection itself.
+    try {
+      await this.auditService.logPRReject({
+        prId: id,
+        requestNumber: rejected.requestNumber,
+        rejectedById: userId,
+        rejectionReason: dto.rejectionReason,
+        tenantId,
+      });
+    } catch (error) {
+      this.logger.warn(`Failed to log PR rejection: ${error.message}`);
+      // Don't fail rejection if audit log fails
+    }
+
+    return rejected;
   }
 
   // ============ PURCHASE ORDER ============
@@ -891,7 +938,7 @@ export class ProcurementService {
     tenantId?: string,
   ): Promise<PurchaseOrder> {
     const tid = requireTenantId(tenantId);
-    return this.retryOnUniqueViolation('createPO', () =>
+    const createdPO = await this.retryOnUniqueViolation('createPO', () =>
       this.dataSource.transaction(async (manager) => {
         const facilityRepo = manager.getRepository('Facility');
         const deptRepo = manager.getRepository('Department');
@@ -1035,27 +1082,6 @@ export class ProcurementService {
 
         await poItemRepo.save(items);
 
-        // Phase 2: Create Approval Chain (org-aware resolver if configured,
-        // legacy tier ladder fallback)
-        try {
-          await this.createApprovalChain(
-            (savedPO as PurchaseOrder).id,
-            'PO',
-            totalAmount,
-            dto.facilityId,
-            tenantId,
-            {
-              requesterId: userId,
-              departmentId: dto.departmentId || null,
-              category: null,
-            },
-          );
-        } catch (error) {
-          this.logger.warn(
-            `Failed to create approval chain for PO ${orderNumber}: ${error.message}`,
-          );
-        }
-
         // Re-fetch within the active transaction so relations are loaded
         // from the same connection that just wrote the rows (otherwise a
         // default-pool read can miss the uncommitted insert and 404).
@@ -1074,6 +1100,35 @@ export class ProcurementService {
         return fetched;
       }),
     );
+
+    // Phase 2: approval chain, raised AFTER the order is committed.
+    //
+    // It writes through its own connection and through ApprovalsService, so
+    // from inside the transaction those rows committed on their own: a
+    // rollback left a chain pointing at an order that never existed. It also
+    // sat inside retryOnUniqueViolation, so a retried order re-ran chain
+    // creation for an attempt that had been rolled back. Out here it runs
+    // once, against an order that exists.
+    try {
+      await this.createApprovalChain(
+        (createdPO as PurchaseOrder).id,
+        'PO',
+        Number((createdPO as PurchaseOrder).totalAmount || 0),
+        dto.facilityId,
+        tenantId,
+        {
+          requesterId: userId,
+          departmentId: dto.departmentId || null,
+          category: null,
+        },
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Failed to create approval chain for PO ${(createdPO as PurchaseOrder).orderNumber}: ${error.message}`,
+      );
+    }
+
+    return createdPO as PurchaseOrder;
   }
 
   async createPOFromPR(
@@ -1081,12 +1136,20 @@ export class ProcurementService {
     userId: string,
     tenantId?: string,
   ): Promise<PurchaseOrder> {
-    const pr = await this.getPurchaseRequest(dto.purchaseRequestId, tenantId);
-    if (pr.status !== PRStatus.APPROVED) {
-      throw new BadRequestException('PR must be approved to create PO');
-    }
-
     const tidFromPR = requireTenantId(tenantId);
+    const pr = await this.getPurchaseRequest(dto.purchaseRequestId, tenantId);
+
+    // PARTIALLY_ORDERED is accepted, not just APPROVED. The conversion below
+    // has always computed a per-line remainder and set PARTIALLY_ORDERED when
+    // it could not order everything — but nothing ever accepted that status
+    // back, so the second PO could not be raised and the remainder was
+    // unreachable. Splitting a requisition across suppliers, or ordering the
+    // rest after one supplier short-supplies, is ordinary procurement.
+    if (![PRStatus.APPROVED, PRStatus.PARTIALLY_ORDERED].includes(pr.status)) {
+      throw new BadRequestException(
+        `PR must be approved or partially ordered to create a PO (currently ${pr.status})`,
+      );
+    }
     const supplier = await this.supplierRepo.findOne({
       where: { id: dto.supplierId, tenantId: tidFromPR },
     });
@@ -1100,59 +1163,124 @@ export class ProcurementService {
     // Map prices
     const priceMap = new Map(dto.itemPrices?.map((p) => [p.itemId, p.unitPrice]) || []);
 
+    // Claim the quantities under a row lock BEFORE building the PO.
+    //
+    // This used to read the PR unlocked, create the PO, then increment
+    // quantityOrdered in a second transaction. Two officers converting the
+    // same requisition at once both read quantityOrdered = 0, both ordered
+    // the full approved quantity, and the hospital received (and owed for)
+    // twice what it asked for. Claiming first means the loser sees the
+    // updated remainder and orders only what is genuinely left — which now
+    // matters more, since a PR can legitimately be converted more than once.
+    const claimed = await this.dataSource.transaction(async (manager) => {
+      const prRepo = manager.getRepository(PurchaseRequest);
+      const prItemRepo = manager.getRepository(PurchaseRequestItem);
+
+      const lockedPR = await prRepo.findOne({
+        where: { id: pr.id, tenantId: tidFromPR, deletedAt: IsNull() },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!lockedPR) throw new NotFoundException('Purchase request not found');
+      if (![PRStatus.APPROVED, PRStatus.PARTIALLY_ORDERED].includes(lockedPR.status)) {
+        throw new BadRequestException(
+          `PR must be approved or partially ordered to create a PO (currently ${lockedPR.status})`,
+        );
+      }
+
+      const prItems = await prItemRepo.find({ where: { purchaseRequestId: lockedPR.id } });
+
+      const lines: { item: PurchaseRequestItem; quantity: number }[] = [];
+      for (const item of prItems) {
+        const authorised = Number(item.quantityApproved) || Number(item.quantityRequested) || 0;
+        const remaining = authorised - (Number(item.quantityOrdered) || 0);
+        if (remaining > 0) lines.push({ item, quantity: remaining });
+      }
+
+      if (lines.length === 0) {
+        throw new BadRequestException('No items available to order');
+      }
+
+      for (const line of lines) {
+        line.item.quantityOrdered = (Number(line.item.quantityOrdered) || 0) + line.quantity;
+        await prItemRepo.save(line.item);
+      }
+
+      const allOrdered = prItems.every(
+        (i) =>
+          (Number(i.quantityOrdered) || 0) >=
+          (Number(i.quantityApproved) || Number(i.quantityRequested) || 0),
+      );
+      lockedPR.status = allOrdered ? PRStatus.FULLY_ORDERED : PRStatus.PARTIALLY_ORDERED;
+      await prRepo.save(lockedPR);
+
+      return lines.map((l) => ({
+        itemId: l.item.itemId,
+        itemCode: l.item.itemCode,
+        itemName: l.item.itemName,
+        itemUnit: l.item.itemUnit,
+        quantityOrdered: l.quantity,
+        unitPrice: priceMap.get(l.item.itemId) || l.item.unitPriceEstimated,
+      }));
+    });
+
     const poDto: CreatePurchaseOrderDto = {
       facilityId: pr.facilityId,
       supplierId: dto.supplierId,
       purchaseRequestId: pr.id,
       expectedDelivery: dto.expectedDelivery,
       paymentTerms: dto.paymentTerms || supplier.paymentTerms,
-      items: pr.items
-        .filter(
-          (item) =>
-            (item.quantityApproved || item.quantityRequested) >= item.quantityOrdered &&
-            (item.quantityApproved || item.quantityRequested) - item.quantityOrdered > 0,
-        )
-        .map((item) => ({
-          itemId: item.itemId,
-          itemCode: item.itemCode,
-          itemName: item.itemName,
-          itemUnit: item.itemUnit,
-          quantityOrdered: (item.quantityApproved || item.quantityRequested) - item.quantityOrdered,
-          unitPrice: priceMap.get(item.itemId) || item.unitPriceEstimated,
-        })),
+      items: claimed,
     };
 
-    if (poDto.items.length === 0) {
-      throw new BadRequestException('No items available to order');
+    try {
+      return await this.createPurchaseOrder(poDto, userId, tenantId);
+    } catch (error) {
+      // The claim is committed but the PO it was for does not exist. Give the
+      // quantities back, or the requisition is short by the failed attempt.
+      await this.unclaimPRQuantities(pr.id, claimed, tidFromPR).catch((err) =>
+        this.logger.error(
+          `PR ${pr.id}: PO creation failed and releasing the claimed quantities also failed. ` +
+            `The PR is now understated by the claim. ${err?.message || err}`,
+        ),
+      );
+      throw error;
     }
+  }
 
-    const po = await this.createPurchaseOrder(poDto, userId, tenantId);
-
-    // Wrap PR item-quantity backfill + PR status update so we never end up
-    // with PR.quantityOrdered drift if one of the saves fails (audit
-    // BUG-005). createPurchaseOrder itself is already transactional and
-    // committed at this point — we open a second transaction for the PR
-    // mutations so they atomically reflect the new PO.
+  /**
+   * Compensating write for createPOFromPR: hands back quantities claimed for
+   * a PO that then failed to be created.
+   */
+  private async unclaimPRQuantities(
+    prId: string,
+    claimed: { itemId: string; quantityOrdered: number }[],
+    tid: string,
+  ): Promise<void> {
     await this.dataSource.transaction(async (manager) => {
       const prRepo = manager.getRepository(PurchaseRequest);
       const prItemRepo = manager.getRepository(PurchaseRequestItem);
 
-      for (const poItem of po.items) {
-        const prItem = pr.items.find((i) => i.itemId === poItem.itemId);
-        if (prItem) {
-          prItem.quantityOrdered += poItem.quantityOrdered;
-          await prItemRepo.save(prItem);
-        }
+      const lockedPR = await prRepo.findOne({
+        where: { id: prId, tenantId: tid },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!lockedPR) return;
+
+      const prItems = await prItemRepo.find({ where: { purchaseRequestId: prId } });
+      for (const line of claimed) {
+        const prItem = prItems.find((i) => i.itemId === line.itemId);
+        if (!prItem) continue;
+        prItem.quantityOrdered = Math.max(
+          0,
+          (Number(prItem.quantityOrdered) || 0) - line.quantityOrdered,
+        );
+        await prItemRepo.save(prItem);
       }
 
-      const allOrdered = pr.items.every(
-        (i) => i.quantityOrdered >= (i.quantityApproved || i.quantityRequested),
-      );
-      pr.status = allOrdered ? PRStatus.FULLY_ORDERED : PRStatus.PARTIALLY_ORDERED;
-      await prRepo.save(pr);
+      const anyOrdered = prItems.some((i) => (Number(i.quantityOrdered) || 0) > 0);
+      lockedPR.status = anyOrdered ? PRStatus.PARTIALLY_ORDERED : PRStatus.APPROVED;
+      await prRepo.save(lockedPR);
     });
-
-    return po;
   }
 
   async getPurchaseOrder(id: string, tenantId?: string): Promise<PurchaseOrder> {
@@ -1261,6 +1389,23 @@ export class ProcurementService {
       );
     }
 
+    // One winning quotation is one purchase order. Nothing guarded this, so
+    // converting the same quotation twice created two identical POs to the
+    // same supplier for the same money — confirmed live before this fix
+    // (PO20260800003 and PO20260800004, both 2.1M to the same vendor).
+    // A cancelled PO does not block: cancelling exists precisely so the
+    // order can be re-raised.
+    const existingPO = await this.poRepo.findOne({
+      where: { quotationId: quotation.id, tenantId: requireTenantId(tenantId), deletedAt: IsNull() },
+      select: ['id', 'orderNumber', 'status'],
+    });
+    if (existingPO && existingPO.status !== POStatus.CANCELLED) {
+      throw new BadRequestException(
+        `Quotation ${quotation.quotationNumber} has already been converted to ${existingPO.orderNumber}. ` +
+          `Cancel that order first if it must be re-raised.`,
+      );
+    }
+
     // Load RFQ items to get item details (codes, names, units)
     const rfqItems = await this.dataSource.getRepository(RFQItem).find({
       where: { rfqId: rfq.id },
@@ -1270,6 +1415,11 @@ export class ProcurementService {
     const poDto: CreatePurchaseOrderDto = {
       facilityId: rfq.facilityId,
       supplierId: quotation.supplierId,
+      // The RFQ knows which requisition raised it; without this the PO had no
+      // purchaseRequestId, so the PR stayed APPROVED with nothing ordered —
+      // free to be converted again, and invisible to auto-completion and to
+      // cancellation's quantity give-back.
+      purchaseRequestId: rfq.purchaseRequestId || undefined,
       expectedDelivery: dto.expectedDelivery,
       paymentTerms: dto.paymentTerms || quotation.paymentTerms || supplier.paymentTerms,
       deliveryAddress: dto.deliveryAddress,
@@ -1312,7 +1462,69 @@ export class ProcurementService {
       createdFrom: 'quotation',
     });
 
+    // Mark the requisition's quantities as ordered, the same bookkeeping
+    // createPOFromPR does — capped at what the PR authorised, since a
+    // quotation can legitimately offer more or less than was asked.
+    if (rfq.purchaseRequestId) {
+      await this.claimPRQuantitiesForPO(rfq.purchaseRequestId, po, tenantId);
+    }
+
     return this.getPurchaseOrder(po.id, tenantId);
+  }
+
+  /**
+   * Records a created PO's quantities against its requisition and re-derives
+   * the PR status. Used by the quotation path, where the PO is built from RFQ
+   * lines rather than from the PR remainder.
+   */
+  private async claimPRQuantitiesForPO(
+    prId: string,
+    po: PurchaseOrder,
+    tenantId?: string,
+  ): Promise<void> {
+    const tid = requireTenantId(tenantId);
+    await this.dataSource.transaction(async (manager) => {
+      const prRepo = manager.getRepository(PurchaseRequest);
+      const prItemRepo = manager.getRepository(PurchaseRequestItem);
+
+      const pr = await prRepo.findOne({
+        where: { id: prId, tenantId: tid, deletedAt: IsNull() },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!pr) return;
+
+      const prItems = await prItemRepo.find({ where: { purchaseRequestId: prId } });
+      const poItems = await manager
+        .getRepository(PurchaseOrderItem)
+        .find({ where: { purchaseOrderId: po.id } });
+
+      for (const poItem of poItems) {
+        const prItem = prItems.find((i) => i.itemId === poItem.itemId);
+        if (!prItem) continue;
+        const authorised =
+          Number(prItem.quantityApproved) || Number(prItem.quantityRequested) || 0;
+        prItem.quantityOrdered = Math.min(
+          authorised,
+          (Number(prItem.quantityOrdered) || 0) + (Number(poItem.quantityOrdered) || 0),
+        );
+        await prItemRepo.save(prItem);
+      }
+
+      const anyOrdered = prItems.some((i) => (Number(i.quantityOrdered) || 0) > 0);
+      const allOrdered = prItems.every(
+        (i) =>
+          (Number(i.quantityOrdered) || 0) >=
+          (Number(i.quantityApproved) || Number(i.quantityRequested) || 0),
+      );
+      if ([PRStatus.APPROVED, PRStatus.PARTIALLY_ORDERED].includes(pr.status)) {
+        pr.status = allOrdered
+          ? PRStatus.FULLY_ORDERED
+          : anyOrdered
+            ? PRStatus.PARTIALLY_ORDERED
+            : pr.status;
+        await prRepo.save(pr);
+      }
+    });
   }
 
   async approvePurchaseOrder(
@@ -1322,152 +1534,255 @@ export class ProcurementService {
     userRoles?: string[],
   ): Promise<PurchaseOrder> {
     const tid = requireTenantId(tenantId);
-    return this.dataSource.transaction(async (manager) => {
-      const poRepo = manager.getRepository(PurchaseOrder);
-      const chainRepo = manager.getRepository(ProcurementApprovalChain);
+    const { approvedPO, poApprovalAudit, encumberOnCommit } = await this.dataSource.transaction(
+      async (manager) => {
+        let encumberOnCommit = false;
+        let poApprovalAudit: {
+          poNumber: string;
+          approvalLevel: number;
+          requiredRole: string;
+          actualRole: string;
+          amount: number;
+        } | null = null;
+        const poRepo = manager.getRepository(PurchaseOrder);
+        const chainRepo = manager.getRepository(ProcurementApprovalChain);
 
-      const po = await poRepo.findOne({
-        where: { id, deletedAt: IsNull(), tenantId: tid },
-        lock: { mode: 'pessimistic_write' },
-      });
+        const po = await poRepo.findOne({
+          where: { id, deletedAt: IsNull(), tenantId: tid },
+          lock: { mode: 'pessimistic_write' },
+        });
 
-      if (!po) throw new NotFoundException('Purchase order not found');
-      if (po.status !== POStatus.DRAFT && po.status !== POStatus.PENDING_APPROVAL) {
-        throw new BadRequestException('PO cannot be approved from current status');
-      }
-
-      // Segregation of duties: PO creator cannot approve their own PO
-      if (po.createdById === userId) {
-        const isSuperAdminUser = userRoles?.some((r) => r.toLowerCase() === 'super admin');
-        if (!isSuperAdminUser) {
-          throw new BadRequestException(
-            'Segregation of duties: the PO creator cannot approve their own purchase order',
-          );
+        if (!po) throw new NotFoundException('Purchase order not found');
+        if (po.status !== POStatus.DRAFT && po.status !== POStatus.PENDING_APPROVAL) {
+          throw new BadRequestException('PO cannot be approved from current status');
         }
-        this.logger.warn(
-          `Super Admin self-approval: user ${userId} approving own PO ${po.orderNumber}`,
-        );
-      }
 
-      // Phase 2C: Get next pending approval in chain (if any)
-      const chainWhere: any = {
-        documentId: id,
-        documentType: 'PO',
-        status: ApprovalChainStatus.PENDING,
-      };
-      chainWhere.tenantId = tid;
-
-      const nextChain = await chainRepo.findOne({
-        where: chainWhere,
-        order: { approvalLevel: 'ASC' },
-      });
-
-      if (nextChain) {
-        // Multi-level approval workflow is configured for this PO
-        // Verify user has required role
-        const userRolesList = userRoles || (await this.usersService.getUserRoles(userId, tenantId));
-        const userRoleNames = (userRolesList as any[]).map((r: any) =>
-          typeof r === 'string' ? r.toLowerCase() : r.name?.toLowerCase() || '',
-        );
-        const requiredRoleLower = nextChain.requiredRole.toLowerCase();
-
-        const synonyms: Record<string, string[]> = {
-          manager: ['manager', 'department head', 'department manager', 'super admin'],
-          finance_officer: ['finance_officer', 'finance officer', 'accountant', 'super admin'],
-          director: ['director', 'super admin'],
-          cfo: ['cfo', 'chief financial officer', 'super admin'],
-          'department head': ['department head', 'department manager', 'manager', 'super admin'],
-        };
-        const acceptedRoles = synonyms[requiredRoleLower] || [requiredRoleLower, 'super admin'];
-        const isSuperAdminUser = userRoleNames.includes('super admin');
-
-        if (nextChain.approverId) {
-          if (nextChain.approverId !== userId && !isSuperAdminUser) {
+        // Segregation of duties: PO creator cannot approve their own PO
+        if (po.createdById === userId) {
+          const isSuperAdminUser = userRoles?.some((r) => r.toLowerCase() === 'super admin');
+          if (!isSuperAdminUser) {
             throw new BadRequestException(
-              `This approval is assigned to a specific user. You are not the designated approver.`,
+              'Segregation of duties: the PO creator cannot approve their own purchase order',
             );
           }
-        } else if (!userRoleNames.some((r) => acceptedRoles.includes(r))) {
-          throw new BadRequestException(
-            `User does not have a role authorised to approve at level ${nextChain.approvalLevel} (required: ${nextChain.requiredRole})`,
+          this.logger.warn(
+            `Super Admin self-approval: user ${userId} approving own PO ${po.orderNumber}`,
           );
         }
 
-        // Mark approval at this level
-        nextChain.status = ApprovalChainStatus.APPROVED;
-        nextChain.approvedById = userId;
-        nextChain.approvedAt = new Date();
-        await chainRepo.save(nextChain);
+        // Phase 2C: Get next pending approval in chain (if any)
+        const chainWhere: any = {
+          documentId: id,
+          documentType: 'PO',
+          status: ApprovalChainStatus.PENDING,
+        };
+        chainWhere.tenantId = tid;
 
-        // Phase 3: Log approval for audit trail
-        try {
-          await this.auditService.logPOApprove({
-            poId: id,
+        const nextChain = await chainRepo.findOne({
+          where: chainWhere,
+          order: { approvalLevel: 'ASC' },
+        });
+
+        if (nextChain) {
+          // Multi-level approval workflow is configured for this PO
+          // Verify user has required role
+          const userRolesList =
+            userRoles || (await this.usersService.getUserRoles(userId, tenantId));
+          const userRoleNames = (userRolesList as any[]).map((r: any) =>
+            typeof r === 'string' ? r.toLowerCase() : r.name?.toLowerCase() || '',
+          );
+          const requiredRoleLower = nextChain.requiredRole.toLowerCase();
+
+          const synonyms: Record<string, string[]> = {
+            manager: ['manager', 'department head', 'department manager', 'super admin'],
+            finance_officer: ['finance_officer', 'finance officer', 'accountant', 'super admin'],
+            director: ['director', 'super admin'],
+            cfo: ['cfo', 'chief financial officer', 'super admin'],
+            'department head': ['department head', 'department manager', 'manager', 'super admin'],
+          };
+          const acceptedRoles = synonyms[requiredRoleLower] || [requiredRoleLower, 'super admin'];
+          const isSuperAdminUser = userRoleNames.includes('super admin');
+
+          if (nextChain.approverId) {
+            if (nextChain.approverId !== userId && !isSuperAdminUser) {
+              throw new BadRequestException(
+                `This approval is assigned to a specific user. You are not the designated approver.`,
+              );
+            }
+          } else if (!userRoleNames.some((r) => acceptedRoles.includes(r))) {
+            throw new BadRequestException(
+              `User does not have a role authorised to approve at level ${nextChain.approvalLevel} (required: ${nextChain.requiredRole})`,
+            );
+          }
+
+          // Mark approval at this level
+          nextChain.status = ApprovalChainStatus.APPROVED;
+          nextChain.approvedById = userId;
+          nextChain.approvedAt = new Date();
+          await chainRepo.save(nextChain);
+
+          // Phase 3: audit trail — raised after this transaction commits, since
+          // AuditService writes on its own connection and the row would
+          // otherwise outlive an approval that rolled back.
+          poApprovalAudit = {
             poNumber: po.orderNumber,
             approvalLevel: nextChain.approvalLevel,
             requiredRole: nextChain.requiredRole,
             actualRole: userRoleNames.join(', '),
-            userId,
-            tenantId,
             amount: Number(po.totalAmount),
+          };
+
+          // Check if approval chain is complete
+          const pendingChains = await chainRepo.find({
+            where: { documentId: id, documentType: 'PO', status: ApprovalChainStatus.PENDING },
           });
-        } catch (error) {
-          this.logger.warn(`Failed to log PO approval: ${error.message}`);
-          // Don't fail approval if audit log fails
-        }
 
-        // Check if approval chain is complete
-        const pendingChains = await chainRepo.find({
-          where: { documentId: id, documentType: 'PO', status: ApprovalChainStatus.PENDING },
-        });
+          if (pendingChains.length === 0) {
+            // All approvals complete → transition to APPROVED
+            await this.assertBudgetCapacity(po, tid);
+            po.status = POStatus.APPROVED;
+            po.approvedById = userId;
+            po.approvedAt = new Date();
+            encumberOnCommit = true;
+            this.logger.log(
+              `PO ${id} fully approved after ${nextChain.approvalLevel} approval levels`,
+            );
+          } else {
+            // More approvals needed → stay PENDING_APPROVAL
+            po.status = POStatus.PENDING_APPROVAL;
+            this.logger.log(
+              `PO ${id} approved at level ${nextChain.approvalLevel}, ${pendingChains.length} more approvals needed`,
+            );
+          }
+        } else {
+          // audit BUG-013: a missing approval chain previously let any user
+          // with procurement.approve nod through an arbitrary-value PO with
+          // just a warning log. Now: above the level-1 single-approver cap
+          // we REFUSE to approve until a chain is configured + persisted.
+          const totalAmount = Number(po.totalAmount) || 0;
+          const isSuperAdminUser = userRoles?.some((r) => r.toLowerCase() === 'super admin');
 
-        if (pendingChains.length === 0) {
-          // All approvals complete → transition to APPROVED
+          const thresholds = await this.getApprovalThreshold(po.facilityId, tenantId);
+          const level1Cap = Number(thresholds.level1MaxAmount) || 0;
+
+          if (totalAmount > level1Cap && !isSuperAdminUser) {
+            throw new ForbiddenException(
+              `PO amount (${totalAmount.toLocaleString()}) requires a multi-level approval chain ` +
+                `but none is configured. Configure an approval policy/chain for facility ` +
+                `${po.facilityId} or re-submit the PO so the chain is rebuilt.`,
+            );
+          }
+
+          if (totalAmount > 50000000) {
+            this.logger.warn(
+              `HIGH-VALUE PO ${po.orderNumber}: ${totalAmount.toLocaleString()} approved by ${userId} via single-step path`,
+            );
+          }
+
+          await this.assertBudgetCapacity(po, tid);
           po.status = POStatus.APPROVED;
           po.approvedById = userId;
           po.approvedAt = new Date();
+          encumberOnCommit = true;
+        }
+
+        return { approvedPO: await poRepo.save(po), poApprovalAudit, encumberOnCommit };
+      },
+    );
+
+    // Encumber the budget now the approval has committed.
+    //
+    // The capacity check above runs inside the transaction and is what
+    // actually blocks an over-budget order; this reserves against it. Split
+    // that way because BudgetService writes on its own connection, so a
+    // reservation raised from inside would survive an approval that rolled
+    // back. Two approvals passing the check at the same instant is the
+    // residual: the loser's reserveBudget refuses and the PO is approved but
+    // unencumbered, which is logged rather than silently absorbed.
+    if (encumberOnCommit) {
+      try {
+        await this.budgetService.reserveBudget(
+          approvedPO.facilityId,
+          approvedPO.id,
+          'PO',
+          Number(approvedPO.totalAmount) || 0,
+          tenantId,
+        );
+      } catch (err: any) {
+        // A facility with no active budget is the same deliberate skip the
+        // capacity gate makes — first live run logged it as an ERROR, which
+        // reads as data loss when it is policy.
+        if (err instanceof NotFoundException) {
           this.logger.log(
-            `PO ${id} fully approved after ${nextChain.approvalLevel} approval levels`,
+            `PO ${approvedPO.orderNumber} not encumbered: ${err.message} (facility not under budget control)`,
           );
         } else {
-          // More approvals needed → stay PENDING_APPROVAL
-          po.status = POStatus.PENDING_APPROVAL;
-          this.logger.log(
-            `PO ${id} approved at level ${nextChain.approvalLevel}, ${pendingChains.length} more approvals needed`,
+          this.logger.error(
+            `PO ${approvedPO.orderNumber} was approved but could not be encumbered: ${err?.message || err}. ` +
+              `The order stands; the budget does not reflect it.`,
           );
         }
-      } else {
-        // audit BUG-013: a missing approval chain previously let any user
-        // with procurement.approve nod through an arbitrary-value PO with
-        // just a warning log. Now: above the level-1 single-approver cap
-        // we REFUSE to approve until a chain is configured + persisted.
-        const totalAmount = Number(po.totalAmount) || 0;
-        const isSuperAdminUser = userRoles?.some((r) => r.toLowerCase() === 'super admin');
-
-        const thresholds = await this.getApprovalThreshold(po.facilityId, tenantId);
-        const level1Cap = Number(thresholds.level1MaxAmount) || 0;
-
-        if (totalAmount > level1Cap && !isSuperAdminUser) {
-          throw new ForbiddenException(
-            `PO amount (${totalAmount.toLocaleString()}) requires a multi-level approval chain ` +
-              `but none is configured. Configure an approval policy/chain for facility ` +
-              `${po.facilityId} or re-submit the PO so the chain is rebuilt.`,
-          );
-        }
-
-        if (totalAmount > 50000000) {
-          this.logger.warn(
-            `HIGH-VALUE PO ${po.orderNumber}: ${totalAmount.toLocaleString()} approved by ${userId} via single-step path`,
-          );
-        }
-
-        po.status = POStatus.APPROVED;
-        po.approvedById = userId;
-        po.approvedAt = new Date();
       }
+    }
 
-      return poRepo.save(po);
-    });
+    if (poApprovalAudit) {
+      try {
+        await this.auditService.logPOApprove({
+          poId: id,
+          poNumber: poApprovalAudit.poNumber,
+          approvalLevel: poApprovalAudit.approvalLevel,
+          requiredRole: poApprovalAudit.requiredRole,
+          actualRole: poApprovalAudit.actualRole,
+          userId,
+          tenantId,
+          amount: poApprovalAudit.amount,
+        });
+      } catch (error) {
+        this.logger.warn(`Failed to log PO approval: ${error.message}`);
+        // Don't fail approval if audit log fails
+      }
+    }
+
+    return approvedPO;
+  }
+
+  /**
+   * Refuse to approve a purchase order the facility cannot afford.
+   *
+   * txn-connection-ok: read-only, and it has to read committed state — the
+   * question is whether this order fits alongside everything already
+   * committed elsewhere.
+   *
+   * A facility with no active budget is not blocked. Budget control applies
+   * where budgets are maintained; a hospital that has never configured one
+   * should not find its procurement stopped by a control it never opted into.
+   * The refusal below is only for facilities that have a budget and have
+   * exhausted it.
+   */
+  private async assertBudgetCapacity(po: PurchaseOrder, tid: string): Promise<void> {
+    const amount = Number(po.totalAmount) || 0;
+    if (amount <= 0) return;
+
+    let capacity: { remaining: number; allocation: number } | null;
+    try {
+      capacity = await this.budgetService.getRemainingCapacity(po.facilityId, tid);
+    } catch (err: any) {
+      // A budget lookup that errors must not become an approval outage.
+      this.logger.warn(
+        `Budget capacity check skipped for PO ${po.orderNumber}: ${err?.message || err}`,
+      );
+      return;
+    }
+
+    if (!capacity) return;
+
+    if (amount > capacity.remaining) {
+      throw new BadRequestException(
+        `Approving ${po.orderNumber} would commit ${amount.toLocaleString()} against a remaining ` +
+          `budget of ${capacity.remaining.toLocaleString()} (allocation ${capacity.allocation.toLocaleString()}). ` +
+          `Increase the facility budget or cancel outstanding orders to free capacity.`,
+      );
+    }
   }
 
   async sendPurchaseOrder(id: string, userId: string, tenantId?: string): Promise<PurchaseOrder> {
@@ -1510,7 +1825,7 @@ export class ProcurementService {
     reason?: string,
   ): Promise<PurchaseOrder> {
     const tid = requireTenantId(tenantId);
-    return this.dataSource.transaction(async (manager) => {
+    const cancelled = await this.dataSource.transaction(async (manager) => {
       const poRepo = manager.getRepository(PurchaseOrder);
       const po = await poRepo.findOne({
         where: { id, deletedAt: IsNull(), tenantId: tid },
@@ -1530,6 +1845,19 @@ export class ProcurementService {
 
       const saved = await poRepo.save(po);
 
+      // Hand the un-received quantity back to the requisition.
+      //
+      // Cancelling used to change nothing but this PO's own status, so the
+      // PR it came from kept counting the cancelled units as ordered and
+      // stayed PARTIALLY_ORDERED / FULLY_ORDERED forever. Combined with
+      // createPOFromPR only accepting an APPROVED PR, that stranded the
+      // requisition: a supplier who could not deliver cost the department
+      // its whole requisition and it had to be raised again from scratch.
+      //
+      // Only the outstanding quantity comes back. Anything already received
+      // stays ordered, because it was.
+      const releasedByItem = await this.releasePRQuantitiesForCancelledPO(manager, po, tid);
+
       await manager.getRepository(AuditLog).save(
         manager.getRepository(AuditLog).create({
           action: 'PO_CANCELLED',
@@ -1537,13 +1865,104 @@ export class ProcurementService {
           entityId: id,
           userId,
           oldValue: { status: oldStatus },
-          newValue: { status: POStatus.CANCELLED, reason: reason || null },
+          newValue: {
+            status: POStatus.CANCELLED,
+            reason: reason || null,
+            releasedToPR: releasedByItem,
+          },
           tenantId: tid,
         }),
       );
 
       return saved;
     });
+
+    // Hand the budget back, after the cancellation commits.
+    //
+    // encumberBudgetForPO reserved against the department budget and nothing
+    // ever released it: releaseReservation had no callers at all, so every
+    // cancelled PO permanently shrank the budget it was drawn on. Best
+    // effort — a failure here must not un-cancel the order.
+    await this.budgetService
+      .releaseReservationsForDocument(cancelled.id, tid)
+      .then((amount) => {
+        if (amount > 0) {
+          this.logger.log(
+            `Released ${amount} of budget reserved for cancelled PO ${cancelled.orderNumber}`,
+          );
+        }
+      })
+      .catch((err) =>
+        this.logger.warn(
+          `Failed to release budget reservation for cancelled PO ${cancelled.orderNumber}: ${err?.message || err}`,
+        ),
+      );
+
+    return cancelled;
+  }
+
+  /**
+   * Returns a cancelled PO's outstanding quantities to its purchase request
+   * and re-derives the PR's status. Returns what was released, per item, for
+   * the audit record. No-op for a direct PO with no originating PR.
+   */
+  private async releasePRQuantitiesForCancelledPO(
+    manager: EntityManager,
+    po: PurchaseOrder,
+    tid: string,
+  ): Promise<Record<string, number>> {
+    if (!po.purchaseRequestId) return {};
+
+    const prRepo = manager.getRepository(PurchaseRequest);
+    const prItemRepo = manager.getRepository(PurchaseRequestItem);
+
+    const pr = await prRepo.findOne({
+      where: { id: po.purchaseRequestId, tenantId: tid },
+      lock: { mode: 'pessimistic_write' },
+    });
+    if (!pr) return {};
+
+    const poItems = await manager
+      .getRepository(PurchaseOrderItem)
+      .find({ where: { purchaseOrderId: po.id } });
+    const prItems = await prItemRepo.find({ where: { purchaseRequestId: pr.id } });
+
+    const released: Record<string, number> = {};
+    for (const poItem of poItems) {
+      const outstanding =
+        (Number(poItem.quantityOrdered) || 0) - (Number(poItem.quantityReceived) || 0);
+      if (outstanding <= 0) continue;
+
+      const prItem = prItems.find((i) => i.itemId === poItem.itemId);
+      if (!prItem) continue;
+
+      // Never below zero: a direct PO line could exceed what the PR asked for.
+      const giveBack = Math.min(outstanding, Number(prItem.quantityOrdered) || 0);
+      if (giveBack <= 0) continue;
+
+      prItem.quantityOrdered -= giveBack;
+      released[poItem.itemName || poItem.itemId] = giveBack;
+      await prItemRepo.save(prItem);
+    }
+
+    // Re-derive rather than assume: other live POs may still cover part of it.
+    const anyOrdered = prItems.some((i) => (Number(i.quantityOrdered) || 0) > 0);
+    const allOrdered = prItems.every(
+      (i) =>
+        (Number(i.quantityOrdered) || 0) >=
+        (Number(i.quantityApproved) || Number(i.quantityRequested) || 0),
+    );
+
+    if (!pr.deletedAt && [PRStatus.PARTIALLY_ORDERED, PRStatus.FULLY_ORDERED].includes(pr.status)) {
+      pr.status = allOrdered
+        ? PRStatus.FULLY_ORDERED
+        : anyOrdered
+          ? PRStatus.PARTIALLY_ORDERED
+          : PRStatus.APPROVED;
+      await prRepo.save(pr);
+    }
+
+    return released;
   }
 
   // ============ GOODS RECEIPT NOTE ============
@@ -1686,7 +2105,13 @@ export class ProcurementService {
       }),
     );
 
-    return this.getGoodsReceipt(createdGRN.id);
+    // tenantId was dropped here, and getGoodsReceipt's requireTenantId threw
+    // "Missing tenant context" AFTER the GRN had committed — so every GRN
+    // creation persisted the receipt and then answered 400. The storekeeper
+    // saw a failure for a receipt that existed, and a retry hit the
+    // over-receipt guard with a message about a PO line allowing 0 more.
+    // Found by running the flow, not by reading it.
+    return this.getGoodsReceipt(createdGRN.id, tenantId);
   }
 
   async createGRNFromPO(
@@ -1826,17 +2251,39 @@ export class ProcurementService {
         throw new BadRequestException('GRN is not available for inspection');
       }
 
-      // Update items with inspection results
+      // Update items with inspection results.
+      //
+      // createGoodsReceipt caps quantityReceived at the PO's outstanding
+      // quantity, but nothing capped what inspection then *accepted*, and
+      // postGoodsReceipt posts quantityAccepted (not quantityReceived) to
+      // stock. So an inspector could accept 500 on a line that received 100
+      // and walk 400 units past the PO ceiling and into the ledger, with the
+      // GRN's totalValue — computed at creation from quantityReceived —
+      // still reading the honest figure.
       for (const inspected of dto.inspectedItems) {
         const item = grn.items.find((i) => i.itemId === inspected.itemId);
-        if (item) {
-          item.quantityAccepted = inspected.quantityAccepted;
-          item.quantityRejected = inspected.quantityRejected;
-          if (inspected.rejectionReason) {
-            item.rejectionReason = inspected.rejectionReason;
-          }
-          await grnItemRepo.save(item);
+        if (!item) {
+          throw new BadRequestException(
+            `Inspected item ${inspected.itemId} is not on GRN ${grn.grnNumber}`,
+          );
         }
+
+        const received = Number(item.quantityReceived) || 0;
+        const accepted = Number(inspected.quantityAccepted) || 0;
+        const rejected = Number(inspected.quantityRejected) || 0;
+
+        if (accepted + rejected > received) {
+          throw new BadRequestException(
+            `Cannot account for ${accepted + rejected} units of "${item.itemName}" — only ${received} were received (accepted: ${accepted}, rejected: ${rejected}).`,
+          );
+        }
+
+        item.quantityAccepted = accepted;
+        item.quantityRejected = rejected;
+        if (inspected.rejectionReason) {
+          item.rejectionReason = inspected.rejectionReason;
+        }
+        await grnItemRepo.save(item);
       }
 
       grn.status = GRNStatus.INSPECTED;
@@ -1934,7 +2381,7 @@ export class ProcurementService {
 
   async postGoodsReceipt(id: string, userId: string, tenantId?: string): Promise<GoodsReceiptNote> {
     const tid = requireTenantId(tenantId);
-    return this.dataSource.transaction(async (manager) => {
+    const posted = await this.dataSource.transaction(async (manager) => {
       const grnRepo = manager.getRepository(GoodsReceiptNote);
       const grnItemRepo = manager.getRepository(GoodsReceiptItem);
       const stockLedgerRepo = manager.getRepository(StockLedger);
@@ -2064,37 +2511,69 @@ export class ProcurementService {
 
       const saved = await grnRepo.save(grn);
 
-      // Auto-post journal entry: Inventory DR, AP CR (outside transaction is fine — non-critical)
-      this.financeService
-        .autoPostGRNJournal(
-          {
-            facilityId: grn.facilityId,
-            grnNumber: grn.grnNumber,
-            totalValue: Number(grn.totalValue) || 0,
-            supplierId: grn.supplierId,
-            userId,
-          },
-          tenantId,
-        )
-        .catch((err) =>
-          this.logger.warn(`GL auto-post failed for GRN ${grn.grnNumber}: ${err.message}`),
-        );
-
-      // Try auto-completing the originating PR (best effort)
+      let originatingPRId: string | null = null;
       if (grn.purchaseOrderId) {
         const po = await poRepo.findOne({
           where: { id: grn.purchaseOrderId, tenantId: tid },
           select: ['id', 'purchaseRequestId'],
         });
-        if (po?.purchaseRequestId) {
-          this.tryAutoCompletePR(po.purchaseRequestId, tenantId).catch((err) =>
-            this.logger.warn(`Auto-complete PR failed: ${err.message}`),
-          );
-        }
+        originatingPRId = po?.purchaseRequestId || null;
       }
 
-      return saved;
+      return { saved, originatingPRId };
     });
+
+    const { saved, originatingPRId } = posted;
+
+    // Both of the follow-ups below used to be fired inside the transaction
+    // without an await, on their own connections.
+    //
+    // The GL journal therefore committed independently of the receipt it
+    // recorded: roll the posting back and the ledger still carried the stock
+    // as received and the supplier as owed.
+    //
+    // The PR auto-complete was worse — it read the PO status this very
+    // transaction had just set to FULLY_RECEIVED, but from outside it, so it
+    // saw the pre-commit value, concluded the POs were still open, and
+    // returned false. It could only ever succeed by winning a race against
+    // the commit it depended on, which is why requisitions sat at
+    // FULLY_ORDERED after their goods had arrived.
+    this.financeService
+      .autoPostGRNJournal(
+        {
+          facilityId: saved.facilityId,
+          grnNumber: saved.grnNumber,
+          totalValue: Number(saved.totalValue) || 0,
+          supplierId: saved.supplierId,
+          userId,
+        },
+        tenantId,
+      )
+      .catch((err) =>
+        this.logger.warn(`GL auto-post failed for GRN ${saved.grnNumber}: ${err.message}`),
+      );
+
+    // Turn the PO's encumbrance into actual spend now the goods are in.
+    // Without this the reservation stayed live for the rest of the fiscal
+    // year and the department was charged twice over: once as reserved,
+    // once as the posted expense. A no-op when the PO was never encumbered.
+    if (saved.purchaseOrderId) {
+      await this.budgetService
+        .markReservationSpent(saved.purchaseOrderId, tenantId)
+        .catch((err) =>
+          this.logger.warn(
+            `Failed to mark budget spent for GRN ${saved.grnNumber}: ${err?.message || err}`,
+          ),
+        );
+    }
+
+    if (originatingPRId) {
+      await this.tryAutoCompletePR(originatingPRId, tenantId).catch((err) =>
+        this.logger.warn(`Auto-complete PR failed: ${err.message}`),
+      );
+    }
+
+    return saved;
   }
 
   /**
@@ -2131,10 +2610,10 @@ export class ProcurementService {
 
   async getDashboard(facilityId: string, tenantId?: string) {
     const tid = requireTenantId(tenantId);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    // postedAt is a timestamptz, so "received today" has to be bounded by the
+    // store's day. On the server clock it ran 03:00 to 03:00 locally.
+    const today = localDayStart(0);
+    const tomorrow = localDayStart(1);
 
     const prWhere: any = { facilityId, deletedAt: IsNull() };
     prWhere.tenantId = tid;
@@ -2596,7 +3075,13 @@ export class ProcurementService {
   // ============ APPROVAL WORKFLOW (Phase 2B) ============
 
   /**
-   * Get or create approval threshold config for facility
+   * Get or create approval threshold config for facility.
+   *
+   * txn-connection-ok: intentionally runs on its own connection even when
+   * called from inside an approval transaction. The row it may create is
+   * facility configuration, not part of the approval, and should outlive a
+   * rejected or rolled-back approval. The insert race that separation opens
+   * is handled below.
    */
   private async getApprovalThreshold(
     facilityId: string,
@@ -2628,8 +3113,25 @@ export class ProcurementService {
         requireJustificationMin: 5000000,
         isActive: true,
       });
-      await this.approvalThresholdRepo.save(threshold);
-      this.logger.log(`Created default approval threshold for facility ${facilityId}`);
+      // (facilityId, tenantId) is UNIQUE, so two approvals racing on a
+      // facility that has no threshold row yet both reach here and one
+      // insert loses. Deliberately NOT joined to any caller's transaction:
+      // this is facility config, not part of the approval, and it should
+      // survive a rejected approval rather than be rolled back with it.
+      // The loser adopts the winner's row instead of failing the approval.
+      try {
+        await this.approvalThresholdRepo.save(threshold);
+        this.logger.log(`Created default approval threshold for facility ${facilityId}`);
+      } catch (e: any) {
+        const isUnique =
+          e?.code === '23505' ||
+          e?.driverError?.code === '23505' ||
+          /duplicate key value/i.test(e?.message || '');
+        if (!isUnique) throw e;
+        const existing = await this.approvalThresholdRepo.findOne({ where });
+        if (!existing) throw e;
+        threshold = existing;
+      }
     }
 
     return threshold;
@@ -2823,17 +3325,12 @@ export class ProcurementService {
         requiredRole: r.requiredRole,
         approverId: r.approverId ?? null,
         approverName:
-          enriched.approverName ||
-          (approver
-            ? approver.fullName || approver.email
-            : null),
+          enriched.approverName || (approver ? approver.fullName || approver.email : null),
         groupId: r.groupId ?? null,
         groupName: enriched.groupName ?? null,
         status: r.status,
         approvedById: r.approvedById ?? null,
-        approvedByName: approvedBy
-          ? approvedBy.fullName || approvedBy.email
-          : null,
+        approvedByName: approvedBy ? approvedBy.fullName || approvedBy.email : null,
         approvedAt: r.approvedAt ?? null,
         comments: r.comments ?? null,
         createdAt: r.createdAt,

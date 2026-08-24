@@ -1,7 +1,22 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+  BadRequestException,
+  Optional,
+} from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, LessThanOrEqual } from 'typeorm';
-import { Referral, ReferralStatus } from '../../database/entities/referral.entity';
+import { DataSource, Repository, Between, LessThanOrEqual } from 'typeorm';
+import {
+  Referral,
+  ReferralPriority,
+  ReferralStatus,
+} from '../../database/entities/referral.entity';
+import { InAppNotificationsService } from '../in-app-notifications/in-app-notifications.service';
+import { InAppNotificationType } from '../../database/entities/in-app-notification.entity';
+import { localDateString } from '../../common/utils/timezone.util';
 import {
   CreateReferralDto,
   AcceptReferralDto,
@@ -13,9 +28,17 @@ import { requireTenantId } from '../../common/utils/tenant.util';
 
 @Injectable()
 export class ReferralsService {
+  private readonly logger = new Logger(ReferralsService.name);
+
   constructor(
     @InjectRepository(Referral)
     private referralRepository: Repository<Referral>,
+    private readonly dataSource: DataSource,
+    // @Inject is required beside @Optional with a union type — without a token
+    // Nest injects undefined and the guard below reads as "notifications off".
+    @Optional()
+    @Inject(InAppNotificationsService)
+    private readonly inAppNotifications: InAppNotificationsService | null,
   ) {}
 
   async create(
@@ -26,13 +49,23 @@ export class ReferralsService {
   ): Promise<Referral> {
     const tid = requireTenantId(tenantId);
 
+    // A facility referring to itself put the same referral on both its own
+    // incoming and outgoing worklists — a data-entry slip that reads as a real
+    // transfer. Moving a patient between departments of one hospital is an
+    // internal referral and does not name a destination facility.
+    if (dto.toFacilityId && dto.toFacilityId === facilityId) {
+      throw new BadRequestException(
+        'A facility cannot refer a patient to itself — use an internal referral for a department transfer',
+      );
+    }
+
     // Calculate expiry date (default 30 days)
     const expiryDate = new Date();
     expiryDate.setDate(expiryDate.getDate() + 30);
 
     // Serialize number generation per tenant/month: MAX+1 with no lock (and
     // no tenant filter) raced under concurrent creates.
-    return this.referralRepository.manager.transaction(async (manager) => {
+    const saved = await this.referralRepository.manager.transaction(async (manager) => {
       await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
         `referral_num_${tid}`,
       ]);
@@ -50,6 +83,47 @@ export class ReferralsService {
 
       return manager.save(Referral, referral);
     });
+
+    // Tell the receiving facility. Nothing announced an incoming referral
+    // before: an emergency transfer sat unseen until somebody happened to open
+    // the incoming list. Only in-tenant destinations can be told — an
+    // out-referral to a hospital that is not on this system has nobody here to
+    // notify.
+    if (saved.toFacilityId) {
+      await this.notifyReceivingFacility(saved, tid);
+    }
+
+    return saved;
+  }
+
+  private async notifyReceivingFacility(referral: Referral, tenantId: string): Promise<void> {
+    if (!this.inAppNotifications || !referral.toFacilityId) return;
+    try {
+      const targets = await this.inAppNotifications.getUserIdsByRole(
+        ['doctor', 'nurse', 'charge_nurse', 'receptionist', 'administrator'],
+        referral.toFacilityId,
+        tenantId,
+      );
+      if (targets.length === 0) return;
+      const urgent = referral.priority !== ReferralPriority.ROUTINE;
+      await this.inAppNotifications.notifyMany(
+        targets,
+        {
+          type: InAppNotificationType.GENERAL,
+          title: urgent ? `${referral.priority.toUpperCase()} referral incoming` : 'Incoming referral',
+          message: `${referral.referralNumber}: ${referral.reason.replace(/_/g, ' ')} — ${referral.clinicalSummary?.slice(0, 120) ?? ''}`,
+          facilityId: referral.toFacilityId,
+          metadata: {
+            kind: 'incoming_referral',
+            referralId: referral.id,
+            priority: referral.priority,
+          },
+        },
+        tenantId,
+      );
+    } catch (err: any) {
+      this.logger.warn(`Incoming referral notification failed: ${err.message}`);
+    }
   }
 
   async findAll(
@@ -241,6 +315,11 @@ export class ReferralsService {
 
     referral.status = ReferralStatus.REJECTED;
     referral.rejectionReason = dto.rejectionReason;
+    // Accepting recorded who and when; rejecting recorded only a reason. Turning
+    // a referred patient away is a decision the referring unit may need to
+    // question, and nobody's name was against it.
+    referral.rejectedById = userId ?? null;
+    referral.rejectedAt = new Date();
 
     return this.referralRepository.save(referral);
   }
@@ -248,6 +327,7 @@ export class ReferralsService {
   async complete(
     id: string,
     dto: CompleteReferralDto,
+    userId: string | undefined,
     tenantId?: string,
     facilityId?: string,
   ): Promise<Referral> {
@@ -260,6 +340,7 @@ export class ReferralsService {
 
     referral.status = ReferralStatus.COMPLETED;
     referral.completedAt = new Date();
+    referral.completedById = userId ?? null;
 
     if (dto.destinationEncounterId) {
       referral.destinationEncounterId = dto.destinationEncounterId;
@@ -274,6 +355,7 @@ export class ReferralsService {
   async cancel(
     id: string,
     reason: string,
+    userId: string | undefined,
     tenantId?: string,
     facilityId?: string,
   ): Promise<Referral> {
@@ -286,8 +368,37 @@ export class ReferralsService {
 
     referral.status = ReferralStatus.CANCELLED;
     referral.rejectionReason = reason;
+    referral.cancelledById = userId ?? null;
+    referral.cancelledAt = new Date();
 
     return this.referralRepository.save(referral);
+  }
+
+  /**
+   * Expire referrals nobody answered.
+   *
+   * `checkExpiredReferrals` existed, was correct, and was called from nowhere:
+   * no cron, no route, no other service. So `expiry_date` and the EXPIRED
+   * status were decorative, and a referral sent in 2025 and never answered
+   * still sat at the top of the receiving facility's pending list. Runs across
+   * tenants in system context, like the other maintenance crons.
+   */
+  @Cron('15 1 * * *', { name: 'expire-stale-referrals' })
+  async expireStaleReferralsCron(): Promise<void> {
+    try {
+      const result = await this.dataSource.query(
+        `UPDATE referrals
+            SET status = $1, updated_at = NOW()
+          WHERE status = $2
+            AND expiry_date IS NOT NULL
+            AND expiry_date <= NOW()`,
+        [ReferralStatus.EXPIRED, ReferralStatus.PENDING],
+      );
+      const affected = Array.isArray(result) ? result[1] : 0;
+      if (affected) this.logger.log(`Expired ${affected} unanswered referral(s)`);
+    } catch (err: any) {
+      this.logger.warn(`Referral expiry sweep failed: ${err.message}`);
+    }
   }
 
   async checkExpiredReferrals(tenantId?: string): Promise<number> {
@@ -342,10 +453,9 @@ export class ReferralsService {
     tenantId: string,
     manager: import('typeorm').EntityManager,
   ): Promise<string> {
-    const today = new Date();
-    const year = today.getFullYear();
-    const month = String(today.getMonth() + 1).padStart(2, '0');
-    const prefix = `REF${year}${month}`;
+    // The hospital's month, not the server's: getFullYear/getMonth run in UTC,
+    // so for the first three hours of the 1st the number carried last month.
+    const prefix = `REF${localDateString(new Date()).slice(0, 7).replace('-', '')}`;
 
     const lastReferral = await manager
       .createQueryBuilder(Referral, 'referral')

@@ -218,6 +218,35 @@ export class InsuranceController {
     );
   }
 
+  // MUST stay above @Get('claims/:id') — Nest matches in declaration order, so
+  // with :id first the literal path was swallowed by the parameterised route
+  // and every request for the batch export came back "Validation failed (uuid
+  // is expected)" from ParseUUIDPipe. The claims CSV has never downloaded.
+  @Get('claims/export.csv')
+  @AuthWithPermissions('insurance.claims.read')
+  @ApiOperation({ summary: 'Export submittable claims as a CSV batch (NHIS-style)' })
+  @ApiQuery({ name: 'providerId', required: true })
+  @ApiQuery({ name: 'dateFrom', required: true, description: 'YYYY-MM-DD' })
+  @ApiQuery({ name: 'dateTo', required: true, description: 'YYYY-MM-DD' })
+  async exportBatchCsv(
+    @Query('providerId') providerId: string,
+    @Query('dateFrom') dateFrom: string,
+    @Query('dateTo') dateTo: string,
+    @Request() req: any,
+    @Res() res: Response,
+  ) {
+    const { filename, csv, count } = await this.claimExportService.exportBatchCsv(
+      providerId,
+      dateFrom,
+      dateTo,
+      req.user?.tenantId,
+    );
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('X-Claim-Count', String(count));
+    res.end(csv);
+  }
+
   @Get('claims/:id')
   @AuthWithPermissions('insurance.claims.read')
   @ApiOperation({ summary: 'Get claim by ID' })
@@ -259,31 +288,6 @@ export class InsuranceController {
     res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
     res.setHeader('Content-Length', pdf.length.toString());
     res.end(pdf);
-  }
-
-  @Get('claims/export.csv')
-  @AuthWithPermissions('insurance.claims.read')
-  @ApiOperation({ summary: 'Export submittable claims as a CSV batch (NHIS-style)' })
-  @ApiQuery({ name: 'providerId', required: true })
-  @ApiQuery({ name: 'dateFrom', required: true, description: 'YYYY-MM-DD' })
-  @ApiQuery({ name: 'dateTo', required: true, description: 'YYYY-MM-DD' })
-  async exportBatchCsv(
-    @Query('providerId') providerId: string,
-    @Query('dateFrom') dateFrom: string,
-    @Query('dateTo') dateTo: string,
-    @Request() req: any,
-    @Res() res: Response,
-  ) {
-    const { filename, csv, count } = await this.claimExportService.exportBatchCsv(
-      providerId,
-      dateFrom,
-      dateTo,
-      req.user?.tenantId,
-    );
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.setHeader('X-Claim-Count', String(count));
-    res.end(csv);
   }
 
   @Post('claims/:id/approve')

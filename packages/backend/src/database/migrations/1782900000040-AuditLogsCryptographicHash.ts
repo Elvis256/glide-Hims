@@ -1,36 +1,19 @@
-import { MigrationInterface, QueryRunner, TableColumn } from 'typeorm';
+import { MigrationInterface, QueryRunner } from 'typeorm';
 
 export class AuditLogsCryptographicHash1782900000040 implements MigrationInterface {
+  // Raw SQL rather than queryRunner.addColumns(), which has no "if not exists"
+  // form: audit_logs predates the migration chain and is created by
+  // BaselineSchema1690000000000 already carrying these columns, so a bare
+  // unconditional ADD COLUMN aborts a build from an empty database.
   public async up(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.addColumns('audit_logs', [
-      new TableColumn({
-        name: 'hash',
-        type: 'varchar',
-        length: '64',
-        isNullable: true,
-      }),
-      new TableColumn({
-        name: 'previous_hash',
-        type: 'varchar',
-        length: '64',
-        isNullable: true,
-      }),
-    ]);
-
-    await queryRunner.addColumns('admin_audit_log', [
-      new TableColumn({
-        name: 'hash',
-        type: 'varchar',
-        length: '64',
-        isNullable: true,
-      }),
-      new TableColumn({
-        name: 'previous_hash',
-        type: 'varchar',
-        length: '64',
-        isNullable: true,
-      }),
-    ]);
+    for (const table of ['audit_logs', 'admin_audit_log']) {
+      await queryRunner.query(
+        `ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "hash" character varying(64) NULL`,
+      );
+      await queryRunner.query(
+        `ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "previous_hash" character varying(64) NULL`,
+      );
+    }
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {

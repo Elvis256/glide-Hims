@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { toast } from 'sonner';
 import {
   Activity,
@@ -97,6 +98,12 @@ const EMPTY_FORM: FormState = {
 };
 
 export default function PartographPanel({ labourId, onClose }: Props) {
+  // This component is mounted only while the modal is showing.
+  const dialogRef = useDialogA11y<HTMLDivElement>({
+    open: true,
+    onClose,
+  });
+
   const [data, setData] = useState<PartographData | null>(null);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -250,7 +257,12 @@ export default function PartographPanel({ labourId, onClose }: Props) {
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end">
+    <div
+      className="fixed inset-0 z-50 flex justify-end"
+      role="dialog"
+      aria-modal="true"
+      ref={dialogRef}
+    >
       <div className="absolute inset-0 bg-black/30" onClick={onClose} />
       <div className="relative w-full max-w-3xl bg-white shadow-xl overflow-y-auto">
         {/* Header */}

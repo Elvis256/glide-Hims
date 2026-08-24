@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThanOrEqual, In } from 'typeorm';
 import * as nodemailer from 'nodemailer';
@@ -737,6 +737,13 @@ export class NotificationsService {
   // Templates are kept as an array in extraConfig.templates
   async getTemplates(facilityId: string, tenantId?: string): Promise<any[]> {
     const tid = requireTenantId(tenantId);
+    // This read seeds the default template set on first access, so it INSERTS —
+    // and `notification_configs.facility_id` is NOT NULL. Called without a
+    // facility (the parameter is documented required but nothing enforced it)
+    // the insert failed and the endpoint answered 500.
+    if (!facilityId) {
+      throw new BadRequestException('facilityId is required to read message templates');
+    }
     const config = await this.configRepo.findOne({
       where: { facilityId, type: NotificationType.TEMPLATE, tenantId: tid },
     });

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
@@ -66,6 +67,17 @@ export default function LabConsumablesPage() {
   const [showOrderModal, setShowOrderModal] = useState(false);
   const [orderItem, setOrderItem] = useState<Consumable | null>(null);
   const [orderQuantity, setOrderQuantity] = useState(1);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showModal,
+    onClose: () => setShowModal(false),
+  });
+  const showOrderModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showOrderModal,
+    onClose: () => setShowOrderModal(false),
+  });
   const [newItem, setNewItem] = useState<{
     name: string;
     category: ReagentCategory;
@@ -475,7 +487,12 @@ export default function LabConsumablesPage() {
 
       {/* Add Item Modal */}
       {showModal && !editingItem && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showModalDialogRef}
+        >
           <div className="bg-white rounded-xl w-full max-w-md">
             <div className="p-6 border-b flex items-center justify-between">
               <h2 className="text-xl font-bold text-gray-900">Add New Item</h2>
@@ -559,7 +576,12 @@ export default function LabConsumablesPage() {
 
       {/* Receive Stock (Reorder) Modal */}
       {showOrderModal && orderItem && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showOrderModalDialogRef}
+        >
           <div className="bg-white rounded-xl w-full max-w-md">
             <div className="p-6 border-b flex items-center justify-between">
               <div>

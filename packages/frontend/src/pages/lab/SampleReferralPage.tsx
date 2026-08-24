@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -728,11 +729,22 @@ function ReceiveModal({ referral, onClose, onConfirm }: {
   onClose: () => void;
   onConfirm: (temp: number | undefined, condition: string) => void;
 }) {
+  // This component is mounted only while the modal is showing.
+  const dialogRef = useDialogA11y<HTMLDivElement>({
+    open: true,
+    onClose,
+  });
+
   const [temp, setTemp] = useState('');
   const [condition, setCondition] = useState('intact');
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+      role="dialog"
+      aria-modal="true"
+      ref={dialogRef}
+    >
       <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
         <h3 className="text-lg font-semibold mb-4">Receive Sample</h3>
         <p className="text-sm text-gray-500 mb-4">

@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useId } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Search, User, X, Loader2, Scissors } from 'lucide-react';
@@ -14,6 +15,13 @@ interface Props {
 }
 
 export default function ScheduleSurgeryModal({ theatres, onClose, onScheduled }: Props) {
+  const fid = useId();
+  // This component is mounted only while the modal is showing.
+  const dialogRef = useDialogA11y<HTMLDivElement>({
+    open: true,
+    onClose,
+  });
+
   const facilityId = useFacilityId();
   const [patientSearch, setPatientSearch] = useState('');
   const [patient, setPatient] = useState<{ id: string; fullName: string } | null>(null);
@@ -45,6 +53,25 @@ export default function ScheduleSurgeryModal({ theatres, onClose, onScheduled }:
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
 
+  // GET /surgery/check-conflicts existed and worked, but nothing in the app
+  // called it — the only way to discover a clash was to fill the form in and
+  // have the POST come back 400. Ask while the slot is still being chosen.
+  const slotChosen =
+    !!form.theatreId && !!form.scheduledDate && !!form.scheduledTime &&
+    Number(form.estimatedDurationMinutes) > 0;
+
+  const { data: clashes = [] } = useQuery({
+    queryKey: ['surgery-conflicts', form.theatreId, form.scheduledDate, form.scheduledTime, form.estimatedDurationMinutes],
+    queryFn: async () =>
+      (await surgeryService.checkConflicts({
+        theatreId: form.theatreId,
+        date: form.scheduledDate,
+        time: form.scheduledTime,
+        duration: Number(form.estimatedDurationMinutes),
+      })).data as Array<{ caseNumber: string; scheduledTime: string; estimatedDurationMinutes: number; procedureName: string }>,
+    enabled: slotChosen,
+  });
+
   const mutation = useMutation({
     mutationFn: () =>
       surgeryService.cases.schedule({
@@ -75,7 +102,12 @@ export default function ScheduleSurgeryModal({ theatres, onClose, onScheduled }:
     form.scheduledDate && form.scheduledTime && Number(form.estimatedDurationMinutes) > 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      ref={dialogRef}
+    >
       <div className="absolute inset-0 bg-black/30" onClick={onClose} />
       <div className="relative bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center">
@@ -127,36 +159,36 @@ export default function ScheduleSurgeryModal({ theatres, onClose, onScheduled }:
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Procedure *</label>
-              <input value={form.procedureName} onChange={set('procedureName')} placeholder="e.g. Appendicectomy" className="w-full px-3 py-2 border rounded-lg" />
+              <label htmlFor={`${fid}-procedure`} className="block text-sm font-medium text-gray-700 mb-1">Procedure *</label>
+              <input id={`${fid}-procedure`} value={form.procedureName} onChange={set('procedureName')} placeholder="e.g. Appendicectomy" className="w-full px-3 py-2 border rounded-lg" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Procedure Code</label>
-              <input value={form.procedureCode} onChange={set('procedureCode')} placeholder="ICD/CPT (optional)" className="w-full px-3 py-2 border rounded-lg" />
+              <label htmlFor={`${fid}-procedure-code`} className="block text-sm font-medium text-gray-700 mb-1">Procedure Code</label>
+              <input id={`${fid}-procedure-code`} value={form.procedureCode} onChange={set('procedureCode')} placeholder="ICD/CPT (optional)" className="w-full px-3 py-2 border rounded-lg" />
             </div>
             <div className="col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Indication / Diagnosis</label>
-              <input value={form.diagnosis} onChange={set('diagnosis')} className="w-full px-3 py-2 border rounded-lg" />
+              <label htmlFor={`${fid}-indication-diagnosis`} className="block text-sm font-medium text-gray-700 mb-1">Indication / Diagnosis</label>
+              <input id={`${fid}-indication-diagnosis`} value={form.diagnosis} onChange={set('diagnosis')} className="w-full px-3 py-2 border rounded-lg" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Type *</label>
-              <select value={form.surgeryType} onChange={set('surgeryType')} className="w-full px-3 py-2 border rounded-lg">
+              <label htmlFor={`${fid}-type`} className="block text-sm font-medium text-gray-700 mb-1">Type *</label>
+              <select id={`${fid}-type`} value={form.surgeryType} onChange={set('surgeryType')} className="w-full px-3 py-2 border rounded-lg">
                 <option value="major">Major</option>
                 <option value="minor">Minor</option>
                 <option value="day_case">Day case</option>
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Priority *</label>
-              <select value={form.priority} onChange={set('priority')} className="w-full px-3 py-2 border rounded-lg">
+              <label htmlFor={`${fid}-priority`} className="block text-sm font-medium text-gray-700 mb-1">Priority *</label>
+              <select id={`${fid}-priority`} value={form.priority} onChange={set('priority')} className="w-full px-3 py-2 border rounded-lg">
                 <option value="elective">Elective</option>
                 <option value="urgent">Urgent</option>
                 <option value="emergency">Emergency</option>
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Theatre *</label>
-              <select value={form.theatreId} onChange={set('theatreId')} className="w-full px-3 py-2 border rounded-lg">
+              <label htmlFor={`${fid}-theatre`} className="block text-sm font-medium text-gray-700 mb-1">Theatre *</label>
+              <select id={`${fid}-theatre`} value={form.theatreId} onChange={set('theatreId')} className="w-full px-3 py-2 border rounded-lg">
                 <option value="">Select theatre...</option>
                 {theatres.map((t) => (
                   <option key={t.id} value={t.id}>{t.name} ({t.code})</option>
@@ -167,8 +199,8 @@ export default function ScheduleSurgeryModal({ theatres, onClose, onScheduled }:
               )}
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Lead Surgeon *</label>
-              <select value={form.leadSurgeonId} onChange={set('leadSurgeonId')} className="w-full px-3 py-2 border rounded-lg">
+              <label htmlFor={`${fid}-lead-surgeon`} className="block text-sm font-medium text-gray-700 mb-1">Lead Surgeon *</label>
+              <select id={`${fid}-lead-surgeon`} value={form.leadSurgeonId} onChange={set('leadSurgeonId')} className="w-full px-3 py-2 border rounded-lg">
                 <option value="">Select surgeon...</option>
                 {surgeons.map((d: any) => (
                   <option key={d.id} value={d.id}>{d.fullName}</option>
@@ -176,22 +208,34 @@ export default function ScheduleSurgeryModal({ theatres, onClose, onScheduled }:
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Date *</label>
-              <input type="date" value={form.scheduledDate} onChange={set('scheduledDate')} className="w-full px-3 py-2 border rounded-lg" />
+              <label htmlFor={`${fid}-date`} className="block text-sm font-medium text-gray-700 mb-1">Date *</label>
+              <input id={`${fid}-date`} type="date" value={form.scheduledDate} onChange={set('scheduledDate')} className="w-full px-3 py-2 border rounded-lg" />
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Time *</label>
-                <input type="time" value={form.scheduledTime} onChange={set('scheduledTime')} className="w-full px-3 py-2 border rounded-lg" />
+                <label htmlFor={`${fid}-time`} className="block text-sm font-medium text-gray-700 mb-1">Time *</label>
+                <input id={`${fid}-time`} type="time" value={form.scheduledTime} onChange={set('scheduledTime')} className="w-full px-3 py-2 border rounded-lg" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Duration (min) *</label>
-                <input type="number" min="10" step="10" value={form.estimatedDurationMinutes} onChange={set('estimatedDurationMinutes')} className="w-full px-3 py-2 border rounded-lg" />
+                <label htmlFor={`${fid}-duration-min`} className="block text-sm font-medium text-gray-700 mb-1">Duration (min) *</label>
+                <input id={`${fid}-duration-min`} type="number" min="10" step="10" value={form.estimatedDurationMinutes} onChange={set('estimatedDurationMinutes')} className="w-full px-3 py-2 border rounded-lg" />
               </div>
             </div>
+            {clashes.length > 0 && (
+              <div role="status" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                <p className="font-medium">This theatre is already booked at that time</p>
+                <ul className="mt-1 space-y-0.5">
+                  {clashes.map((c) => (
+                    <li key={c.caseNumber}>
+                      {c.caseNumber} — {c.procedureName}, {String(c.scheduledTime).slice(0, 5)} for {c.estimatedDurationMinutes} min
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Anesthesia</label>
-              <select value={form.anesthesiaType} onChange={set('anesthesiaType')} className="w-full px-3 py-2 border rounded-lg">
+              <label htmlFor={`${fid}-anesthesia`} className="block text-sm font-medium text-gray-700 mb-1">Anesthesia</label>
+              <select id={`${fid}-anesthesia`} value={form.anesthesiaType} onChange={set('anesthesiaType')} className="w-full px-3 py-2 border rounded-lg">
                 <option value="">To be decided</option>
                 <option value="general">General</option>
                 <option value="spinal">Spinal</option>

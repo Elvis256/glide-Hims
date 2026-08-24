@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import api from '../../../services/api';
+import api, { getApiErrorMessage } from '../../../services/api';
 import { useFacilityId } from '../../../lib/facility';
 import { CatalogItemPicker, type SelectedItem } from '../../../components/catalog';
 import {
@@ -118,10 +119,22 @@ export default function RequisitionsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<RequisitionStatus | 'all'>('all');
   const [selectedRequisition, setSelectedRequisition] = useState<PurchaseRequest | null>(null);
+  const [rejectingRequisition, setRejectingRequisition] = useState<PurchaseRequest | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [viewingId, setViewingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<RequisitionFormData>(emptyFormData);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showCreateModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showCreateModal,
+    onClose: () => setShowCreateModal(false),
+  });
+  const viewingIdDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!viewingId,
+    onClose: () => setViewingId(null),
+  });
 
   const facilityId = useFacilityId();
 
@@ -240,13 +253,22 @@ export default function RequisitionsPage() {
     enabled: !!detailId,
   });
 
+  // The QueryClient installs a global mutation onError, so these already
+  // surfaced a message; a mutation-level onError replaces it rather than
+  // adding to it, so route through the same formatter and only supply a
+  // better fallback for the case where the server sends no message.
+  const showError = (fallback: string) => (err: unknown) =>
+    toast.error(getApiErrorMessage(err, fallback));
+
   // Submit mutation
   const submitMutation = useMutation({
     mutationFn: (id: string) => api.put(`/procurement/purchase-requests/${id}/submit`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['purchase-requests'] });
+      toast.success('Requisition submitted for approval');
       setSelectedRequisition(null);
     },
+    onError: showError('Failed to submit requisition'),
   });
 
   // Approve mutation
@@ -254,17 +276,30 @@ export default function RequisitionsPage() {
     mutationFn: (id: string) => api.put(`/procurement/purchase-requests/${id}/approve`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['purchase-requests'] });
+      toast.success('Requisition approved');
       setSelectedRequisition(null);
     },
+    onError: showError('Failed to approve requisition'),
   });
 
-  // Reject mutation
+  // Reject mutation.
+  //
+  // This sent no body at all, while the endpoint requires a rejectionReason —
+  // so with the global whitelisting ValidationPipe every rejection came back
+  // 400. The global mutation onError did surface that as a class-validator
+  // message ("rejectionReason must be a string"), which told the user nothing
+  // they could act on. Rejecting a requisition was impossible from this
+  // screen; now the reason is collected and sent.
   const rejectMutation = useMutation({
-    mutationFn: (id: string) => api.put(`/procurement/purchase-requests/${id}/reject`),
+    mutationFn: ({ id, rejectionReason }: { id: string; rejectionReason: string }) =>
+      api.put(`/procurement/purchase-requests/${id}/reject`, { rejectionReason }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['purchase-requests'] });
+      toast.success('Requisition rejected');
+      setRejectingRequisition(null);
       setSelectedRequisition(null);
     },
+    onError: showError('Failed to reject requisition'),
   });
 
   // Convert approved requisition → RFQ
@@ -704,7 +739,7 @@ export default function RequisitionsPage() {
                       Approve
                     </button>
                     <button
-                      onClick={() => rejectMutation.mutate(selectedRequisition.id)}
+                      onClick={() => setRejectingRequisition(selectedRequisition)}
                       disabled={rejectMutation.isPending}
                       className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
                     >
@@ -742,7 +777,12 @@ export default function RequisitionsPage() {
 
       {/* Create Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showCreateModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden">
             <div className="px-6 py-4 border-b flex items-center justify-between">
               <h2 className="text-lg font-semibold">
@@ -990,7 +1030,12 @@ export default function RequisitionsPage() {
 
       {/* View Full Details Modal */}
       {viewingId && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={viewingIdDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
             <div className="px-6 py-4 border-b flex items-center justify-between">
               <div>
@@ -1144,6 +1189,108 @@ export default function RequisitionsPage() {
           </div>
         </div>
       )}
+
+      {rejectingRequisition && (
+        <RejectRequisitionModal
+          requisition={rejectingRequisition}
+          isSubmitting={rejectMutation.isPending}
+          onClose={() => setRejectingRequisition(null)}
+          onConfirm={(rejectionReason) =>
+            rejectMutation.mutate({ id: rejectingRequisition.id, rejectionReason })
+          }
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Rejection needs a reason — the endpoint requires one, and the department
+ * that raised the requisition has to be told something more useful than that
+ * it was refused.
+ */
+export function RejectRequisitionModal({
+  requisition,
+  isSubmitting,
+  onClose,
+  onConfirm,
+}: {
+  requisition: PurchaseRequest;
+  isSubmitting: boolean;
+  onClose: () => void;
+  onConfirm: (reason: string) => void;
+}) {
+  const [reason, setReason] = useState('');
+  const dialogRef = useDialogA11y<HTMLDivElement>({ open: true, onClose });
+  const canSubmit = reason.trim().length >= 3 && !isSubmitting;
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="reject-pr-title"
+      ref={dialogRef}
+    >
+      <div className="bg-white rounded-lg shadow-xl max-w-lg w-full">
+        <div className="px-5 py-3 border-b">
+          <h3 id="reject-pr-title" className="font-semibold text-gray-900">
+            Reject {requisition.requestNumber}?
+          </h3>
+          <p className="text-sm text-gray-500">
+            {(typeof requisition.department === 'string'
+              ? requisition.department
+              : requisition.department?.name) || 'Department'}{' '}
+            · raised by{' '}
+            {requisition.requestedBy?.fullName ||
+              [requisition.requestedBy?.firstName, requisition.requestedBy?.lastName]
+                .filter(Boolean)
+                .join(' ') ||
+              requisition.requester ||
+              'unknown'}
+          </p>
+        </div>
+
+        <div className="p-5">
+          <label htmlFor="reject-reason" className="block text-sm text-gray-700 mb-1">
+            Reason for rejection <span className="text-red-600">required</span>
+          </label>
+          <textarea
+            id="reject-reason"
+            rows={3}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="e.g. not in this quarter's budget, order from existing stock first, specify the strength required"
+            className="w-full px-3 py-2 border rounded-lg text-sm"
+          />
+          <p className="mt-2 text-xs text-gray-500">
+            The requesting department sees this, so say what would need to change.
+          </p>
+        </div>
+
+        <div className="px-5 py-3 border-t flex gap-2 justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+          >
+            Go back
+          </button>
+          <button
+            type="button"
+            onClick={() => canSubmit && onConfirm(reason.trim())}
+            disabled={!canSubmit}
+            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 flex items-center gap-2"
+          >
+            {isSubmitting ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <XCircle className="w-4 h-4" />
+            )}
+            Reject requisition
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

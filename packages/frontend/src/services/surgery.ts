@@ -105,6 +105,8 @@ export interface SurgeryCase {
   leadSurgeon?: { id: string; firstName: string; lastName: string };
   createdAt: string;
   updatedAt: string;
+  recoveryDischargedAt?: string;
+  recoveryDischargedById?: string;
 }
 
 export interface ScheduleSurgeryDto {
@@ -196,7 +198,8 @@ export interface RecordConsumableDto {
   itemId: string;
   category?: string;
   quantityUsed: number;
-  unitCost: number;
+  /** Ignored by the server, which prices the consumable from the item. */
+  unitCost?: number;
   batchNumber?: string;
   usagePhase: 'pre_op' | 'intra_op' | 'post_op';
   isBillable?: boolean;
@@ -215,6 +218,11 @@ export interface SurgeryConsumable {
   totalCost?: number;
   usagePhase: string;
   isBillable?: boolean;
+  /**
+   * Present only when the item was recorded but stock could not be deducted —
+   * the chart is right and the store count is not. Not persisted.
+   */
+  stockWarning?: string;
   createdAt: string;
 }
 
@@ -273,8 +281,8 @@ export const surgeryService = {
     complete: (id: string, data: CompleteSurgeryDto) =>
       api.put<SurgeryCase>(`/surgery/cases/${id}/complete`, data),
 
-    dischargeRecovery: (id: string) =>
-      api.put<SurgeryCase>(`/surgery/cases/${id}/discharge-recovery`),
+    dischargeRecovery: (id: string, data?: { recoveryNotes?: string }) =>
+      api.put<SurgeryCase>(`/surgery/cases/${id}/discharge-recovery`, data ?? {}),
 
     cancel: (id: string, data: CancelSurgeryDto) =>
       api.put<SurgeryCase>(`/surgery/cases/${id}/cancel`, data),

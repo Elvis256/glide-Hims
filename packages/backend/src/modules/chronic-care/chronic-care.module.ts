@@ -5,11 +5,12 @@ import { ChronicCareService } from './chronic-care.service';
 import { PatientChronicCondition } from '../../database/entities/patient-chronic-condition.entity';
 import { Patient } from '../../database/entities/patient.entity';
 import { Diagnosis } from '../../database/entities/diagnosis.entity';
+import { PatientReminder } from '../../database/entities/patient-reminder.entity';
 import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([PatientChronicCondition, Patient, Diagnosis]),
+    TypeOrmModule.forFeature([PatientChronicCondition, Patient, Diagnosis, PatientReminder]),
     NotificationsModule,
   ],
   controllers: [ChronicCareController],

@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../../services/api';
 import {
@@ -70,6 +71,13 @@ export default function FacilityModePage() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [customModules, setCustomModules] = useState<string[] | null>(null);
   const [showCustom, setShowCustom] = useState(false);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showConfirmDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showConfirm,
+    onClose: () => setShowConfirm(false),
+  });
 
   // Fetch current facility mode
   const { data: currentMode, isLoading: loadingMode } = useQuery({
@@ -446,7 +454,12 @@ export default function FacilityModePage() {
 
       {/* Confirmation Modal */}
       {showConfirm && previewPreset && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={showConfirmDialogRef}
+        >
           <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 space-y-5">
             <div className="flex items-start gap-3">
               <div className="p-2 bg-amber-100 rounded-lg text-amber-600">

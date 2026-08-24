@@ -157,3 +157,37 @@ export class SupplierCreditNoteItem extends BaseEntity {
   @Column({ type: 'varchar', length: 100, nullable: true, name: 'batch_number' })
   batchNumber?: string;
 }
+
+/**
+ * A single application of a credit/debit note against a payment voucher.
+ *
+ * A note can be split across several vouchers, so the link lives here rather
+ * than as a column on either side. Reversal is recorded rather than deleted,
+ * so a cancelled voucher still shows what was returned and when.
+ */
+@Entity('supplier_credit_note_applications')
+@Index(['creditNoteId'])
+@Index(['paymentVoucherId'])
+export class SupplierCreditNoteApplication extends BaseEntity {
+  @Column({ type: 'uuid', name: 'credit_note_id' })
+  creditNoteId: string;
+
+  @Column({ type: 'uuid', name: 'payment_voucher_id' })
+  paymentVoucherId: string;
+
+  @Column({ type: 'decimal', precision: 15, scale: 2 })
+  amount: number;
+
+  @Column({ type: 'uuid', nullable: true, name: 'applied_by' })
+  appliedBy?: string;
+
+  @Column({ type: 'timestamptz', name: 'applied_at', default: () => 'CURRENT_TIMESTAMP' })
+  appliedAt: Date;
+
+  /** Set when the voucher was cancelled and the credit handed back. */
+  @Column({ type: 'timestamptz', nullable: true, name: 'reversed_at' })
+  reversedAt?: Date | null;
+
+  @Column({ type: 'uuid', nullable: true, name: 'reversed_by' })
+  reversedBy?: string | null;
+}

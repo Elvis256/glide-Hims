@@ -72,44 +72,8 @@ export default function BillingRoutes() {
       <Route path="patient-tab" element={<ModuleRoute module="billing"><BillingRoute><PatientTabPage /></BillingRoute></ModuleRoute>} />
       <Route path="patient-tab/:patientId" element={<ModuleRoute module="billing"><BillingRoute><PatientTabPage /></BillingRoute></ModuleRoute>} />
       <Route path="doctor-fees" element={<ModuleRoute module="billing"><BillingRoute><DoctorFeesPage /></BillingRoute></ModuleRoute>} />
-      <Route path="admin/services/doctor-fees" element={<AdminRoute><DoctorFeesPage /></AdminRoute>} />
-      <Route path="admin/audit-log" element={<AdminRoute><AuditLogViewerPage /></AdminRoute>} />
       <Route path="insurance/claims" element={<ModuleRoute module="billing"><InsuranceRoute><ClaimsPage /></InsuranceRoute></ModuleRoute>} />
       <Route path="insurance/providers" element={<ModuleRoute module="billing"><InsuranceRoute><InsuranceProvidersPage /></InsuranceRoute></ModuleRoute>} />
-      <Route path="procurement/approvals" element={<ModuleRoute module="stores"><AdminRoute><ApprovalDashboardPage /></AdminRoute></ModuleRoute>} />
-      <Route path="procurement/direct-po" element={<ModuleRoute module="stores"><StoreKeeperRoute><DirectPOPage /></StoreKeeperRoute></ModuleRoute>} />
-      <Route path="procurement/requisitions" element={<ModuleRoute module="stores"><StoreKeeperRoute><RequisitionsPage /></StoreKeeperRoute></ModuleRoute>} />
-      <Route path="procurement/rfq" element={<ModuleRoute module="stores"><StoreKeeperRoute><RFQPage /></StoreKeeperRoute></ModuleRoute>} />
-      <Route path="procurement/quotes/compare" element={<ModuleRoute module="stores"><StoreKeeperRoute><CompareQuotesPage /></StoreKeeperRoute></ModuleRoute>} />
-      <Route path="procurement/quotes/approve" element={<ModuleRoute module="stores"><AdminRoute><ApproveQuotationsPage /></AdminRoute></ModuleRoute>} />
-      <Route path="procurement/orders" element={<ModuleRoute module="stores"><StoreKeeperRoute><PurchaseOrdersPage /></StoreKeeperRoute></ModuleRoute>} />
-      <Route path="procurement/grn" element={<ModuleRoute module="stores"><StoreKeeperRoute><GoodsReceivedPage /></StoreKeeperRoute></ModuleRoute>} />
-      <Route path="procurement/invoices/match" element={<ModuleRoute module="stores"><AccountantRoute><InvoiceMatchingPage /></AccountantRoute></ModuleRoute>} />
-      <Route path="procurement/trace" element={<ModuleRoute module="stores"><StoreKeeperRoute><ProcurementTracePage /></StoreKeeperRoute></ModuleRoute>} />
-      <Route path="procurement/gl-integration" element={<ModuleRoute module="stores"><AccountantRoute><ProcurementGLIntegrationPage /></AccountantRoute></ModuleRoute>} />
-      <Route path="procurement/analytics" element={<ModuleRoute module="stores"><StoreKeeperRoute><ProcurementAnalyticsDashboard /></StoreKeeperRoute></ModuleRoute>} />
-      <Route path="procurement/vendors" element={<ModuleRoute module="stores"><StoreKeeperRoute><VendorListPage /></StoreKeeperRoute></ModuleRoute>} />
-      <Route path="procurement/vendors/contracts" element={<ModuleRoute module="stores"><StoreKeeperRoute><VendorContractsPage /></StoreKeeperRoute></ModuleRoute>} />
-      <Route path="procurement/vendors/ratings" element={<ModuleRoute module="stores"><StoreKeeperRoute><VendorRatingsPage /></StoreKeeperRoute></ModuleRoute>} />
-      <Route path="procurement/vendors/prices" element={<ModuleRoute module="stores"><StoreKeeperRoute><PriceAgreementsPage /></StoreKeeperRoute></ModuleRoute>} />
-      <Route path="procurement/vendors/payments" element={<ModuleRoute module="stores"><AccountantRoute><VendorPaymentsPage /></AccountantRoute></ModuleRoute>} />
-      <Route path="finance/accounts" element={<ModuleRoute module="finance"><FinanceRoute><AccountsPage /></FinanceRoute></ModuleRoute>} />
-      <Route path="finance/journals" element={<ModuleRoute module="finance"><FinanceRoute><JournalEntriesPage /></FinanceRoute></ModuleRoute>} />
-      <Route path="finance/expenses" element={<ModuleRoute module="finance"><FinanceRoute><ExpensesPage /></FinanceRoute></ModuleRoute>} />
-      <Route path="finance/revenue" element={<ModuleRoute module="finance"><FinanceRoute><RevenuePage /></FinanceRoute></ModuleRoute>} />
-      <Route path="finance/reports" element={<ModuleRoute module="finance"><FinanceRoute><FinancialReportsPage /></FinanceRoute></ModuleRoute>} />
-      <Route path="finance/cost-centers" element={<ModuleRoute module="finance"><FinanceRoute><CostCentersPage /></FinanceRoute></ModuleRoute>} />
-      <Route path="finance/budgets" element={<ModuleRoute module="finance"><FinanceRoute><BudgetPage /></FinanceRoute></ModuleRoute>} />
-      <Route path="finance/bank-reconciliation" element={<ModuleRoute module="finance"><FinanceRoute><BankReconciliationPage /></FinanceRoute></ModuleRoute>} />
-      <Route path="finance/patient-finance" element={<ModuleRoute module="finance"><FinanceRoute><PatientFinancePage /></FinanceRoute></ModuleRoute>} />
-      <Route path="finance/petty-cash" element={<ModuleRoute module="finance"><FinanceRoute><PettyCashPage /></FinanceRoute></ModuleRoute>} />
-      <Route path="finance/donor-funds" element={<ModuleRoute module="finance"><FinanceRoute><DonorFundsPage /></FinanceRoute></ModuleRoute>} />
-      <Route path="finance/trial-balance" element={<ModuleRoute module="finance"><FinanceRoute><TrialBalancePage /></FinanceRoute></ModuleRoute>} />
-      <Route path="finance/gl-trends" element={<ModuleRoute module="finance"><FinanceRoute><GLTrendAnalysisPage /></FinanceRoute></ModuleRoute>} />
-      <Route path="finance/revenue-dashboard" element={<ModuleRoute module="finance"><FinanceRoute><RevenueDashboardPage /></FinanceRoute></ModuleRoute>} />
-      <Route path="finance/budget-vs-actual" element={<ModuleRoute module="finance"><FinanceRoute><BudgetVsActualPage /></FinanceRoute></ModuleRoute>} />
-      <Route path="finance/custom-reports" element={<ModuleRoute module="finance"><FinanceRoute><CustomReportBuilderPage /></FinanceRoute></ModuleRoute>} />
-      <Route path="finance/dashboard" element={<ModuleRoute module="finance"><FinanceRoute><FinanceDashboard /></FinanceRoute></ModuleRoute>} />
     </Routes>
   );
 }

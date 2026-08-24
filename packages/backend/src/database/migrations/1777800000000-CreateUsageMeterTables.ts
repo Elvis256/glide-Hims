@@ -78,7 +78,7 @@ export class CreateUsageMeterTables1777800000000 implements MigrationInterface {
           {
             name: 'FK_usage_meter_event_tenant_id',
             columnNames: ['tenant_id'],
-            referencedTableName: 'tenant',
+            referencedTableName: 'tenants',
             referencedColumnNames: ['id'],
             onDelete: 'CASCADE',
           },
@@ -187,12 +187,17 @@ export class CreateUsageMeterTables1777800000000 implements MigrationInterface {
             default: 'CURRENT_TIMESTAMP',
             onUpdate: 'CURRENT_TIMESTAMP',
           },
+          {
+            name: 'deleted_at',
+            type: 'timestamp',
+            isNullable: true,
+          },
         ],
         foreignKeys: [
           {
             name: 'FK_usage_meter_aggregate_tenant_id',
             columnNames: ['tenant_id'],
-            referencedTableName: 'tenant',
+            referencedTableName: 'tenants',
             referencedColumnNames: ['id'],
             onDelete: 'CASCADE',
           },
@@ -292,12 +297,17 @@ export class CreateUsageMeterTables1777800000000 implements MigrationInterface {
             default: 'CURRENT_TIMESTAMP',
             onUpdate: 'CURRENT_TIMESTAMP',
           },
+          {
+            name: 'deleted_at',
+            type: 'timestamp',
+            isNullable: true,
+          },
         ],
         foreignKeys: [
           {
             name: 'FK_usage_quota_tenant_id',
             columnNames: ['tenant_id'],
-            referencedTableName: 'tenant',
+            referencedTableName: 'tenants',
             referencedColumnNames: ['id'],
             onDelete: 'CASCADE',
           },
@@ -410,12 +420,17 @@ export class CreateUsageMeterTables1777800000000 implements MigrationInterface {
             default: 'CURRENT_TIMESTAMP',
             onUpdate: 'CURRENT_TIMESTAMP',
           },
+          {
+            name: 'deleted_at',
+            type: 'timestamp',
+            isNullable: true,
+          },
         ],
         foreignKeys: [
           {
             name: 'FK_usage_alert_tenant_id',
             columnNames: ['tenant_id'],
-            referencedTableName: 'tenant',
+            referencedTableName: 'tenants',
             referencedColumnNames: ['id'],
             onDelete: 'CASCADE',
           },

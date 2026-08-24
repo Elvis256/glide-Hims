@@ -24,7 +24,7 @@ interface MedicationEntry {
   medication: string;
   dose: string;
   route: string;
-  status: 'given' | 'held' | 'refused' | 'missed' | 'pending';
+  status: 'administered' | 'held' | 'refused' | 'missed' | 'scheduled';
   administeredBy?: string;
   notes?: string;
 }
@@ -72,7 +72,10 @@ export default function MedicationChartPage() {
   const { data: admission } = useQuery({
     queryKey: ['patient-admission', selectedPatient?.id],
     queryFn: async () => {
-      const response = await ipdService.admissions.list({ patientId: selectedPatient!.id, status: 'admitted' });
+      const response = await ipdService.admissions.list({
+        patientId: selectedPatient!.id,
+        status: 'admitted',
+      });
       return response.data[0] || null;
     },
     enabled: !!selectedPatient?.id,
@@ -88,7 +91,7 @@ export default function MedicationChartPage() {
   const filteredPatients = useMemo(() => {
     if (!searchTerm || searchTerm.length < 2) return [];
     const patients = apiPatients?.data || [];
-    return patients.map(p => ({
+    return patients.map((p) => ({
       id: p.id,
       mrn: p.mrn,
       name: p.fullName,
@@ -98,9 +101,13 @@ export default function MedicationChartPage() {
 
   const medChart = useMemo(() => {
     if (!medications) return [];
-    return medications.map(med => ({
+    return medications.map((med) => ({
       id: med.id,
-      time: new Date(med.scheduledTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }),
+      time: new Date(med.scheduledTime).toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      }),
       medication: med.drugName,
       dose: med.dose,
       route: med.route,
@@ -118,7 +125,7 @@ export default function MedicationChartPage() {
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case 'given':
+      case 'administered':
         return <CheckCircle className="w-4 h-4 text-green-600" />;
       case 'held':
         return <Clock className="w-4 h-4 text-yellow-600" />;
@@ -133,7 +140,7 @@ export default function MedicationChartPage() {
 
   const getStatusBg = (status: string) => {
     switch (status) {
-      case 'given':
+      case 'administered':
         return 'bg-green-50 border-green-200';
       case 'held':
         return 'bg-yellow-50 border-yellow-200';
@@ -150,10 +157,7 @@ export default function MedicationChartPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-4">
-          <button
-            onClick={() => navigate(-1)}
-            className="p-2 hover:bg-gray-100 rounded-lg"
-          >
+          <button onClick={() => navigate(-1)} className="p-2 hover:bg-gray-100 rounded-lg">
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div className="flex items-center gap-2">
@@ -199,33 +203,34 @@ export default function MedicationChartPage() {
                   <Loader2 className="w-6 h-6 animate-spin text-teal-600" />
                 </div>
               ) : filteredPatients.length > 0 ? (
-              filteredPatients.map((patient) => (
-                <button
-                  key={patient.id}
-                  onClick={() => {
-                    setSelectedPatient(patient);
-                    setSearchTerm('');
-                  }}
-                  className={`w-full text-left p-3 rounded-lg border transition-colors ${
-                    selectedPatient?.id === patient.id
-                      ? 'border-teal-500 bg-teal-50'
-                      : 'border-gray-200 hover:border-teal-300'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <UserCircle className="w-8 h-8 text-gray-400" />
-                    <div>
-                      <p className="font-medium text-gray-900 text-sm">{patient.name}</p>
-                      <p className="text-xs text-gray-500">{patient.mrn}</p>
+                filteredPatients.map((patient) => (
+                  <button
+                    key={patient.id}
+                    onClick={() => {
+                      setSelectedPatient(patient);
+                      setSearchTerm('');
+                    }}
+                    className={`w-full text-left p-3 rounded-lg border transition-colors ${
+                      selectedPatient?.id === patient.id
+                        ? 'border-teal-500 bg-teal-50'
+                        : 'border-gray-200 hover:border-teal-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <UserCircle className="w-8 h-8 text-gray-400" />
+                      <div>
+                        <p className="font-medium text-gray-900 text-sm">{patient.name}</p>
+                        <p className="text-xs text-gray-500">{patient.mrn}</p>
+                      </div>
                     </div>
-                  </div>
-                </button>
-              ))
-            ) : (
-              <div className="text-center py-8 text-gray-500">
-                <p className="text-sm">No patients found</p>
-              </div>
-            )) : selectedPatient ? (
+                  </button>
+                ))
+              ) : (
+                <div className="text-center py-8 text-gray-500">
+                  <p className="text-sm">No patients found</p>
+                </div>
+              )
+            ) : selectedPatient ? (
               <div className="p-3 rounded-lg border border-teal-500 bg-teal-50">
                 <div className="flex items-center gap-2">
                   <UserCircle className="w-8 h-8 text-teal-600" />
@@ -251,7 +256,9 @@ export default function MedicationChartPage() {
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <h2 className="font-semibold text-gray-900">{selectedPatient.name}</h2>
-                  <p className="text-sm text-gray-500">{selectedPatient.ward} - Bed {selectedPatient.bed}</p>
+                  <p className="text-sm text-gray-500">
+                    {selectedPatient.ward} - Bed {selectedPatient.bed}
+                  </p>
                 </div>
                 <div className="flex items-center gap-4 text-sm">
                   <div className="flex items-center gap-1">
@@ -283,7 +290,7 @@ export default function MedicationChartPage() {
                     {timeSlots.map((time) => {
                       const meds = getMedsForTime(time);
                       if (meds.length === 0) return null;
-                      
+
                       return (
                         <div key={time}>
                           <div className="flex items-center gap-2 mb-2">
@@ -302,12 +309,18 @@ export default function MedicationChartPage() {
                                   </div>
                                   <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2">
-                                      <span className="text-sm font-medium text-gray-900 truncate">{med.medication}</span>
+                                      <span className="text-sm font-medium text-gray-900 truncate">
+                                        {med.medication}
+                                      </span>
                                       {getStatusIcon(med.status)}
                                     </div>
-                                    <p className="text-xs text-gray-500">{med.dose} • {med.route}</p>
+                                    <p className="text-xs text-gray-500">
+                                      {med.dose} • {med.route}
+                                    </p>
                                     {med.administeredBy && (
-                                      <p className="text-xs text-gray-400 mt-1">By: {med.administeredBy}</p>
+                                      <p className="text-xs text-gray-400 mt-1">
+                                        By: {med.administeredBy}
+                                      </p>
                                     )}
                                   </div>
                                 </div>

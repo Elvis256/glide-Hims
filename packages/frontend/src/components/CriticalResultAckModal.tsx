@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useDialogA11y } from '../hooks/useDialogA11y';
 import { AlertTriangle, X } from 'lucide-react';
 import {
   type CriticalResultAlert,
@@ -14,6 +15,12 @@ interface Props {
 const MIN_NOTE = 10;
 
 export default function CriticalResultAckModal({ alert, onConfirm, onCancel }: Props) {
+  // This component is mounted only while the modal is showing.
+  const dialogRef = useDialogA11y<HTMLDivElement>({
+    open: true,
+    onClose: onCancel,
+  });
+
   const [note, setNote] = useState('');
   const [actionTaken, setActionTaken] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -46,7 +53,12 @@ export default function CriticalResultAckModal({ alert, onConfirm, onCancel }: P
       : 'bg-red-100 text-red-800 border-red-300';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      role="dialog"
+      aria-modal="true"
+      ref={dialogRef}
+    >
       <div className="w-full max-w-xl rounded-lg bg-white shadow-xl">
         <div className="flex items-start justify-between border-b border-gray-200 p-4">
           <div className="flex items-start gap-3">

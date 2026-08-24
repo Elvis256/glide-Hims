@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useId } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { toast } from 'sonner';
 import {
   Search,
@@ -588,6 +589,7 @@ function generateSOAPPrintContent(
 // ============ MAIN COMPONENT ============
 
 export default function SOAPNotesPage() {
+  const fid = useId();
   const queryClient = useQueryClient();
   const { hasPermission } = usePermissions();
   
@@ -651,6 +653,25 @@ export default function SOAPNotesPage() {
   // Clinical Alerts
   const [clinicalAlerts, setClinicalAlerts] = useState<ClinicalAlert[]>([]);
   const [diagnosisSearchQuery, setDiagnosisSearchQuery] = useState('');
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showTemplateModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showTemplateModal,
+    onClose: () => setShowTemplateModal(false),
+  });
+  const showHistoryModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showHistoryModal,
+    onClose: () => setShowHistoryModal(false),
+  });
+  const showSignModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showSignModal,
+    onClose: () => setShowSignModal(false),
+  });
+  const showDiagnosisSearchDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showDiagnosisSearch,
+    onClose: () => setShowDiagnosisSearch(false),
+  });
   
   // Debounce search
   useEffect(() => {
@@ -1563,8 +1584,8 @@ export default function SOAPNotesPage() {
                         {expandedSubsections.results && (
                           <div className="space-y-3 pl-4">
                             <div>
-                              <label className="text-xs font-medium text-gray-600">Lab Results</label>
-                              <textarea
+                              <label htmlFor={`${fid}-lab-results`} className="text-xs font-medium text-gray-600">Lab Results</label>
+                              <textarea id={`${fid}-lab-results`}
                                 rows={2}
                                 value={objective.labResults}
                                 onChange={(e) => setObjective(prev => ({ ...prev, labResults: e.target.value }))}
@@ -1574,8 +1595,8 @@ export default function SOAPNotesPage() {
                               />
                             </div>
                             <div>
-                              <label className="text-xs font-medium text-gray-600">Imaging Results</label>
-                              <textarea
+                              <label htmlFor={`${fid}-imaging-results`} className="text-xs font-medium text-gray-600">Imaging Results</label>
+                              <textarea id={`${fid}-imaging-results`}
                                 rows={2}
                                 value={objective.imagingResults}
                                 onChange={(e) => setObjective(prev => ({ ...prev, imagingResults: e.target.value }))}
@@ -1681,8 +1702,8 @@ export default function SOAPNotesPage() {
 
                       {/* Differential Diagnoses */}
                       <div>
-                        <label className="text-sm font-medium text-gray-700 mb-1 block">Differential Diagnoses</label>
-                        <textarea
+                        <label htmlFor={`${fid}-differential-diagnoses`} className="text-sm font-medium text-gray-700 mb-1 block">Differential Diagnoses</label>
+                        <textarea id={`${fid}-differential-diagnoses`}
                           rows={2}
                           value={assessment.differentialDiagnoses}
                           onChange={(e) => setAssessment(prev => ({ ...prev, differentialDiagnoses: e.target.value }))}
@@ -1695,8 +1716,8 @@ export default function SOAPNotesPage() {
 
                       {/* Clinical Impression */}
                       <div>
-                        <label className="text-sm font-medium text-gray-700 mb-1 block">Clinical Impression</label>
-                        <textarea
+                        <label htmlFor={`${fid}-clinical-impression`} className="text-sm font-medium text-gray-700 mb-1 block">Clinical Impression</label>
+                        <textarea id={`${fid}-clinical-impression`}
                           rows={3}
                           value={assessment.clinicalImpression}
                           onChange={(e) => setAssessment(prev => ({ ...prev, clinicalImpression: e.target.value }))}
@@ -1758,11 +1779,11 @@ export default function SOAPNotesPage() {
                     <div className="p-4 space-y-4">
                       {/* Medications */}
                       <div>
-                        <label className="text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
+                        <label htmlFor={`${fid}-medications`} className="text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
                           <Pill className="w-4 h-4 text-orange-500" />
                           Medications
                         </label>
-                        <textarea
+                        <textarea id={`${fid}-medications`}
                           rows={3}
                           value={plan.medications}
                           onChange={(e) => setPlan(prev => ({ ...prev, medications: e.target.value }))}
@@ -1775,11 +1796,11 @@ export default function SOAPNotesPage() {
 
                       {/* Orders */}
                       <div>
-                        <label className="text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
+                        <label htmlFor={`${fid}-orders-labs-imaging-procedures`} className="text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
                           <ClipboardList className="w-4 h-4 text-orange-500" />
                           Orders (Labs, Imaging, Procedures)
                         </label>
-                        <textarea
+                        <textarea id={`${fid}-orders-labs-imaging-procedures`}
                           rows={2}
                           value={plan.orders}
                           onChange={(e) => setPlan(prev => ({ ...prev, orders: e.target.value }))}
@@ -1791,11 +1812,11 @@ export default function SOAPNotesPage() {
 
                       {/* Follow-up */}
                       <div>
-                        <label className="text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
+                        <label htmlFor={`${fid}-follow-up`} className="text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
                           <Calendar className="w-4 h-4 text-orange-500" />
                           Follow-up
                         </label>
-                        <textarea
+                        <textarea id={`${fid}-follow-up`}
                           rows={2}
                           value={plan.followUp}
                           onChange={(e) => setPlan(prev => ({ ...prev, followUp: e.target.value }))}
@@ -1819,11 +1840,11 @@ export default function SOAPNotesPage() {
 
                       {/* Patient Education */}
                       <div>
-                        <label className="text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
+                        <label htmlFor={`${fid}-patient-education`} className="text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
                           <BookOpen className="w-4 h-4 text-orange-500" />
                           Patient Education
                         </label>
-                        <textarea
+                        <textarea id={`${fid}-patient-education`}
                           rows={2}
                           value={plan.patientEducation}
                           onChange={(e) => setPlan(prev => ({ ...prev, patientEducation: e.target.value }))}
@@ -1835,11 +1856,11 @@ export default function SOAPNotesPage() {
 
                       {/* Referrals */}
                       <div>
-                        <label className="text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
+                        <label htmlFor={`${fid}-referrals`} className="text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
                           <UserPlus className="w-4 h-4 text-orange-500" />
                           Referrals
                         </label>
-                        <textarea
+                        <textarea id={`${fid}-referrals`}
                           rows={2}
                           value={plan.referrals}
                           onChange={(e) => setPlan(prev => ({ ...prev, referrals: e.target.value }))}
@@ -1867,7 +1888,12 @@ export default function SOAPNotesPage() {
 
       {/* Template Modal */}
       {showTemplateModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showTemplateModalDialogRef}
+        >
           <div className="bg-white rounded-xl w-full max-w-2xl max-h-[80vh] overflow-hidden">
             <div className="flex items-center justify-between p-4 border-b">
               <h2 className="text-lg font-semibold">SOAP Templates</h2>
@@ -1935,7 +1961,12 @@ export default function SOAPNotesPage() {
 
       {/* History Modal */}
       {showHistoryModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showHistoryModalDialogRef}
+        >
           <div className="bg-white rounded-xl w-full max-w-2xl max-h-[80vh] overflow-hidden">
             <div className="flex items-center justify-between p-4 border-b">
               <h2 className="text-lg font-semibold">Previous SOAP Notes</h2>
@@ -1991,7 +2022,12 @@ export default function SOAPNotesPage() {
 
       {/* Sign & Lock Modal */}
       {showSignModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showSignModalDialogRef}
+        >
           <div className="bg-white rounded-xl w-full max-w-md">
             <div className="flex items-center justify-between p-4 border-b">
               <h2 className="text-lg font-semibold">Sign-off Options</h2>
@@ -2063,7 +2099,12 @@ export default function SOAPNotesPage() {
 
       {/* Diagnosis Search Modal */}
       {showDiagnosisSearch && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showDiagnosisSearchDialogRef}
+        >
           <div className="bg-white rounded-xl w-full max-w-lg max-h-[70vh] overflow-hidden">
             <div className="flex items-center justify-between p-4 border-b">
               <h2 className="text-lg font-semibold">Search ICD-10 Diagnoses</h2>

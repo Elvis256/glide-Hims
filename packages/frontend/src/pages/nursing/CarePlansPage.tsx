@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -365,6 +366,29 @@ export default function CarePlansPage() {
 
   // Demo care plans data
   const [demoCarePlans, setDemoCarePlans] = useState<CarePlan[]>([]);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showAddModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showAddModal,
+    onClose: () => setShowAddModal(false),
+  });
+  const showDetailModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showDetailModal,
+    onClose: () => setShowDetailModal(false),
+  });
+  const showTemplateModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showTemplateModal,
+    onClose: () => setShowTemplateModal(false),
+  });
+  const showEvaluationModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showEvaluationModal,
+    onClose: () => setShowEvaluationModal(false),
+  });
+  const showPrintModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showPrintModal,
+    onClose: () => setShowPrintModal(false),
+  });
 
   // Search patients from API
   const { data: apiPatients, isLoading: searchLoading } = useQuery({
@@ -997,7 +1021,12 @@ export default function CarePlansPage() {
 
       {/* Create/Edit Care Plan Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={showAddModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
             <div className="flex items-center justify-between p-4 border-b">
               <h2 className="text-lg font-semibold text-gray-900">{editingPlan ? 'Edit Care Plan' : 'New Care Plan'}</h2>
@@ -1140,7 +1169,12 @@ export default function CarePlansPage() {
 
       {/* Care Plan Detail Modal */}
       {showDetailModal && selectedPlan && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={showDetailModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
             <div className="flex items-center justify-between p-4 border-b">
               <div>
@@ -1328,7 +1362,12 @@ export default function CarePlansPage() {
 
       {/* Template Selection Modal */}
       {showTemplateModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={showTemplateModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[80vh] overflow-hidden flex flex-col">
             <div className="flex items-center justify-between p-4 border-b">
               <h2 className="text-lg font-semibold text-gray-900">Care Plan Templates</h2>
@@ -1360,7 +1399,12 @@ export default function CarePlansPage() {
 
       {/* Evaluation Modal */}
       {showEvaluationModal && selectedPlan && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={showEvaluationModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg">
             <div className="flex items-center justify-between p-4 border-b">
               <h2 className="text-lg font-semibold text-gray-900">Add Evaluation</h2>
@@ -1397,7 +1441,12 @@ export default function CarePlansPage() {
 
       {/* Print Modal */}
       {showPrintModal && selectedPlan && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={showPrintModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
             <div className="flex items-center justify-between p-4 border-b">
               <h2 className="text-lg font-semibold text-gray-900">Print Care Plan</h2>

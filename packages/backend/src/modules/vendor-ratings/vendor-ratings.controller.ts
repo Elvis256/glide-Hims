@@ -15,6 +15,7 @@ import { CreateVendorRatingDto, UpdateVendorRatingDto } from './dto/vendor-ratin
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { RequireModule } from '../auth/decorators/module.decorator';
 import { ModuleGuard } from '../auth/guards/module.guard';
+import { FacilityId } from '../../common/decorators/facility-id.decorator';
 
 @UseGuards(ModuleGuard)
 @RequireModule('stores')
@@ -31,7 +32,7 @@ export class VendorRatingsController {
   @AuthWithPermissions('procurement.read')
   @Get()
   findAll(
-    @Query('facilityId') facilityId: string,
+    @FacilityId() facilityId: string,
     @Query('supplierId') supplierId?: string,
     @Request() req?: any,
   ) {

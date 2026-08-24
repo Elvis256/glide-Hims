@@ -1,4 +1,5 @@
-import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef, useId } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -426,6 +427,8 @@ function vitalTextClass(status: 'normal' | 'warning' | 'critical'): string {
 }
 
 export default function NewConsultationPage() {
+  // One base per mounted page; fields derive stable, unique ids from it.
+  const fid = useId();
   const inst = useInstitutionInfo();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -627,7 +630,8 @@ export default function NewConsultationPage() {
 
     // Also save on beforeunload
     const onUnload = () => {
-      try { localStorage.setItem(key, JSON.stringify({ form, savedAt: Date.now() })); } catch {}
+      try { localStorage.setItem(key, JSON.stringify({ form, savedAt: Date.now() })); }
+      catch { /* storage unavailable or full — the draft is a convenience, not the record */ }
     };
     window.addEventListener('beforeunload', onUnload);
 
@@ -832,6 +836,17 @@ export default function NewConsultationPage() {
   // State for order cancellation
   const [cancellingOrderId, setCancellingOrderId] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState('');
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const admitModalOpenDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!admitModalOpen,
+    onClose: () => setAdmitModalOpen(false),
+  });
+  const referralModalOpenDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!referralModalOpen,
+    onClose: () => setReferralModalOpen(false),
+  });
 
   // Fetch available lab tests from system (lab_tests catalog + Laboratory services)
   const { data: availableLabTests = [] } = useQuery({
@@ -1466,7 +1481,8 @@ export default function NewConsultationPage() {
       // Clear localStorage draft on successful completion
       const patientId = selectedPatient?.patientId || urlPatientId;
       if (patientId) {
-        try { localStorage.removeItem(getDraftKey(patientId)); } catch {}
+        try { localStorage.removeItem(getDraftKey(patientId)); }
+        catch { /* storage unavailable — the draft expires on its own */ }
       }
       // Close any open disposition modal
       setAdmitModalOpen(false);
@@ -2766,8 +2782,8 @@ export default function NewConsultationPage() {
                 <section id="consult-sec-complaint" className="scroll-mt-2 pb-8 mb-8 border-b border-surface-200/70 last:border-0 last:mb-0">
                   <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Chief Complaint *</label>
-                      <textarea
+                      <label htmlFor={`${fid}-chief-complaint`} className="block text-sm font-medium text-gray-700 mb-1">Chief Complaint *</label>
+                      <textarea id={`${fid}-chief-complaint`}
                         rows={3}
                         value={form.chiefComplaint}
                         onChange={(e) => setForm({ ...form, chiefComplaint: e.target.value })}
@@ -2777,8 +2793,8 @@ export default function NewConsultationPage() {
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Duration</label>
-                        <input
+                        <label htmlFor={`${fid}-duration`} className="block text-sm font-medium text-gray-700 mb-1">Duration</label>
+                        <input id={`${fid}-duration`}
                           type="text"
                           value={form.duration}
                           onChange={(e) => setForm({ ...form, duration: e.target.value })}
@@ -2787,8 +2803,8 @@ export default function NewConsultationPage() {
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Onset</label>
-                        <input
+                        <label htmlFor={`${fid}-onset`} className="block text-sm font-medium text-gray-700 mb-1">Onset</label>
+                        <input id={`${fid}-onset`}
                           type="text"
                           value={form.onset}
                           onChange={(e) => setForm({ ...form, onset: e.target.value })}
@@ -2879,11 +2895,11 @@ export default function NewConsultationPage() {
                       </div>
                       <div className="p-4 grid grid-cols-3 gap-4">
                         <div>
-                          <label className="flex items-center gap-1 text-xs font-medium text-gray-600 mb-1.5">
+                          <label htmlFor={`${fid}-occupation`} className="flex items-center gap-1 text-xs font-medium text-gray-600 mb-1.5">
                             <Briefcase className="w-3 h-3" />
                             Occupation
                           </label>
-                          <input
+                          <input id={`${fid}-occupation`}
                             type="text"
                             value={form.socialHistory.occupation}
                             onChange={(e) => setForm({ ...form, socialHistory: { ...form.socialHistory, occupation: e.target.value } })}
@@ -2891,11 +2907,11 @@ export default function NewConsultationPage() {
                           />
                         </div>
                         <div>
-                          <label className="flex items-center gap-1 text-xs font-medium text-gray-600 mb-1.5">
+                          <label htmlFor={`${fid}-smoking`} className="flex items-center gap-1 text-xs font-medium text-gray-600 mb-1.5">
                             <Cigarette className="w-3 h-3" />
                             Smoking
                           </label>
-                          <select
+                          <select id={`${fid}-smoking`}
                             value={form.socialHistory.smoking}
                             onChange={(e) => setForm({ ...form, socialHistory: { ...form.socialHistory, smoking: e.target.value } })}
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-300 focus:border-green-400 outline-none bg-white"
@@ -2906,11 +2922,11 @@ export default function NewConsultationPage() {
                           </select>
                         </div>
                         <div>
-                          <label className="flex items-center gap-1 text-xs font-medium text-gray-600 mb-1.5">
+                          <label htmlFor={`${fid}-alcohol`} className="flex items-center gap-1 text-xs font-medium text-gray-600 mb-1.5">
                             <Wine className="w-3 h-3" />
                             Alcohol
                           </label>
-                          <select
+                          <select id={`${fid}-alcohol`}
                             value={form.socialHistory.alcohol}
                             onChange={(e) => setForm({ ...form, socialHistory: { ...form.socialHistory, alcohol: e.target.value } })}
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-300 focus:border-green-400 outline-none bg-white"
@@ -3635,6 +3651,12 @@ export default function NewConsultationPage() {
                                               value={cancelReason}
                                               onChange={(e) => setCancelReason(e.target.value)}
                                               className="flex-1 px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                                              // Deliberate: this field appears
+                                              // because the user just chose to
+                                              // cancel and now has to say why.
+                                              // Focus follows the action rather
+                                              // than being seized on load.
+                                              // eslint-disable-next-line jsx-a11y/no-autofocus
                                               autoFocus
                                             />
                                             <button
@@ -4030,10 +4052,16 @@ export default function NewConsultationPage() {
                       
                       {/* Drug Search */}
                       <div className="mb-4">
-                        <label className="block text-sm text-gray-600 mb-1">Search Drug</label>
+                        <label
+                          htmlFor={`${fid}-search-drug`}
+                          className="block text-sm text-gray-600 mb-1"
+                        >
+                          Search Drug
+                        </label>
                         <div className="relative">
                           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
                           <input
+                            id={`${fid}-search-drug`}
                             type="text"
                             value={rxSearchQuery}
                             onChange={(e) => setRxSearchQuery(e.target.value)}
@@ -4121,8 +4149,8 @@ export default function NewConsultationPage() {
                           </div>
                           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                             <div>
-                              <label className="block text-xs text-gray-600 mb-0.5">Dose</label>
-                              <input
+                              <label htmlFor={`${fid}-dose`} className="block text-xs text-gray-600 mb-0.5">Dose</label>
+                              <input id={`${fid}-dose`}
                                 type="text" value={rxEditingItem.dose}
                                 onChange={(e) => {
                                   const dose = e.target.value;
@@ -4134,8 +4162,8 @@ export default function NewConsultationPage() {
                               />
                             </div>
                             <div>
-                              <label className="block text-xs text-gray-600 mb-0.5">Frequency</label>
-                              <select
+                              <label htmlFor={`${fid}-frequency`} className="block text-xs text-gray-600 mb-0.5">Frequency</label>
+                              <select id={`${fid}-frequency`}
                                 value={rxEditingItem.frequency}
                                 onChange={(e) => {
                                   const frequency = e.target.value;
@@ -4160,8 +4188,8 @@ export default function NewConsultationPage() {
                               </select>
                             </div>
                             <div>
-                              <label className="block text-xs text-gray-600 mb-0.5">Duration</label>
-                              <select
+                              <label htmlFor={`${fid}-duration-2`} className="block text-xs text-gray-600 mb-0.5">Duration</label>
+                              <select id={`${fid}-duration-2`}
                                 value={rxEditingItem.duration}
                                 onChange={(e) => {
                                   const duration = e.target.value;
@@ -4206,8 +4234,8 @@ export default function NewConsultationPage() {
                             </div>
                           </div>
                           <div className="mt-2">
-                            <label className="block text-xs text-gray-600 mb-0.5">Instructions</label>
-                            <input
+                            <label htmlFor={`${fid}-instructions`} className="block text-xs text-gray-600 mb-0.5">Instructions</label>
+                            <input id={`${fid}-instructions`}
                               type="text" value={rxEditingItem.instructions}
                               onChange={(e) => setRxEditingItem({ ...rxEditingItem, instructions: e.target.value })}
                               placeholder="e.g. Take after meals, with plenty of water..."
@@ -4498,8 +4526,8 @@ export default function NewConsultationPage() {
                       </div>
                       <div className="p-4 grid grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1.5">Follow-up Date</label>
-                          <input
+                          <label htmlFor={`${fid}-follow-up-date`} className="block text-xs font-medium text-gray-600 mb-1.5">Follow-up Date</label>
+                          <input id={`${fid}-follow-up-date`}
                             type="date"
                             value={form.followUpDate}
                             onChange={(e) => setForm({ ...form, followUpDate: e.target.value })}
@@ -4507,8 +4535,8 @@ export default function NewConsultationPage() {
                           />
                         </div>
                         <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1.5">Notes</label>
-                          <input
+                          <label htmlFor={`${fid}-notes`} className="block text-xs font-medium text-gray-600 mb-1.5">Notes</label>
+                          <input id={`${fid}-notes`}
                             type="text"
                             value={form.followUpNotes}
                             onChange={(e) => setForm({ ...form, followUpNotes: e.target.value })}
@@ -4632,7 +4660,12 @@ export default function NewConsultationPage() {
 
       {/* ====== ADMIT TO IPD MODAL ====== */}
       {admitModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4">
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={admitModalOpenDialogRef}
+        >
           <div className="w-full max-w-lg bg-white rounded-xl shadow-2xl">
             <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200">
               <h3 className="text-base font-semibold text-gray-900">Admit Patient to IPD</h3>
@@ -4646,8 +4679,8 @@ export default function NewConsultationPage() {
             </div>
             <div className="px-5 py-4 space-y-3">
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Ward *</label>
-                <select
+                <label htmlFor={`${fid}-ward`} className="block text-xs font-medium text-gray-700 mb-1">Ward *</label>
+                <select id={`${fid}-ward`}
                   value={admitForm.wardId}
                   onChange={(e) =>
                     setAdmitForm({ ...admitForm, wardId: e.target.value, bedId: '' })
@@ -4685,8 +4718,8 @@ export default function NewConsultationPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Type *</label>
-                <select
+                <label htmlFor={`${fid}-type`} className="block text-xs font-medium text-gray-700 mb-1">Type *</label>
+                <select id={`${fid}-type`}
                   value={admitForm.type}
                   onChange={(e) =>
                     setAdmitForm({
@@ -4702,8 +4735,8 @@ export default function NewConsultationPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Reason</label>
-                <input
+                <label htmlFor={`${fid}-reason`} className="block text-xs font-medium text-gray-700 mb-1">Reason</label>
+                <input id={`${fid}-reason`}
                   type="text"
                   value={admitForm.admissionReason}
                   onChange={(e) =>
@@ -4714,10 +4747,10 @@ export default function NewConsultationPage() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">
+                <label htmlFor={`${fid}-admission-diagnosis`} className="block text-xs font-medium text-gray-700 mb-1">
                   Admission diagnosis
                 </label>
-                <textarea
+                <textarea id={`${fid}-admission-diagnosis`}
                   value={admitForm.admissionDiagnosis}
                   onChange={(e) =>
                     setAdmitForm({ ...admitForm, admissionDiagnosis: e.target.value })
@@ -4769,7 +4802,12 @@ export default function NewConsultationPage() {
 
       {/* ====== REFERRAL MODAL ====== */}
       {referralModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4">
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={referralModalOpenDialogRef}
+        >
           <div className="w-full max-w-lg bg-white rounded-xl shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 sticky top-0 bg-white">
               <h3 className="text-base font-semibold text-gray-900">Create Referral</h3>
@@ -4784,8 +4822,8 @@ export default function NewConsultationPage() {
             <div className="px-5 py-4 space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Type *</label>
-                  <select
+                  <label htmlFor={`${fid}-type-2`} className="block text-xs font-medium text-gray-700 mb-1">Type *</label>
+                  <select id={`${fid}-type-2`}
                     value={referralForm.type}
                     onChange={(e) =>
                       setReferralForm({
@@ -4800,8 +4838,8 @@ export default function NewConsultationPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Priority *</label>
-                  <select
+                  <label htmlFor={`${fid}-priority`} className="block text-xs font-medium text-gray-700 mb-1">Priority *</label>
+                  <select id={`${fid}-priority`}
                     value={referralForm.priority}
                     onChange={(e) =>
                       setReferralForm({
@@ -4818,8 +4856,8 @@ export default function NewConsultationPage() {
                 </div>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Reason *</label>
-                <select
+                <label htmlFor={`${fid}-reason-2`} className="block text-xs font-medium text-gray-700 mb-1">Reason *</label>
+                <select id={`${fid}-reason-2`}
                   value={referralForm.reason}
                   onChange={(e) =>
                     setReferralForm({
@@ -4844,10 +4882,10 @@ export default function NewConsultationPage() {
               {referralForm.type === 'internal' ? (
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                    <label htmlFor={`${fid}-specialty`} className="block text-xs font-medium text-gray-700 mb-1">
                       Specialty *
                     </label>
-                    <input
+                    <input id={`${fid}-specialty`}
                       type="text"
                       value={referralForm.referredToSpecialty}
                       onChange={(e) =>
@@ -4858,8 +4896,8 @@ export default function NewConsultationPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Department</label>
-                    <input
+                    <label htmlFor={`${fid}-department`} className="block text-xs font-medium text-gray-700 mb-1">Department</label>
+                    <input id={`${fid}-department`}
                       type="text"
                       value={referralForm.referredToDepartment}
                       onChange={(e) =>
@@ -4876,10 +4914,10 @@ export default function NewConsultationPage() {
               ) : (
                 <>
                   <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                    <label htmlFor={`${fid}-facility-name`} className="block text-xs font-medium text-gray-700 mb-1">
                       Facility name *
                     </label>
-                    <input
+                    <input id={`${fid}-facility-name`}
                       type="text"
                       value={referralForm.externalFacilityName}
                       onChange={(e) =>
@@ -4894,8 +4932,8 @@ export default function NewConsultationPage() {
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Address</label>
-                      <input
+                      <label htmlFor={`${fid}-address`} className="block text-xs font-medium text-gray-700 mb-1">Address</label>
+                      <input id={`${fid}-address`}
                         type="text"
                         value={referralForm.externalFacilityAddress}
                         onChange={(e) =>
@@ -4908,8 +4946,8 @@ export default function NewConsultationPage() {
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Phone</label>
-                      <input
+                      <label htmlFor={`${fid}-phone`} className="block text-xs font-medium text-gray-700 mb-1">Phone</label>
+                      <input id={`${fid}-phone`}
                         type="text"
                         value={referralForm.externalFacilityPhone}
                         onChange={(e) =>
@@ -4925,10 +4963,10 @@ export default function NewConsultationPage() {
                 </>
               )}
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">
+                <label htmlFor={`${fid}-appointment-date-optional`} className="block text-xs font-medium text-gray-700 mb-1">
                   Appointment date (optional)
                 </label>
-                <input
+                <input id={`${fid}-appointment-date-optional`}
                   type="date"
                   value={referralForm.appointmentDate}
                   onChange={(e) =>
@@ -4938,10 +4976,10 @@ export default function NewConsultationPage() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">
+                <label htmlFor={`${fid}-clinical-summary`} className="block text-xs font-medium text-gray-700 mb-1">
                   Clinical summary *
                 </label>
-                <textarea
+                <textarea id={`${fid}-clinical-summary`}
                   value={referralForm.clinicalSummary}
                   onChange={(e) =>
                     setReferralForm({ ...referralForm, clinicalSummary: e.target.value })

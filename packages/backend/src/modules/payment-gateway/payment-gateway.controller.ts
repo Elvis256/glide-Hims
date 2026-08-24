@@ -1,15 +1,17 @@
-import { Body, Controller, Get, Headers, Param, Post, Request, Logger } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Param, Post, Request, Logger, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { Public } from '../auth/decorators/public.decorator';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { PaymentGatewayService } from './payment-gateway.service';
 import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 import { withSystemContext } from '../../common/context/tenant-context';
 import { InitiatePaymentRequest } from './payment-gateway.types';
 
 @ApiTags('payment-gateway')
 @RequireModule('billing')
+@UseGuards(ModuleGuard)
 @Controller('payment-gateway')
 export class PaymentGatewayController {
   constructor(private readonly service: PaymentGatewayService) {}

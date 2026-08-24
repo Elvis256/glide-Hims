@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { toast } from 'sonner';
 import api from '../../services/api';
 import ConfirmDialog from '../../components/ConfirmDialog';
@@ -368,6 +369,12 @@ function UserModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  // This component is mounted only while the modal is showing.
+  const dialogRef = useDialogA11y<HTMLDivElement>({
+    open: true,
+    onClose,
+  });
+
   const isEditing = !!user;
   const [formData, setFormData] = useState<UserFormData>({
     username: user?.username || '',
@@ -431,7 +438,12 @@ function UserModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+      role="dialog"
+      aria-modal="true"
+      ref={dialogRef}
+    >
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
           <h3 className="text-lg font-semibold text-gray-900">

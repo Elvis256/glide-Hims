@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useId } from 'react';
+import { useDialogA11y } from '../hooks/useDialogA11y';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -34,6 +35,15 @@ const triageLevelColors: Record<number, string> = {
   5: 'bg-blue-500 text-white',      // Non-Urgent
 };
 
+// A case nobody has assessed has no level. It used to be registered as a 4 and
+// wear the same green badge as a patient a nurse had looked at and judged
+// stable.
+const UNTRIAGED_COLOR = 'bg-slate-700 text-white';
+const triageBadgeColor = (level?: number | null) =>
+  level == null ? UNTRIAGED_COLOR : triageLevelColors[level];
+const triageBadgeLabel = (level?: number | null) =>
+  level == null ? 'Untriaged' : `Level ${level}`;
+
 const triageLevelNames: Record<number, string> = {
   1: 'Resuscitation',
   2: 'Emergent',
@@ -54,6 +64,10 @@ const statusColors: Record<string, string> = {
 };
 
 export default function EmergencyPage() {
+  // One base per mounted page; each field derives a stable id from it, so the
+  // ids stay unique even if this page is ever rendered twice.
+  const fid = useId();
+
   const queryClient = useQueryClient();
   const facilityId = useFacilityId();
   const [searchTerm, setSearchTerm] = useState('');
@@ -63,6 +77,27 @@ export default function EmergencyPage() {
   const [showTriageModal, setShowTriageModal] = useState(false);
   const [showDischargeModal, setShowDischargeModal] = useState(false);
   const [showAdmitModal, setShowAdmitModal] = useState(false);
+
+  // Escape closes, Tab stays inside, and focus returns to whatever opened the
+  // modal. None of these did any of that: Escape was inert and tabbing walked
+  // out onto the case list behind, so a half-filled triage form could be typed
+  // into the page underneath without anyone noticing.
+  const registerDialogRef = useDialogA11y<HTMLDivElement>({
+    open: showRegisterModal,
+    onClose: () => setShowRegisterModal(false),
+  });
+  const triageDialogRef = useDialogA11y<HTMLDivElement>({
+    open: showTriageModal,
+    onClose: () => setShowTriageModal(false),
+  });
+  const dischargeDialogRef = useDialogA11y<HTMLDivElement>({
+    open: showDischargeModal,
+    onClose: () => setShowDischargeModal(false),
+  });
+  const admitDialogRef = useDialogA11y<HTMLDivElement>({
+    open: showAdmitModal,
+    onClose: () => setShowAdmitModal(false),
+  });
 
   // Registration form state
   const [registerForm, setRegisterForm] = useState({
@@ -246,26 +281,14 @@ export default function EmergencyPage() {
     onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to close the case')),
   });
 
-  // Admit mutation: creates a REAL IPD admission (ward+bed) first, then marks
-  // the emergency case admitted — otherwise the patient never appears on any
-  // ward worklist and the bed is never occupied.
+  // One call. The emergency admit endpoint creates the IPD admission itself —
+  // bed lock, duplicate-admission check, ward worklist and all — so the browser
+  // no longer makes two separate writes that could half-succeed.
   const admitMutation = useMutation({
     mutationFn: async (emergencyCase: EmergencyCase) => {
-      const patientId = emergencyCase.encounter?.patient?.id;
-      if (!patientId) throw new Error('This case has no linked patient record');
-      await ipdService.admissions.create({
-        patientId,
-        encounterId: emergencyCase.encounterId,
-        wardId: admitForm.wardId,
-        bedId: admitForm.bedId,
-        type: 'emergency',
-        admissionDiagnosis: admitForm.primaryDiagnosis,
-        admissionReason: admitForm.admissionNotes || emergencyCase.chiefComplaint,
-        attendingDoctorId: emergencyCase.attendingDoctorId,
-      });
       const response = await emergencyService.admitCase(emergencyCase.id, {
         wardId: admitForm.wardId,
-        bedId: admitForm.bedId || undefined,
+        bedId: admitForm.bedId,
         primaryDiagnosis: admitForm.primaryDiagnosis,
         admissionNotes: admitForm.admissionNotes || undefined,
       });
@@ -312,8 +335,12 @@ export default function EmergencyPage() {
   });
 
   // Sort by triage level (critical first), then by time
+  // Untriaged sorts above everything: unknown acuity, and the clock is running.
+  const acuityRank = (level?: number | null) => (level == null ? 0 : level);
   const sortedCases = [...filteredCases].sort((a, b) => {
-    if (a.triageLevel !== b.triageLevel) return a.triageLevel - b.triageLevel;
+    if (acuityRank(a.triageLevel) !== acuityRank(b.triageLevel)) {
+      return acuityRank(a.triageLevel) - acuityRank(b.triageLevel);
+    }
     return new Date(a.arrivalTime).getTime() - new Date(b.arrivalTime).getTime();
   });
 
@@ -458,18 +485,31 @@ export default function EmergencyPage() {
               </div>
             ) : (
               sortedCases.map((c) => (
+                // Selecting a case was mouse-only. Not an "option": the list
+                // also holds loading and empty states, and a listbox may only
+                // contain options. It is a row that acts, so: reachable by Tab,
+                // chosen with Enter or Space, and marked as the current one.
                 <div
                   key={c.id}
+                  role="button"
+                  tabIndex={0}
+                  aria-current={selectedCase?.id === c.id ? true : undefined}
                   onClick={() => setSelectedCase(c)}
-                  className={`p-4 cursor-pointer hover:bg-gray-50 ${
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setSelectedCase(c);
+                    }
+                  }}
+                  className={`p-4 cursor-pointer hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-red-500 ${
                     selectedCase?.id === c.id ? 'bg-red-50 border-l-4 border-red-500' : ''
                   }`}
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className={`px-2 py-0.5 text-xs font-bold rounded ${triageLevelColors[c.triageLevel]}`}>
-                          Level {c.triageLevel}
+                        <span className={`px-2 py-0.5 text-xs font-bold rounded ${triageBadgeColor(c.triageLevel)}`}>
+                          {triageBadgeLabel(c.triageLevel)}
                         </span>
                         <span className="font-medium text-gray-900">{c.caseNumber}</span>
                         <span className={`px-2 py-0.5 text-xs rounded-full ${statusColors[c.status]}`}>
@@ -518,8 +558,10 @@ export default function EmergencyPage() {
               {/* Patient Info */}
               <div className="bg-gray-50 rounded-lg p-3">
                 <div className="flex items-center gap-3">
-                  <div className={`w-12 h-12 rounded-full flex items-center justify-center ${triageLevelColors[selectedCase.triageLevel]}`}>
-                    <span className="text-lg font-bold">{selectedCase.triageLevel}</span>
+                  <div className={`w-12 h-12 rounded-full flex items-center justify-center ${triageBadgeColor(selectedCase.triageLevel)}`}>
+                    <span className={selectedCase.triageLevel == null ? 'text-[10px] font-bold' : 'text-lg font-bold'}>
+                      {selectedCase.triageLevel ?? 'N/T'}
+                    </span>
                   </div>
                   <div>
                     <p className="font-medium">{selectedCase.encounter?.patient?.fullName || 'Unknown Patient'}</p>
@@ -666,19 +708,27 @@ export default function EmergencyPage() {
 
       {/* Register Modal */}
       {showRegisterModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={`${fid}-register-title`}
+          ref={registerDialogRef}
+        >
           <div className="bg-white rounded-xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold">Register Emergency Case</h2>
-              <button onClick={() => setShowRegisterModal(false)} className="text-gray-400 hover:text-gray-600">
-                <X className="w-5 h-5" />
+              <h2 id={`${fid}-register-title`} className="text-lg font-semibold">Register Emergency Case</h2>
+              <button onClick={() => setShowRegisterModal(false)} aria-label="Close"
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-5 h-5" aria-hidden="true" />
               </button>
             </div>
             
             <div className="space-y-4">
               {/* Patient Search */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Patient *</label>
+                <span id={`${fid}-patient-group`} className="block text-sm font-medium text-gray-700 mb-1">Patient *</span>
                 {registerForm.patientId ? (
                   <div className="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded-lg">
                     <div className="flex items-center gap-2">
@@ -727,8 +777,8 @@ export default function EmergencyPage() {
 
               {/* Chief Complaint */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Chief Complaint *</label>
-                <textarea
+                <label htmlFor={`${fid}-chief-complaint`} className="block text-sm font-medium text-gray-700 mb-1">Chief Complaint *</label>
+                <textarea id={`${fid}-chief-complaint`}
                   value={registerForm.chiefComplaint}
                   onChange={(e) => setRegisterForm(prev => ({ ...prev, chiefComplaint: e.target.value }))}
                   placeholder="Primary reason for emergency visit..."
@@ -738,8 +788,8 @@ export default function EmergencyPage() {
 
               {/* Arrival Mode */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Arrival Mode</label>
-                <select
+                <label htmlFor={`${fid}-arrival-mode`} className="block text-sm font-medium text-gray-700 mb-1">Arrival Mode</label>
+                <select id={`${fid}-arrival-mode`}
                   value={registerForm.arrivalMode}
                   onChange={(e) => setRegisterForm(prev => ({ ...prev, arrivalMode: e.target.value as ArrivalMode }))}
                   className="w-full border rounded-lg px-3 py-2"
@@ -755,8 +805,8 @@ export default function EmergencyPage() {
 
               {/* Presenting Symptoms */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Presenting Symptoms</label>
-                <textarea
+                <label htmlFor={`${fid}-presenting-symptoms`} className="block text-sm font-medium text-gray-700 mb-1">Presenting Symptoms</label>
+                <textarea id={`${fid}-presenting-symptoms`}
                   value={registerForm.presentingSymptoms}
                   onChange={(e) => setRegisterForm(prev => ({ ...prev, presentingSymptoms: e.target.value }))}
                   placeholder="Additional symptoms..."
@@ -787,23 +837,31 @@ export default function EmergencyPage() {
 
       {/* Triage Modal */}
       {showTriageModal && selectedCase && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={`${fid}-triage-title`}
+          ref={triageDialogRef}
+        >
           <div className="bg-white rounded-xl w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <h2 className="text-lg font-semibold">Triage Assessment</h2>
+                <h2 id={`${fid}-triage-title`} className="text-lg font-semibold">Triage Assessment</h2>
                 <p className="text-sm text-gray-500">{selectedCase.caseNumber} - {selectedCase.encounter?.patient?.fullName || 'Unknown'}</p>
               </div>
-              <button onClick={() => setShowTriageModal(false)} className="text-gray-400 hover:text-gray-600">
-                <X className="w-5 h-5" />
+              <button onClick={() => setShowTriageModal(false)} aria-label="Close"
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-5 h-5" aria-hidden="true" />
               </button>
             </div>
             
             <div className="space-y-4">
               {/* Triage Level */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Triage Level *</label>
-                <div className="grid grid-cols-5 gap-2">
+                <span id={`${fid}-triage-group`} className="block text-sm font-medium text-gray-700 mb-2">Triage Level *</span>
+                <div className="grid grid-cols-5 gap-2" role="group" aria-labelledby={`${fid}-triage-group`}>
                   {[
                     { level: 1, label: 'Resuscitation', color: 'bg-red-600' },
                     { level: 2, label: 'Emergent', color: 'bg-orange-500' },
@@ -830,8 +888,8 @@ export default function EmergencyPage() {
               {/* Vitals Grid */}
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">BP Systolic</label>
-                  <input
+                  <label htmlFor={`${fid}-bp-systolic`} className="block text-sm font-medium text-gray-700 mb-1">BP Systolic</label>
+                  <input id={`${fid}-bp-systolic`}
                     type="number"
                     value={triageForm.bloodPressureSystolic}
                     onChange={(e) => setTriageForm(prev => ({ ...prev, bloodPressureSystolic: e.target.value }))}
@@ -840,8 +898,8 @@ export default function EmergencyPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">BP Diastolic</label>
-                  <input
+                  <label htmlFor={`${fid}-bp-diastolic`} className="block text-sm font-medium text-gray-700 mb-1">BP Diastolic</label>
+                  <input id={`${fid}-bp-diastolic`}
                     type="number"
                     value={triageForm.bloodPressureDiastolic}
                     onChange={(e) => setTriageForm(prev => ({ ...prev, bloodPressureDiastolic: e.target.value }))}
@@ -850,8 +908,8 @@ export default function EmergencyPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Heart Rate</label>
-                  <input
+                  <label htmlFor={`${fid}-heart-rate`} className="block text-sm font-medium text-gray-700 mb-1">Heart Rate</label>
+                  <input id={`${fid}-heart-rate`}
                     type="number"
                     value={triageForm.heartRate}
                     onChange={(e) => setTriageForm(prev => ({ ...prev, heartRate: e.target.value }))}
@@ -860,8 +918,8 @@ export default function EmergencyPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Resp Rate</label>
-                  <input
+                  <label htmlFor={`${fid}-resp-rate`} className="block text-sm font-medium text-gray-700 mb-1">Resp Rate</label>
+                  <input id={`${fid}-resp-rate`}
                     type="number"
                     value={triageForm.respiratoryRate}
                     onChange={(e) => setTriageForm(prev => ({ ...prev, respiratoryRate: e.target.value }))}
@@ -870,8 +928,8 @@ export default function EmergencyPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Temp (°C)</label>
-                  <input
+                  <label htmlFor={`${fid}-temp-c`} className="block text-sm font-medium text-gray-700 mb-1">Temp (°C)</label>
+                  <input id={`${fid}-temp-c`}
                     type="number"
                     step="0.1"
                     value={triageForm.temperature}
@@ -881,8 +939,8 @@ export default function EmergencyPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">SpO2 (%)</label>
-                  <input
+                  <label htmlFor={`${fid}-spo2`} className="block text-sm font-medium text-gray-700 mb-1">SpO2 (%)</label>
+                  <input id={`${fid}-spo2`}
                     type="number"
                     value={triageForm.oxygenSaturation}
                     onChange={(e) => setTriageForm(prev => ({ ...prev, oxygenSaturation: e.target.value }))}
@@ -891,8 +949,8 @@ export default function EmergencyPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Pain (0-10)</label>
-                  <input
+                  <label htmlFor={`${fid}-pain-0-10`} className="block text-sm font-medium text-gray-700 mb-1">Pain (0-10)</label>
+                  <input id={`${fid}-pain-0-10`}
                     type="number"
                     min="0"
                     max="10"
@@ -903,8 +961,8 @@ export default function EmergencyPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">GCS (3-15)</label>
-                  <input
+                  <label htmlFor={`${fid}-gcs-3-15`} className="block text-sm font-medium text-gray-700 mb-1">GCS (3-15)</label>
+                  <input id={`${fid}-gcs-3-15`}
                     type="number"
                     min="3"
                     max="15"
@@ -918,8 +976,8 @@ export default function EmergencyPage() {
 
               {/* Triage Notes */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Triage Notes</label>
-                <textarea
+                <label htmlFor={`${fid}-triage-notes`} className="block text-sm font-medium text-gray-700 mb-1">Triage Notes</label>
+                <textarea id={`${fid}-triage-notes`}
                   value={triageForm.triageNotes}
                   onChange={(e) => setTriageForm(prev => ({ ...prev, triageNotes: e.target.value }))}
                   placeholder="Assessment notes..."
@@ -950,22 +1008,39 @@ export default function EmergencyPage() {
 
       {/* Discharge Modal */}
       {showDischargeModal && selectedCase && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={`${fid}-discharge-title`}
+          ref={dischargeDialogRef}
+        >
           <div className="bg-white rounded-xl w-full max-w-md p-6">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <h2 className="text-lg font-semibold">Discharge Patient</h2>
+                <h2 id={`${fid}-discharge-title`} className="text-lg font-semibold">Discharge Patient</h2>
                 <p className="text-sm text-gray-500">{selectedCase.caseNumber}</p>
               </div>
-              <button onClick={() => setShowDischargeModal(false)} className="text-gray-400 hover:text-gray-600">
-                <X className="w-5 h-5" />
+              <button onClick={() => setShowDischargeModal(false)} aria-label="Close"
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-5 h-5" aria-hidden="true" />
               </button>
             </div>
             
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Outcome *</label>
-                <div className="grid grid-cols-3 gap-2">
+                <span
+                  id={`${fid}-outcome-group`}
+                  className="block text-sm font-medium text-gray-700 mb-1"
+                >
+                  Outcome *
+                </span>
+                <div
+                  className="grid grid-cols-3 gap-2"
+                  role="group"
+                  aria-labelledby={`${fid}-outcome-group`}
+                >
                   {[
                     { value: EmergencyDisposition.DISCHARGED, label: 'Discharged home', cls: 'border-green-500 bg-green-50 text-green-700' },
                     { value: EmergencyDisposition.LEFT_AMA, label: 'Left AMA', cls: 'border-orange-500 bg-orange-50 text-orange-700' },
@@ -1000,8 +1075,8 @@ export default function EmergencyPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Disposition Notes</label>
-                <textarea
+                <label htmlFor={`${fid}-disposition-notes`} className="block text-sm font-medium text-gray-700 mb-1">Disposition Notes</label>
+                <textarea id={`${fid}-disposition-notes`}
                   value={dischargeForm.dispositionNotes}
                   onChange={(e) => setDischargeForm(prev => ({ ...prev, dispositionNotes: e.target.value }))}
                   placeholder={
@@ -1039,28 +1114,40 @@ export default function EmergencyPage() {
 
       {/* Admit Modal */}
       {showAdmitModal && selectedCase && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={`${fid}-admit-title`}
+          ref={admitDialogRef}
+        >
           <div className="bg-white rounded-xl w-full max-w-md p-6">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <h2 className="text-lg font-semibold">Admit to IPD</h2>
+                <h2 id={`${fid}-admit-title`} className="text-lg font-semibold">Admit to IPD</h2>
                 <p className="text-sm text-gray-500">{selectedCase.caseNumber}</p>
               </div>
-              <button onClick={() => setShowAdmitModal(false)} className="text-gray-400 hover:text-gray-600">
-                <X className="w-5 h-5" />
+              <button onClick={() => setShowAdmitModal(false)} aria-label="Close"
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-5 h-5" aria-hidden="true" />
               </button>
             </div>
             
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Ward *</label>
-                <select
+                <label htmlFor={`${fid}-ward`} className="block text-sm font-medium text-gray-700 mb-1">Ward *</label>
+                <select id={`${fid}-ward`}
                   value={admitForm.wardId}
                   onChange={(e) => setAdmitForm(prev => ({ ...prev, wardId: e.target.value, bedId: '' }))}
                   className="w-full border rounded-lg px-3 py-2"
                 >
                   <option value="">Select ward...</option>
-                  {wards.filter(w => w.isActive !== false).map(w => (
+                  {/* Wards carry a status, not an isActive flag. isActive was
+                      always undefined, so `!== false` passed everything and a
+                      ward closed for maintenance still appeared in the
+                      emergency admission picker. */}
+                  {wards.filter((w) => w.status !== 'inactive' && w.status !== 'maintenance').map(w => (
                     <option key={w.id} value={w.id}>{w.name}</option>
                   ))}
                 </select>
@@ -1071,8 +1158,8 @@ export default function EmergencyPage() {
                 )}
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Bed *</label>
-                <select
+                <label htmlFor={`${fid}-bed`} className="block text-sm font-medium text-gray-700 mb-1">Bed *</label>
+                <select id={`${fid}-bed`}
                   value={admitForm.bedId}
                   onChange={(e) => setAdmitForm(prev => ({ ...prev, bedId: e.target.value }))}
                   disabled={!admitForm.wardId}
@@ -1088,8 +1175,8 @@ export default function EmergencyPage() {
                 )}
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Primary Diagnosis *</label>
-                <input
+                <label htmlFor={`${fid}-primary-diagnosis`} className="block text-sm font-medium text-gray-700 mb-1">Primary Diagnosis *</label>
+                <input id={`${fid}-primary-diagnosis`}
                   type="text"
                   value={admitForm.primaryDiagnosis}
                   onChange={(e) => setAdmitForm(prev => ({ ...prev, primaryDiagnosis: e.target.value }))}
@@ -1098,8 +1185,8 @@ export default function EmergencyPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Admission Notes</label>
-                <textarea
+                <label htmlFor={`${fid}-admission-notes`} className="block text-sm font-medium text-gray-700 mb-1">Admission Notes</label>
+                <textarea id={`${fid}-admission-notes`}
                   value={admitForm.admissionNotes}
                   onChange={(e) => setAdmitForm(prev => ({ ...prev, admissionNotes: e.target.value }))}
                   placeholder="Reason for admission, initial orders..."

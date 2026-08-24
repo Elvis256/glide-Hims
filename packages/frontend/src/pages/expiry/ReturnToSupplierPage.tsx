@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -66,6 +67,17 @@ export default function ReturnToSupplierPage() {
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState<SupplierReturn | null>(null);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showCreateModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showCreateModal,
+    onClose: () => setShowCreateModal(false),
+  });
+  const showDetailModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showDetailModal,
+    onClose: () => setShowDetailModal(null),
+  });
   const [createForm, setCreateForm] = useState({
     supplierId: '',
     reason: 'expired' as ReturnReason,
@@ -469,7 +481,12 @@ export default function ReturnToSupplierPage() {
 
       {/* Create Return Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showCreateModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-auto">
             <div className="flex items-center justify-between p-6 border-b border-gray-200">
               <h2 className="text-lg font-bold text-gray-900">Create Return Request</h2>
@@ -616,7 +633,12 @@ export default function ReturnToSupplierPage() {
 
       {/* Detail Modal */}
       {showDetailModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showDetailModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[80vh] overflow-auto">
             <div className="flex items-center justify-between p-6 border-b border-gray-200">
               <h2 className="text-lg font-bold text-gray-900">Return Details</h2>

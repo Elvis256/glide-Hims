@@ -115,7 +115,7 @@ export default function ShiftSummaryPage() {
         id: admission.id,
         name: admission.patient?.fullName || 'Unknown',
         bed: admission.bed?.bedNumber || '',
-        condition: admission.admittingDiagnosis,
+        condition: admission.admissionDiagnosis,
         priority: 'critical' as const,
       }));
   }, [admissionsData]);

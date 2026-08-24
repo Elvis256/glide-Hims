@@ -9,6 +9,7 @@ import {
   Query,
   ParseUUIDPipe,
   Request,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { ServicesService } from './services.service';
@@ -24,11 +25,13 @@ import {
 } from './services.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 import { ServiceTier } from '../../database/entities/service-category.entity';
 
 @ApiTags('Services')
 @ApiBearerAuth()
 @RequireModule('billing')
+@UseGuards(ModuleGuard)
 @Controller('services')
 export class ServicesController {
   constructor(private readonly service: ServicesService) {}

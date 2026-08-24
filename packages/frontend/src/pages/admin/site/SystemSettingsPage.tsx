@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useId } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../../services/api';
 import { AVAILABLE_CURRENCIES, setSystemCurrency, getCurrencyCode, getCurrencySymbol, type CurrencyCode } from '../../../lib/currency';
@@ -104,6 +104,7 @@ type SystemSettings = typeof defaultSettings;
 const SETTINGS_API = '/settings/system_config';
 
 export default function SystemSettingsPage() {
+  const fid = useId();
   const queryClient = useQueryClient();
   const [activeSection, setActiveSection] = useState('general');
   const [hasChanges, setHasChanges] = useState(false);
@@ -273,10 +274,10 @@ export default function SystemSettingsPage() {
                 <h3 className="text-lg font-semibold text-gray-900">General Settings</h3>
                 <div className="grid grid-cols-2 gap-6">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor={`${fid}-system-name`} className="block text-sm font-medium text-gray-700 mb-1">
                       System Name
                     </label>
-                    <input
+                    <input id={`${fid}-system-name`}
                       type="text"
                       value={settings.general.systemName}
                       onChange={(e) => updateSetting('general', 'systemName', e.target.value)}
@@ -284,10 +285,10 @@ export default function SystemSettingsPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor={`${fid}-default-currency`} className="block text-sm font-medium text-gray-700 mb-1">
                       Default Currency
                     </label>
-                    <select
+                    <select id={`${fid}-default-currency`}
                       value={settings.general.defaultCurrency}
                       onChange={(e) => {
                         const code = e.target.value as CurrencyCode;
@@ -307,10 +308,10 @@ export default function SystemSettingsPage() {
                     </p>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor={`${fid}-patient-id-prefix`} className="block text-sm font-medium text-gray-700 mb-1">
                       Patient ID Prefix
                     </label>
-                    <input
+                    <input id={`${fid}-patient-id-prefix`}
                       type="text"
                       value={settings.general.patientIdPrefix}
                       onChange={(e) => updateSetting('general', 'patientIdPrefix', e.target.value)}
@@ -318,10 +319,10 @@ export default function SystemSettingsPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor={`${fid}-invoice-prefix`} className="block text-sm font-medium text-gray-700 mb-1">
                       Invoice Prefix
                     </label>
-                    <input
+                    <input id={`${fid}-invoice-prefix`}
                       type="text"
                       value={settings.general.invoicePrefix}
                       onChange={(e) => updateSetting('general', 'invoicePrefix', e.target.value)}
@@ -329,10 +330,10 @@ export default function SystemSettingsPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor={`${fid}-session-timeout-minutes`} className="block text-sm font-medium text-gray-700 mb-1">
                       Session Timeout (minutes)
                     </label>
-                    <input
+                    <input id={`${fid}-session-timeout-minutes`}
                       type="number"
                       value={settings.general.sessionTimeout}
                       onChange={(e) => updateSetting('general', 'sessionTimeout', Number(e.target.value))}
@@ -340,10 +341,10 @@ export default function SystemSettingsPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor={`${fid}-max-login-attempts`} className="block text-sm font-medium text-gray-700 mb-1">
                       Max Login Attempts
                     </label>
-                    <input
+                    <input id={`${fid}-max-login-attempts`}
                       type="number"
                       value={settings.general.maxLoginAttempts}
                       onChange={(e) => updateSetting('general', 'maxLoginAttempts', Number(e.target.value))}
@@ -359,10 +360,10 @@ export default function SystemSettingsPage() {
                 <h3 className="text-lg font-semibold text-gray-900">Date & Time Settings</h3>
                 <div className="grid grid-cols-2 gap-6">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor={`${fid}-date-format`} className="block text-sm font-medium text-gray-700 mb-1">
                       Date Format
                     </label>
-                    <select
+                    <select id={`${fid}-date-format`}
                       value={settings.datetime.dateFormat}
                       onChange={(e) => updateSetting('datetime', 'dateFormat', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -374,10 +375,10 @@ export default function SystemSettingsPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor={`${fid}-time-format`} className="block text-sm font-medium text-gray-700 mb-1">
                       Time Format
                     </label>
-                    <select
+                    <select id={`${fid}-time-format`}
                       value={settings.datetime.timeFormat}
                       onChange={(e) => updateSetting('datetime', 'timeFormat', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -387,10 +388,10 @@ export default function SystemSettingsPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor={`${fid}-timezone`} className="block text-sm font-medium text-gray-700 mb-1">
                       Timezone
                     </label>
-                    <select
+                    <select id={`${fid}-timezone`}
                       value={settings.datetime.timezone}
                       onChange={(e) => updateSetting('datetime', 'timezone', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -402,10 +403,10 @@ export default function SystemSettingsPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor={`${fid}-first-day-of-week`} className="block text-sm font-medium text-gray-700 mb-1">
                       First Day of Week
                     </label>
-                    <select
+                    <select id={`${fid}-first-day-of-week`}
                       value={settings.datetime.firstDayOfWeek}
                       onChange={(e) => updateSetting('datetime', 'firstDayOfWeek', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -424,10 +425,10 @@ export default function SystemSettingsPage() {
                 <h3 className="text-lg font-semibold text-gray-900">Language & Region</h3>
                 <div className="grid grid-cols-2 gap-6">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor={`${fid}-primary-language`} className="block text-sm font-medium text-gray-700 mb-1">
                       Primary Language
                     </label>
-                    <select
+                    <select id={`${fid}-primary-language`}
                       value={settings.locale.primaryLanguage}
                       onChange={(e) => updateSetting('locale', 'primaryLanguage', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -439,10 +440,10 @@ export default function SystemSettingsPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor={`${fid}-secondary-language`} className="block text-sm font-medium text-gray-700 mb-1">
                       Secondary Language
                     </label>
-                    <select
+                    <select id={`${fid}-secondary-language`}
                       value={settings.locale.secondaryLanguage}
                       onChange={(e) => updateSetting('locale', 'secondaryLanguage', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -454,10 +455,10 @@ export default function SystemSettingsPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor={`${fid}-number-format`} className="block text-sm font-medium text-gray-700 mb-1">
                       Number Format
                     </label>
-                    <select
+                    <select id={`${fid}-number-format`}
                       value={settings.locale.numberFormat}
                       onChange={(e) => updateSetting('locale', 'numberFormat', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -468,10 +469,10 @@ export default function SystemSettingsPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor={`${fid}-currency-symbol-position`} className="block text-sm font-medium text-gray-700 mb-1">
                       Currency Symbol Position
                     </label>
-                    <select
+                    <select id={`${fid}-currency-symbol-position`}
                       value={settings.locale.currencyPosition}
                       onChange={(e) => updateSetting('locale', 'currencyPosition', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -489,10 +490,10 @@ export default function SystemSettingsPage() {
                 <h3 className="text-lg font-semibold text-gray-900">Email Settings</h3>
                 <div className="grid grid-cols-2 gap-6">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor={`${fid}-smtp-host`} className="block text-sm font-medium text-gray-700 mb-1">
                       SMTP Host
                     </label>
-                    <input
+                    <input id={`${fid}-smtp-host`}
                       type="text"
                       value={settings.email.smtpHost}
                       onChange={(e) => updateSetting('email', 'smtpHost', e.target.value)}
@@ -500,10 +501,10 @@ export default function SystemSettingsPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor={`${fid}-smtp-port`} className="block text-sm font-medium text-gray-700 mb-1">
                       SMTP Port
                     </label>
-                    <input
+                    <input id={`${fid}-smtp-port`}
                       type="number"
                       value={settings.email.smtpPort}
                       onChange={(e) => updateSetting('email', 'smtpPort', Number(e.target.value))}
@@ -511,10 +512,10 @@ export default function SystemSettingsPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor={`${fid}-smtp-username`} className="block text-sm font-medium text-gray-700 mb-1">
                       SMTP Username
                     </label>
-                    <input
+                    <input id={`${fid}-smtp-username`}
                       type="text"
                       value={settings.email.smtpUsername}
                       onChange={(e) => updateSetting('email', 'smtpUsername', e.target.value)}
@@ -522,10 +523,10 @@ export default function SystemSettingsPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor={`${fid}-smtp-password`} className="block text-sm font-medium text-gray-700 mb-1">
                       SMTP Password
                     </label>
-                    <input
+                    <input id={`${fid}-smtp-password`}
                       type="password"
                       placeholder="••••••••"
                       onChange={(e) => {
@@ -538,10 +539,10 @@ export default function SystemSettingsPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor={`${fid}-from-name`} className="block text-sm font-medium text-gray-700 mb-1">
                       From Name
                     </label>
-                    <input
+                    <input id={`${fid}-from-name`}
                       type="text"
                       value={settings.email.fromName}
                       onChange={(e) => updateSetting('email', 'fromName', e.target.value)}
@@ -549,10 +550,10 @@ export default function SystemSettingsPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor={`${fid}-from-email`} className="block text-sm font-medium text-gray-700 mb-1">
                       From Email
                     </label>
-                    <input
+                    <input id={`${fid}-from-email`}
                       type="email"
                       value={settings.email.fromEmail}
                       onChange={(e) => updateSetting('email', 'fromEmail', e.target.value)}
@@ -583,10 +584,10 @@ export default function SystemSettingsPage() {
                 <h3 className="text-lg font-semibold text-gray-900">SMS Settings</h3>
                 <div className="grid grid-cols-2 gap-6">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor={`${fid}-sms-provider`} className="block text-sm font-medium text-gray-700 mb-1">
                       SMS Provider
                     </label>
-                    <select
+                    <select id={`${fid}-sms-provider`}
                       value={settings.sms.provider}
                       onChange={(e) => updateSetting('sms', 'provider', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -598,10 +599,10 @@ export default function SystemSettingsPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor={`${fid}-sender-id`} className="block text-sm font-medium text-gray-700 mb-1">
                       Sender ID
                     </label>
-                    <input
+                    <input id={`${fid}-sender-id`}
                       type="text"
                       value={settings.sms.senderId}
                       onChange={(e) => updateSetting('sms', 'senderId', e.target.value)}
@@ -609,10 +610,10 @@ export default function SystemSettingsPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor={`${fid}-api-key`} className="block text-sm font-medium text-gray-700 mb-1">
                       API Key
                     </label>
-                    <input
+                    <input id={`${fid}-api-key`}
                       type="password"
                       value={settings.sms.apiKey}
                       onChange={(e) => updateSetting('sms', 'apiKey', e.target.value)}
@@ -692,10 +693,10 @@ export default function SystemSettingsPage() {
                   </label>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label htmlFor={`${fid}-reminder-hours-before-appointment`} className="block text-sm font-medium text-gray-700 mb-1">
                     Reminder Hours Before Appointment
                   </label>
-                  <input
+                  <input id={`${fid}-reminder-hours-before-appointment`}
                     type="number"
                     value={settings.notifications.reminderHoursBefore}
                     onChange={(e) => updateSetting('notifications', 'reminderHoursBefore', Number(e.target.value))}
@@ -721,10 +722,10 @@ export default function SystemSettingsPage() {
                     </label>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor={`${fid}-backup-frequency`} className="block text-sm font-medium text-gray-700 mb-1">
                       Backup Frequency
                     </label>
-                    <select
+                    <select id={`${fid}-backup-frequency`}
                       value={settings.backup.backupFrequency}
                       onChange={(e) => updateSetting('backup', 'backupFrequency', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -736,10 +737,10 @@ export default function SystemSettingsPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor={`${fid}-backup-time`} className="block text-sm font-medium text-gray-700 mb-1">
                       Backup Time
                     </label>
-                    <input
+                    <input id={`${fid}-backup-time`}
                       type="time"
                       value={settings.backup.backupTime}
                       onChange={(e) => updateSetting('backup', 'backupTime', e.target.value)}
@@ -747,10 +748,10 @@ export default function SystemSettingsPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor={`${fid}-retention-period-days`} className="block text-sm font-medium text-gray-700 mb-1">
                       Retention Period (days)
                     </label>
-                    <input
+                    <input id={`${fid}-retention-period-days`}
                       type="number"
                       value={settings.backup.retentionDays}
                       onChange={(e) => updateSetting('backup', 'retentionDays', Number(e.target.value))}
@@ -758,10 +759,10 @@ export default function SystemSettingsPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor={`${fid}-backup-location`} className="block text-sm font-medium text-gray-700 mb-1">
                       Backup Location
                     </label>
-                    <input
+                    <input id={`${fid}-backup-location`}
                       type="text"
                       value={settings.backup.backupLocation}
                       onChange={(e) => updateSetting('backup', 'backupLocation', e.target.value)}
@@ -802,10 +803,10 @@ export default function SystemSettingsPage() {
                 <h3 className="text-lg font-semibold text-gray-900">Security Settings</h3>
                 <div className="grid grid-cols-2 gap-6">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor={`${fid}-minimum-password-length`} className="block text-sm font-medium text-gray-700 mb-1">
                       Minimum Password Length
                     </label>
-                    <input
+                    <input id={`${fid}-minimum-password-length`}
                       type="number"
                       value={settings.security.passwordMinLength}
                       onChange={(e) => updateSetting('security', 'passwordMinLength', Number(e.target.value))}
@@ -813,10 +814,10 @@ export default function SystemSettingsPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor={`${fid}-password-expiry-days`} className="block text-sm font-medium text-gray-700 mb-1">
                       Password Expiry (days)
                     </label>
-                    <input
+                    <input id={`${fid}-password-expiry-days`}
                       type="number"
                       value={settings.security.passwordExpiryDays}
                       onChange={(e) => updateSetting('security', 'passwordExpiryDays', Number(e.target.value))}

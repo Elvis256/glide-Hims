@@ -17,26 +17,100 @@ import {
 import { LabourRecord, LabourStatus } from '../../database/entities/labour-record.entity';
 import { InAppNotificationsService } from '../in-app-notifications/in-app-notifications.service';
 import { InAppNotificationType } from '../../database/entities/in-app-notification.entity';
+import {
+  IsDateString,
+  IsEnum,
+  IsInt,
+  IsNumber,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from 'class-validator';
 import { requireTenantId } from '../../common/utils/tenant.util';
 
-export interface RecordPartographObservationDto {
+/**
+ * A CLASS, not an interface: the global ValidationPipe reads class-validator
+ * metadata off the body type, and an interface carries none — so every field
+ * here used to go through unchecked. `liquor` and `moulding` are varchar
+ * columns with no database enum behind them, which meant a bad grade either
+ * landed in the chart verbatim ('xyz') or, if longer than the column, came back
+ * as a 500 from the driver.
+ */
+export class RecordPartographObservationDto {
+  @IsOptional()
+  @IsDateString()
   observedAt?: string;
+
+  @IsOptional()
+  @IsNumber()
   cervicalDilationCm?: number;
+
+  @IsOptional()
+  @IsNumber()
   descentFifths?: number;
+
+  @IsOptional()
+  @IsInt()
   contractionsPer10Min?: number;
+
+  @IsOptional()
+  @IsInt()
   contractionDurationSeconds?: number;
+
+  @IsOptional()
+  @IsInt()
   fetalHeartRate?: number;
+
+  @IsOptional()
+  @IsEnum(LiquorState)
   liquor?: LiquorState;
+
+  @IsOptional()
+  @IsEnum(MouldingGrade)
   moulding?: MouldingGrade;
+
+  @IsOptional()
+  @IsInt()
   pulse?: number;
+
+  @IsOptional()
+  @IsInt()
   bpSystolic?: number;
+
+  @IsOptional()
+  @IsInt()
   bpDiastolic?: number;
+
+  @IsOptional()
+  @IsNumber()
   temperature?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
   urineOutput?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(8)
   urineProtein?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(8)
   urineAcetone?: string;
+
+  @IsOptional()
+  @IsNumber()
   oxytocinUnitsPerLitre?: number;
+
+  @IsOptional()
+  @IsInt()
   oxytocinDropsPerMin?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
   notes?: string;
 }
 
@@ -310,8 +384,11 @@ export class PartographService {
   ): Promise<void> {
     if (!this.inAppNotifications) return;
     try {
+      // 'nurse' and 'doctor' are the roles this system actually ships; the rest
+      // are here for facilities that define them. Without 'nurse' the alert went
+      // to doctors alone — and it is midwives and nurses who keep the partograph.
       const targets = await this.inAppNotifications.getUserIdsByRole(
-        ['midwife', 'charge_nurse', 'nurse_supervisor', 'doctor', 'obstetrician'],
+        ['nurse', 'midwife', 'charge_nurse', 'nurse_supervisor', 'doctor', 'obstetrician'],
         labour.facilityId,
         tenantId,
       );

@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Star,
@@ -63,6 +64,13 @@ export default function VendorRatingsPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [showRateModal, setShowRateModal] = useState(false);
   const [selectedVendor, setSelectedVendor] = useState<VendorRatingSummary | null>(null);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showRateModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showRateModal,
+    onClose: () => setShowRateModal(false),
+  });
   const [ratingFormData, setRatingFormData] = useState<Record<keyof RatingCriteria, number>>({
     quality: 5,
     delivery: 5,
@@ -483,7 +491,12 @@ export default function VendorRatingsPage() {
 
       {/* Rate Vendor Modal */}
       {showRateModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showRateModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <div>

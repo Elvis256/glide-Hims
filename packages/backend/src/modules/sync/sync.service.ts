@@ -34,7 +34,10 @@ export class SyncService {
     [SyncableEntity.VITAL_SIGN]: 'vitals',
     [SyncableEntity.CLINICAL_NOTE]: 'clinical_notes',
     [SyncableEntity.PRESCRIPTION]: 'prescriptions',
-    [SyncableEntity.LAB_ORDER]: 'lab_orders',
+    // Lab orders live in the shared `orders` table with an order_type — there
+    // has never been a `lab_orders` relation, so every pull that reached this
+    // entry died with `relation "lab_orders" does not exist`.
+    [SyncableEntity.LAB_ORDER]: 'orders',
     [SyncableEntity.LAB_RESULT]: 'lab_results',
     [SyncableEntity.IMAGING_ORDER]: 'imaging_orders',
     [SyncableEntity.ADMISSION]: 'admissions',
@@ -44,6 +47,38 @@ export class SyncService {
     [SyncableEntity.POSTNATAL_VISIT]: 'postnatal_visits',
     [SyncableEntity.IMMUNIZATION]: 'immunization_schedules',
   };
+
+  /** Which columns each syncable table actually has, resolved once. */
+  private readonly columnCache = new Map<string, boolean>();
+
+  private readonly tableExistsCache = new Map<string, boolean>();
+
+  private async tableExists(tableName: string): Promise<boolean> {
+    const cached = this.tableExistsCache.get(tableName);
+    if (cached !== undefined) return cached;
+    const rows = await this.dataSource.query(
+      `SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = $1 LIMIT 1`,
+      [tableName],
+    );
+    const exists = rows.length > 0;
+    this.tableExistsCache.set(tableName, exists);
+    return exists;
+  }
+
+  private async tableHasColumn(tableName: string, columnName: string): Promise<boolean> {
+    const key = `${tableName}.${columnName}`;
+    const cached = this.columnCache.get(key);
+    if (cached !== undefined) return cached;
+    const rows = await this.dataSource.query(
+      `SELECT 1 FROM information_schema.columns
+        WHERE table_name = $1 AND column_name = $2 LIMIT 1`,
+      [tableName, columnName],
+    );
+    const has = rows.length > 0;
+    this.columnCache.set(key, has);
+    return has;
+  }
 
   // Whitelist of valid table names for sync operations (defense-in-depth)
   private readonly VALID_SYNC_TABLES = new Set(Object.values(this.entityTableMap));
@@ -382,16 +417,47 @@ export class SyncService {
       if (!tableName) continue;
       this.validateTableName(tableName);
 
-      let pullSql = `SELECT *,
-          CASE WHEN "deleted_at" IS NOT NULL THEN 'delete'
+      // One unknown table used to abort the whole pull with a 500, taking the
+      // other thirteen entity types down with it. A deployment on an older
+      // schema should sync what it has and say what it skipped.
+      if (!(await this.tableExists(tableName))) {
+        this.logger.warn(
+          `Sync pull: skipping ${entityType} — table "${tableName}" is not present in this database`,
+        );
+        continue;
+      }
+
+      // Only ten of the fourteen syncable tables have a facility of their own:
+      // a patient, an invoice, a prescription and the rest reach one through
+      // the encounter. Filtering every table on "facility_id" made the pull
+      // fail on the FIRST table it touched — patients — with
+      // `column "facility_id" does not exist`, so offline sync had never pulled
+      // a single record. Tables without the column are scoped by tenant alone.
+      const hasFacility = await this.tableHasColumn(tableName, 'facility_id');
+      // Four of the syncable tables are hard-delete: antenatal_visits,
+      // postnatal_visits, imaging_orders and immunization_schedules have no
+      // deleted_at, and asking for one threw `column "deleted_at" does not
+      // exist`. A row from those tables is only ever a create or an update.
+      const hasSoftDelete = await this.tableHasColumn(tableName, 'deleted_at');
+
+      const operationCase = hasSoftDelete
+        ? `CASE WHEN "deleted_at" IS NOT NULL THEN 'delete'
                WHEN "created_at" > $1 THEN 'create'
-               ELSE 'update' END as operation,
+               ELSE 'update' END`
+        : `CASE WHEN "created_at" > $1 THEN 'create' ELSE 'update' END`;
+
+      let pullSql = `SELECT *,
+          ${operationCase} as operation,
           EXTRACT(EPOCH FROM "updated_at") * 1000 as timestamp
          FROM "${tableName}"
-         WHERE "facility_id" = $2 AND "updated_at" > $1`;
-      const pullParams: any[] = [sinceDate, facilityId];
-      pullSql += ` AND "tenant_id" = $${pullParams.length + 1}`;
+         WHERE "updated_at" > $1`;
+      const pullParams: any[] = [sinceDate];
+      if (hasFacility) {
+        pullParams.push(facilityId);
+        pullSql += ` AND "facility_id" = $${pullParams.length}`;
+      }
       pullParams.push(tid);
+      pullSql += ` AND "tenant_id" = $${pullParams.length}`;
       pullSql += ` ORDER BY "updated_at" ASC LIMIT $${pullParams.length + 1}`;
       pullParams.push(limit);
 

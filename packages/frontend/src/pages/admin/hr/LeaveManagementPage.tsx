@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Calendar,
@@ -112,6 +113,17 @@ export default function LeaveManagementPage() {
   const [leaveTypeForm, setLeaveTypeForm] = useState({ name: '', code: '', defaultDays: 0, paidLeave: true, carryForward: false, maxCarryForward: 0 });
   const [showHolidayModal, setShowHolidayModal] = useState(false);
   const [holidayForm, setHolidayForm] = useState({ name: '', date: '', type: 'Public' as Holiday['type'] });
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showAddModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showAddModal,
+    onClose: () => setShowAddModal(false),
+  });
+  const showHolidayModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showHolidayModal,
+    onClose: () => setShowHolidayModal(false),
+  });
 
   const queryClient = useQueryClient();
   const facilityId = useFacilityId();
@@ -722,7 +734,12 @@ export default function LeaveManagementPage() {
 
       {/* Add/Edit Leave Type Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showAddModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
             <h2 className="text-xl font-bold mb-4">{editingTypeId ? 'Edit Leave Type' : 'Add Leave Type'}</h2>
             <div className="space-y-4">
@@ -782,7 +799,12 @@ export default function LeaveManagementPage() {
 
       {/* Add Holiday Modal */}
       {showHolidayModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showHolidayModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
             <h2 className="text-xl font-bold mb-4">Add Holiday</h2>
             <div className="space-y-4">

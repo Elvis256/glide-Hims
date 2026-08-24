@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useId } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import hrService from '../../../services/hr';
 import { useAuthStore } from '../../../store/auth';
@@ -147,6 +148,7 @@ const INITIAL_CREATE_FORM: CreateForm = {
 // ---------------------------------------------------------------------------
 
 export default function DisciplinaryPage() {
+  const fid = useId();
   const { user } = useAuthStore();
   const facilityId = user?.facilityId;
   const queryClient = useQueryClient();
@@ -553,10 +555,10 @@ export default function DisciplinaryPage() {
             <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
               {/* Employee */}
               <div className="sm:col-span-2">
-                <label className="block text-sm font-medium text-gray-700">
+                <label htmlFor={`${fid}-employee`} className="block text-sm font-medium text-gray-700">
                   Employee <span className="text-red-500">*</span>
                 </label>
-                <select
+                <select id={`${fid}-employee`}
                   value={createForm.employeeId}
                   onChange={(e) =>
                     setCreateForm((f) => ({ ...f, employeeId: e.target.value }))
@@ -575,10 +577,10 @@ export default function DisciplinaryPage() {
 
               {/* Type */}
               <div>
-                <label className="block text-sm font-medium text-gray-700">
+                <label htmlFor={`${fid}-type`} className="block text-sm font-medium text-gray-700">
                   Type <span className="text-red-500">*</span>
                 </label>
-                <select
+                <select id={`${fid}-type`}
                   value={createForm.type}
                   onChange={(e) => setCreateForm((f) => ({ ...f, type: e.target.value }))}
                   className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
@@ -593,10 +595,10 @@ export default function DisciplinaryPage() {
 
               {/* Incident Date */}
               <div>
-                <label className="block text-sm font-medium text-gray-700">
+                <label htmlFor={`${fid}-incident-date`} className="block text-sm font-medium text-gray-700">
                   Incident Date <span className="text-red-500">*</span>
                 </label>
-                <input
+                <input id={`${fid}-incident-date`}
                   type="date"
                   value={createForm.incidentDate}
                   onChange={(e) =>
@@ -608,10 +610,10 @@ export default function DisciplinaryPage() {
 
               {/* Reason */}
               <div className="sm:col-span-2">
-                <label className="block text-sm font-medium text-gray-700">
+                <label htmlFor={`${fid}-reason`} className="block text-sm font-medium text-gray-700">
                   Reason <span className="text-red-500">*</span>
                 </label>
-                <input
+                <input id={`${fid}-reason`}
                   type="text"
                   value={createForm.reason}
                   onChange={(e) => setCreateForm((f) => ({ ...f, reason: e.target.value }))}
@@ -622,8 +624,8 @@ export default function DisciplinaryPage() {
 
               {/* Details */}
               <div className="sm:col-span-2">
-                <label className="block text-sm font-medium text-gray-700">Details</label>
-                <textarea
+                <label htmlFor={`${fid}-details`} className="block text-sm font-medium text-gray-700">Details</label>
+                <textarea id={`${fid}-details`}
                   rows={3}
                   value={createForm.details}
                   onChange={(e) => setCreateForm((f) => ({ ...f, details: e.target.value }))}
@@ -634,10 +636,10 @@ export default function DisciplinaryPage() {
 
               {/* Expected Improvement */}
               <div className="sm:col-span-2">
-                <label className="block text-sm font-medium text-gray-700">
+                <label htmlFor={`${fid}-expected-improvement`} className="block text-sm font-medium text-gray-700">
                   Expected Improvement
                 </label>
-                <textarea
+                <textarea id={`${fid}-expected-improvement`}
                   rows={2}
                   value={createForm.expectedImprovement}
                   onChange={(e) =>
@@ -650,8 +652,8 @@ export default function DisciplinaryPage() {
 
               {/* Consequences */}
               <div className="sm:col-span-2">
-                <label className="block text-sm font-medium text-gray-700">Consequences</label>
-                <textarea
+                <label htmlFor={`${fid}-consequences`} className="block text-sm font-medium text-gray-700">Consequences</label>
+                <textarea id={`${fid}-consequences`}
                   rows={2}
                   value={createForm.consequences}
                   onChange={(e) =>
@@ -664,10 +666,10 @@ export default function DisciplinaryPage() {
 
               {/* Follow-up Date */}
               <div>
-                <label className="block text-sm font-medium text-gray-700">
+                <label htmlFor={`${fid}-follow-up-date-optional`} className="block text-sm font-medium text-gray-700">
                   Follow-up Date <span className="text-xs text-gray-400">(optional)</span>
                 </label>
-                <input
+                <input id={`${fid}-follow-up-date-optional`}
                   type="date"
                   value={createForm.followUpDate}
                   onChange={(e) =>
@@ -791,8 +793,8 @@ export default function DisciplinaryPage() {
 
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700">Status</label>
-                      <select
+                      <label htmlFor={`${fid}-status`} className="block text-sm font-medium text-gray-700">Status</label>
+                      <select id={`${fid}-status`}
                         value={editStatus}
                         onChange={(e) => setEditStatus(e.target.value)}
                         className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
@@ -806,10 +808,10 @@ export default function DisciplinaryPage() {
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700">
+                      <label htmlFor={`${fid}-follow-up-date`} className="block text-sm font-medium text-gray-700">
                         Follow-up Date
                       </label>
-                      <input
+                      <input id={`${fid}-follow-up-date`}
                         type="date"
                         value={editFollowUpDate}
                         onChange={(e) => setEditFollowUpDate(e.target.value)}
@@ -818,10 +820,10 @@ export default function DisciplinaryPage() {
                     </div>
 
                     <div className="sm:col-span-2">
-                      <label className="block text-sm font-medium text-gray-700">
+                      <label htmlFor={`${fid}-resolution-notes`} className="block text-sm font-medium text-gray-700">
                         Resolution Notes
                       </label>
-                      <textarea
+                      <textarea id={`${fid}-resolution-notes`}
                         rows={3}
                         value={editResolutionNotes}
                         onChange={(e) => setEditResolutionNotes(e.target.value)}
@@ -831,10 +833,10 @@ export default function DisciplinaryPage() {
                     </div>
 
                     <div className="sm:col-span-2">
-                      <label className="block text-sm font-medium text-gray-700">
+                      <label htmlFor={`${fid}-appeal-notes`} className="block text-sm font-medium text-gray-700">
                         Appeal Notes
                       </label>
-                      <textarea
+                      <textarea id={`${fid}-appeal-notes`}
                         rows={3}
                         value={editAppealNotes}
                         onChange={(e) => setEditAppealNotes(e.target.value)}
@@ -935,8 +937,19 @@ function ModalBackdrop({
   children: React.ReactNode;
   onClose: () => void;
 }) {
+  // This component is mounted only while the modal is showing.
+  const dialogRef = useDialogA11y<HTMLDivElement>({
+    open: true,
+    onClose,
+  });
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      role="dialog"
+      aria-modal="true"
+      ref={dialogRef}
+    >
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       <div className="relative z-10 mx-4 w-full max-w-2xl">{children}</div>
     </div>

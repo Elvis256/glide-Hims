@@ -17,6 +17,7 @@ import { CreateSupplierDto, UpdateSupplierDto } from './dto/suppliers.dto';
 import { SupplierType, SupplierStatus } from '../../database/entities/supplier.entity';
 import { RequireModule } from '../auth/decorators/module.decorator';
 import { ModuleGuard } from '../auth/guards/module.guard';
+import { FacilityId } from '../../common/decorators/facility-id.decorator';
 
 @UseGuards(ModuleGuard)
 @RequireModule('stores')
@@ -36,7 +37,7 @@ export class SuppliersController {
   @Get()
   @AuthWithPermissions('suppliers.read')
   async findAll(
-    @Query('facilityId') facilityId: string,
+    @FacilityId() facilityId: string,
     @Query('type') type?: SupplierType,
     @Query('status') status?: SupplierStatus,
     @Query('search') search?: string,
@@ -64,7 +65,7 @@ export class SuppliersController {
 
   @Get('active')
   @AuthWithPermissions('suppliers.read')
-  async getActiveSuppliers(@Query('facilityId') facilityId: string, @Request() req: any) {
+  async getActiveSuppliers(@FacilityId() facilityId: string, @Request() req: any) {
     const suppliers = await this.suppliersService.getActiveSuppliers(
       facilityId,
       req.user?.tenantId,
@@ -75,7 +76,7 @@ export class SuppliersController {
 
   @Get('dashboard')
   @AuthWithPermissions('suppliers.read')
-  getDashboard(@Query('facilityId') facilityId: string, @Request() req: any) {
+  getDashboard(@FacilityId() facilityId: string, @Request() req: any) {
     return this.suppliersService.getDashboard(facilityId, req.user?.tenantId);
   }
 

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -25,6 +26,13 @@ export default function MyPayslipsPage() {
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState<number>(currentYear);
   const [selectedPayslip, setSelectedPayslip] = useState<Payslip | null>(null);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const selectedPayslipDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!selectedPayslip,
+    onClose: () => setSelectedPayslip(null),
+  });
 
   const { data: payslips = [], isLoading, error } = useQuery({
     queryKey: ['my-payslips', selectedYear],
@@ -198,7 +206,12 @@ export default function MyPayslipsPage() {
 
       {/* Payslip Detail Modal */}
       {selectedPayslip && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={selectedPayslipDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b border-gray-100 flex items-center justify-between">
               <h3 className="text-lg font-semibold">

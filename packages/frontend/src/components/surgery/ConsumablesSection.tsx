@@ -32,20 +32,25 @@ export default function ConsumablesSection({ caseId }: Props) {
   });
 
   const addMutation = useMutation({
+    // No price is sent. This used to post the item's price back to the server,
+    // which trusted it — and the fallback chain ended at 0, so a supply the
+    // search result happened not to carry a price for was billed to the patient
+    // for nothing. The server prices it from the item now.
     mutationFn: () =>
       surgeryService.consumables.record(caseId, {
         surgeryCaseId: caseId,
         itemId: selectedItem.id,
         quantityUsed: Number(qty),
-        unitCost: Number(selectedItem.unitPrice ?? selectedItem.sellingPrice ?? selectedItem.costPrice ?? 0),
         usagePhase: phase,
       }),
-    onSuccess: () => {
+    onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['surgery-consumables', caseId] });
       setSelectedItem(null);
       setItemSearch('');
       setQty('1');
-      toast.success('Consumable recorded');
+      const warning = (res?.data as { stockWarning?: string } | undefined)?.stockWarning;
+      if (warning) toast.error(warning, { duration: 8000 });
+      else toast.success('Consumable recorded');
     },
     onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to record consumable')),
   });

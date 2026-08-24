@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useId } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -251,6 +251,7 @@ interface VitalsTabProps {
 }
 
 function VitalsTab({ encounterId, vitals, onVitalsSaved }: VitalsTabProps) {
+  const fid = useId();
   const [showForm, setShowForm] = useState(vitals.length === 0);
   const [formData, setFormData] = useState({
     temperature: '',
@@ -357,8 +358,8 @@ function VitalsTab({ encounterId, vitals, onVitalsSaved }: VitalsTabProps) {
           <h3 className="font-semibold text-gray-900 mb-4">Record Vitals</h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Temperature (°C)</label>
-              <input
+              <label htmlFor={`${fid}-temperature-c`} className="block text-sm font-medium text-gray-700 mb-1">Temperature (°C)</label>
+              <input id={`${fid}-temperature-c`}
                 type="number"
                 step="0.1"
                 value={formData.temperature}
@@ -368,8 +369,8 @@ function VitalsTab({ encounterId, vitals, onVitalsSaved }: VitalsTabProps) {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Pulse (bpm)</label>
-              <input
+              <label htmlFor={`${fid}-pulse-bpm`} className="block text-sm font-medium text-gray-700 mb-1">Pulse (bpm)</label>
+              <input id={`${fid}-pulse-bpm`}
                 type="number"
                 value={formData.pulse}
                 onChange={(e) => setFormData({ ...formData, pulse: e.target.value })}
@@ -378,8 +379,8 @@ function VitalsTab({ encounterId, vitals, onVitalsSaved }: VitalsTabProps) {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">BP Systolic</label>
-              <input
+              <label htmlFor={`${fid}-bp-systolic`} className="block text-sm font-medium text-gray-700 mb-1">BP Systolic</label>
+              <input id={`${fid}-bp-systolic`}
                 type="number"
                 value={formData.bpSystolic}
                 onChange={(e) => setFormData({ ...formData, bpSystolic: e.target.value })}
@@ -388,8 +389,8 @@ function VitalsTab({ encounterId, vitals, onVitalsSaved }: VitalsTabProps) {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">BP Diastolic</label>
-              <input
+              <label htmlFor={`${fid}-bp-diastolic`} className="block text-sm font-medium text-gray-700 mb-1">BP Diastolic</label>
+              <input id={`${fid}-bp-diastolic`}
                 type="number"
                 value={formData.bpDiastolic}
                 onChange={(e) => setFormData({ ...formData, bpDiastolic: e.target.value })}
@@ -398,8 +399,8 @@ function VitalsTab({ encounterId, vitals, onVitalsSaved }: VitalsTabProps) {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Resp. Rate</label>
-              <input
+              <label htmlFor={`${fid}-resp-rate`} className="block text-sm font-medium text-gray-700 mb-1">Resp. Rate</label>
+              <input id={`${fid}-resp-rate`}
                 type="number"
                 value={formData.respiratoryRate}
                 onChange={(e) => setFormData({ ...formData, respiratoryRate: e.target.value })}
@@ -408,8 +409,8 @@ function VitalsTab({ encounterId, vitals, onVitalsSaved }: VitalsTabProps) {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">SpO2 (%)</label>
-              <input
+              <label htmlFor={`${fid}-spo2`} className="block text-sm font-medium text-gray-700 mb-1">SpO2 (%)</label>
+              <input id={`${fid}-spo2`}
                 type="number"
                 step="0.1"
                 value={formData.oxygenSaturation}
@@ -419,8 +420,8 @@ function VitalsTab({ encounterId, vitals, onVitalsSaved }: VitalsTabProps) {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Weight (kg)</label>
-              <input
+              <label htmlFor={`${fid}-weight-kg`} className="block text-sm font-medium text-gray-700 mb-1">Weight (kg)</label>
+              <input id={`${fid}-weight-kg`}
                 type="number"
                 step="0.1"
                 value={formData.weight}
@@ -430,8 +431,8 @@ function VitalsTab({ encounterId, vitals, onVitalsSaved }: VitalsTabProps) {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Height (cm)</label>
-              <input
+              <label htmlFor={`${fid}-height-cm`} className="block text-sm font-medium text-gray-700 mb-1">Height (cm)</label>
+              <input id={`${fid}-height-cm`}
                 type="number"
                 value={formData.height}
                 onChange={(e) => setFormData({ ...formData, height: e.target.value })}
@@ -441,8 +442,8 @@ function VitalsTab({ encounterId, vitals, onVitalsSaved }: VitalsTabProps) {
             </div>
           </div>
           <div className="mt-4">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-            <textarea
+            <label htmlFor={`${fid}-notes`} className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+            <textarea id={`${fid}-notes`}
               value={formData.notes}
               onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
               className="input"
@@ -474,6 +475,7 @@ interface ConsultationTabProps {
 }
 
 function ConsultationTab({ encounterId, notes, onNotesSaved }: ConsultationTabProps) {
+  const fid = useId();
   const [formData, setFormData] = useState({
     subjective: '',
     objective: '',
@@ -552,10 +554,10 @@ function ConsultationTab({ encounterId, notes, onNotesSaved }: ConsultationTabPr
         </h3>
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor={`${fid}-subjective-history-symptoms`} className="block text-sm font-medium text-gray-700 mb-1">
               Subjective (History & Symptoms)
             </label>
-            <textarea
+            <textarea id={`${fid}-subjective-history-symptoms`}
               value={formData.subjective}
               onChange={(e) => setFormData({ ...formData, subjective: e.target.value })}
               className="input"
@@ -564,10 +566,10 @@ function ConsultationTab({ encounterId, notes, onNotesSaved }: ConsultationTabPr
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor={`${fid}-objective-examination-findings`} className="block text-sm font-medium text-gray-700 mb-1">
               Objective (Examination Findings)
             </label>
-            <textarea
+            <textarea id={`${fid}-objective-examination-findings`}
               value={formData.objective}
               onChange={(e) => setFormData({ ...formData, objective: e.target.value })}
               className="input"
@@ -576,10 +578,10 @@ function ConsultationTab({ encounterId, notes, onNotesSaved }: ConsultationTabPr
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor={`${fid}-assessment-diagnosis`} className="block text-sm font-medium text-gray-700 mb-1">
               Assessment (Diagnosis)
             </label>
-            <textarea
+            <textarea id={`${fid}-assessment-diagnosis`}
               value={formData.assessment}
               onChange={(e) => setFormData({ ...formData, assessment: e.target.value })}
               className="input"
@@ -588,10 +590,10 @@ function ConsultationTab({ encounterId, notes, onNotesSaved }: ConsultationTabPr
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor={`${fid}-plan-treatment`} className="block text-sm font-medium text-gray-700 mb-1">
               Plan (Treatment)
             </label>
-            <textarea
+            <textarea id={`${fid}-plan-treatment`}
               value={formData.plan}
               onChange={(e) => setFormData({ ...formData, plan: e.target.value })}
               className="input"
@@ -600,8 +602,8 @@ function ConsultationTab({ encounterId, notes, onNotesSaved }: ConsultationTabPr
             />
           </div>
           <div className="w-1/2">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Follow-up Date</label>
-            <input
+            <label htmlFor={`${fid}-follow-up-date`} className="block text-sm font-medium text-gray-700 mb-1">Follow-up Date</label>
+            <input id={`${fid}-follow-up-date`}
               type="date"
               value={formData.followUpDate}
               onChange={(e) => setFormData({ ...formData, followUpDate: e.target.value })}
@@ -643,6 +645,7 @@ interface LabOrdersTabProps {
 }
 
 function LabOrdersTab({ encounterId }: LabOrdersTabProps) {
+  const fid = useId();
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [selectedTests, setSelectedTests] = useState<TestCode[]>([]);
@@ -859,8 +862,8 @@ function LabOrdersTab({ encounterId }: LabOrdersTabProps) {
 
           {/* Clinical Notes */}
           <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Clinical Notes</label>
-            <textarea
+            <label htmlFor={`${fid}-clinical-notes`} className="block text-sm font-medium text-gray-700 mb-1">Clinical Notes</label>
+            <textarea id={`${fid}-clinical-notes`}
               value={clinicalNotes}
               onChange={(e) => setClinicalNotes(e.target.value)}
               placeholder="Reason for test, relevant symptoms..."
@@ -897,6 +900,7 @@ function LabOrdersTab({ encounterId }: LabOrdersTabProps) {
 }
 
 function PrescriptionsTab({ encounterId, prescriptions, onPrescriptionSaved }: PrescriptionsTabProps) {
+  const fid = useId();
   const [showForm, setShowForm] = useState(false);
   const [items, setItems] = useState<PrescriptionItem[]>([]);
 
@@ -1032,8 +1036,8 @@ function PrescriptionsTab({ encounterId, prescriptions, onPrescriptionSaved }: P
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-gray-500">Dose *</label>
-                    <input
+                    <label htmlFor={`${fid}-dose`} className="block text-xs text-gray-500">Dose *</label>
+                    <input id={`${fid}-dose`}
                       type="text"
                       value={item.dose}
                       onChange={(e) => updateItem(index, 'dose', e.target.value)}
@@ -1042,8 +1046,8 @@ function PrescriptionsTab({ encounterId, prescriptions, onPrescriptionSaved }: P
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-gray-500">Frequency</label>
-                    <input
+                    <label htmlFor={`${fid}-frequency`} className="block text-xs text-gray-500">Frequency</label>
+                    <input id={`${fid}-frequency`}
                       type="text"
                       value={item.frequency}
                       onChange={(e) => updateItem(index, 'frequency', e.target.value)}
@@ -1052,8 +1056,8 @@ function PrescriptionsTab({ encounterId, prescriptions, onPrescriptionSaved }: P
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-gray-500">Duration</label>
-                    <input
+                    <label htmlFor={`${fid}-duration`} className="block text-xs text-gray-500">Duration</label>
+                    <input id={`${fid}-duration`}
                       type="text"
                       value={item.duration}
                       onChange={(e) => updateItem(index, 'duration', e.target.value)}
@@ -1062,8 +1066,8 @@ function PrescriptionsTab({ encounterId, prescriptions, onPrescriptionSaved }: P
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-gray-500">Qty *</label>
-                    <input
+                    <label htmlFor={`${fid}-qty`} className="block text-xs text-gray-500">Qty *</label>
+                    <input id={`${fid}-qty`}
                       type="number"
                       min="1"
                       value={item.quantity}

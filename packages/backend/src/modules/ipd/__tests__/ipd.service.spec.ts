@@ -19,7 +19,6 @@ import {
   EncounterType,
 } from '../../../database/entities/encounter.entity';
 import { Patient } from '../../../database/entities/patient.entity';
-import { PrescriptionItem } from '../../../database/entities/prescription.entity';
 import { BillingService } from '../../billing/billing.service';
 import { BedBoardService } from '../bed-board.service';
 import { AuditLogService } from '../../../common/interceptors/audit-log.service';
@@ -92,6 +91,10 @@ function createMockRepo(): Partial<Repository<any>> {
     andWhere: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockReturnThis(),
     addOrderBy: jest.fn().mockReturnThis(),
+    // getWardOccupancy groups beds by ward to count the genuinely available
+    // ones; without groupBy the chain breaks at runtime rather than at compile
+    // time, which is how this mock silently fell behind the code.
+    groupBy: jest.fn().mockReturnThis(),
     setLock: jest.fn().mockReturnThis(),
     skip: jest.fn().mockReturnThis(),
     take: jest.fn().mockReturnThis(),
@@ -112,6 +115,7 @@ function createMockRepo(): Partial<Repository<any>> {
     find: jest.fn().mockResolvedValue([]) as any,
     count: jest.fn().mockResolvedValue(0) as any,
     update: jest.fn().mockResolvedValue(undefined) as any,
+    query: jest.fn().mockResolvedValue([]) as any,
     createQueryBuilder: jest.fn().mockReturnValue(qb) as any,
   };
 }
@@ -129,7 +133,6 @@ describe('IpdService', () => {
   let transferRepo: ReturnType<typeof createMockRepo>;
   let encounterRepo: ReturnType<typeof createMockRepo>;
   let patientRepo: ReturnType<typeof createMockRepo>;
-  let prescriptionItemRepo: ReturnType<typeof createMockRepo>;
   let dataSource: { transaction: jest.Mock };
   let billingService: Record<string, jest.Mock>;
   let bedBoardService: Record<string, jest.Mock>;
@@ -145,7 +148,6 @@ describe('IpdService', () => {
     transferRepo = createMockRepo();
     encounterRepo = createMockRepo();
     patientRepo = createMockRepo();
-    prescriptionItemRepo = createMockRepo();
 
     dataSource = {
       transaction: jest.fn(),
@@ -182,7 +184,6 @@ describe('IpdService', () => {
         { provide: getRepositoryToken(BedTransfer), useValue: transferRepo },
         { provide: getRepositoryToken(Encounter), useValue: encounterRepo },
         { provide: getRepositoryToken(Patient), useValue: patientRepo },
-        { provide: getRepositoryToken(PrescriptionItem), useValue: prescriptionItemRepo },
         { provide: DataSource, useValue: dataSource },
         { provide: BillingService, useValue: billingService },
         { provide: BedBoardService, useValue: bedBoardService },
@@ -382,9 +383,7 @@ describe('IpdService', () => {
       mgr.save.mockImplementation((entity: any) => Promise.resolve({ ...entity }));
 
       // post-txn reload returns the saved admission
-      (admissionRepo.findOne as jest.Mock).mockImplementation((opts: any) =>
-        Promise.resolve(null),
-      );
+      (admissionRepo.findOne as jest.Mock).mockImplementation((opts: any) => Promise.resolve(null));
 
       // bedBoardService returns no charge lines (simple case)
       bedBoardService.computeBedDayCharges.mockResolvedValue([]);
@@ -532,56 +531,99 @@ describe('IpdService', () => {
         service.transferBed(ADMISSION_ID, dto as any, USER_ID, TENANT_ID),
       ).rejects.toThrow(BadRequestException);
     });
+
+    it('refuses a bed that belongs to no ward at all', async () => {
+      // A ward-less bed used to pass the consistency check and be transferred
+      // into whichever ward the caller named.
+      const { mgr, qbChain } = createMockManager();
+
+      qbChain.getOne
+        .mockResolvedValueOnce({
+          id: ADMISSION_ID,
+          status: AdmissionStatus.ADMITTED,
+          bedId: BED_ID,
+          wardId: WARD_ID,
+        })
+        .mockResolvedValueOnce({
+          id: BED_ID_2,
+          status: BedStatus.AVAILABLE,
+          wardId: null,
+        });
+
+      dataSource.transaction.mockImplementation((cb: any) => cb(mgr));
+
+      await expect(
+        service.transferBed(
+          ADMISSION_ID,
+          { toWardId: WARD_ID_2, toBedId: BED_ID_2, reason: TransferReason.CLINICAL } as any,
+          USER_ID,
+          TENANT_ID,
+        ),
+      ).rejects.toThrow(/does not belong to the selected ward/);
+    });
   });
 
   // -----------------------------------------------------------------------
-  // 8. Bed management — markBedAvailable
+  // 8. Bed management — freeing a bed goes through updateBed, which is what
+  //    the ward screen's "Mark as Available" button actually calls.
   // -----------------------------------------------------------------------
-  describe('markBedAvailable', () => {
-    it('should mark a CLEANING bed as AVAILABLE and update ward counts', async () => {
-      const bed = {
+  describe('updateBed status transitions', () => {
+    it('frees a bed that has finished cleaning', async () => {
+      (bedRepo.findOne as jest.Mock).mockResolvedValueOnce({
         id: BED_ID,
         bedNumber: 'A01',
         status: BedStatus.CLEANING,
         wardId: WARD_ID,
         tenantId: TENANT_ID,
-      };
-
-      (bedRepo.findOne as jest.Mock).mockResolvedValueOnce(bed);
+      });
       (bedRepo.save as jest.Mock).mockImplementation((b: any) => Promise.resolve({ ...b }));
-      (bedRepo.count as jest.Mock)
-        .mockResolvedValueOnce(10) // totalBeds
-        .mockResolvedValueOnce(3); // occupiedBeds
 
-      const result = await service.markBedAvailable(BED_ID, TENANT_ID);
+      const result = await service.updateBed(
+        BED_ID,
+        { status: BedStatus.AVAILABLE } as any,
+        TENANT_ID,
+      );
 
       expect(result.status).toBe(BedStatus.AVAILABLE);
-      expect(wardRepo.update).toHaveBeenCalledWith(WARD_ID, {
-        totalBeds: 10,
-        occupiedBeds: 3,
-      });
     });
 
-    it('should throw BadRequestException when bed is not in CLEANING status', async () => {
+    it('frees a bed coming back from maintenance', async () => {
+      (bedRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        id: BED_ID,
+        status: BedStatus.MAINTENANCE,
+        wardId: WARD_ID,
+        tenantId: TENANT_ID,
+      });
+      (bedRepo.save as jest.Mock).mockImplementation((b: any) => Promise.resolve({ ...b }));
+
+      const result = await service.updateBed(
+        BED_ID,
+        { status: BedStatus.AVAILABLE } as any,
+        TENANT_ID,
+      );
+
+      expect(result.status).toBe(BedStatus.AVAILABLE);
+    });
+
+    it('refuses to flip occupancy directly, which only admission and discharge may set', async () => {
       (bedRepo.findOne as jest.Mock).mockResolvedValue({
         id: BED_ID,
         status: BedStatus.OCCUPIED,
         wardId: WARD_ID,
+        tenantId: TENANT_ID,
       });
 
-      await expect(service.markBedAvailable(BED_ID, TENANT_ID)).rejects.toThrow(
-        BadRequestException,
-      );
-
-      await expect(service.markBedAvailable(BED_ID, TENANT_ID)).rejects.toThrow(/cleaning/);
+      await expect(
+        service.updateBed(BED_ID, { status: BedStatus.AVAILABLE } as any, TENANT_ID),
+      ).rejects.toThrow(BadRequestException);
     });
 
-    it('should throw NotFoundException when bed does not exist', async () => {
+    it('throws NotFoundException when the bed does not exist', async () => {
       (bedRepo.findOne as jest.Mock).mockResolvedValueOnce(null);
 
-      await expect(service.markBedAvailable(uuid('nope'), TENANT_ID)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(
+        service.updateBed(uuid('nope'), { status: BedStatus.AVAILABLE } as any, TENANT_ID),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 
@@ -647,8 +689,66 @@ describe('IpdService', () => {
   // -----------------------------------------------------------------------
   // 10. administerMedication — happy path
   // -----------------------------------------------------------------------
+  describe('getMedicationSchedule', () => {
+    it("buckets the day in the ward's timezone, not the server's UTC", async () => {
+      // A dose due 01:00 in Kampala is 22:00 UTC the day before, so a bare
+      // DATE() drops the whole night round off the day's chart.
+      const qb = (medAdminRepo.createQueryBuilder as jest.Mock)();
+      (qb.getMany as jest.Mock).mockResolvedValueOnce([]);
+
+      await service.getMedicationSchedule(ADMISSION_ID, '2026-08-16', TENANT_ID);
+
+      const dateCall = (qb.andWhere as jest.Mock).mock.calls.find((c: any[]) =>
+        String(c[0]).includes('scheduledTime'),
+      );
+      expect(dateCall).toBeDefined();
+      expect(dateCall[0]).toContain('AT TIME ZONE');
+      expect(dateCall[1]).toMatchObject({ tz: 'Africa/Kampala', date: '2026-08-16' });
+    });
+
+    it('does not filter by day when no date is asked for', async () => {
+      const qb = (medAdminRepo.createQueryBuilder as jest.Mock)();
+      (qb.andWhere as jest.Mock).mockClear();
+      (qb.getMany as jest.Mock).mockResolvedValueOnce([]);
+
+      await service.getMedicationSchedule(ADMISSION_ID, undefined, TENANT_ID);
+
+      const dateCall = (qb.andWhere as jest.Mock).mock.calls.find((c: any[]) =>
+        String(c[0]).includes('scheduledTime'),
+      );
+      expect(dateCall).toBeUndefined();
+    });
+  });
+
   describe('administerMedication', () => {
-    it('should administer medication, increment Rx dispensed count, and log audit', async () => {
+    it('leaves the pharmacy dispensing ledger alone when a dose is given', async () => {
+      // quantityDispensed counts UNITS the pharmacy issued, and re-dispensing
+      // is gated on quantity - quantityDispensed. Counting dose events into it
+      // exhausts the prescription and blocks the rest of the course.
+      const { mgr } = createMockManager();
+      mgr.findOne
+        .mockResolvedValueOnce({
+          id: MED_ID,
+          status: MedicationStatus.SCHEDULED,
+          admissionId: ADMISSION_ID,
+          drugName: 'Amoxicillin',
+          prescriptionItemId: RX_ITEM_ID,
+        })
+        .mockResolvedValueOnce({ id: ADMISSION_ID, patient: { allergies: [] } });
+      mgr.save.mockImplementation((entity: any) => Promise.resolve({ ...entity }));
+      dataSource.transaction.mockImplementation((cb: any) => cb(mgr));
+
+      await service.administerMedication(
+        MED_ID,
+        { status: MedicationStatus.ADMINISTERED } as any,
+        USER_ID,
+        TENANT_ID,
+      );
+
+      expect(mgr.increment).not.toHaveBeenCalled();
+    });
+
+    it('should administer medication and log audit', async () => {
       const { mgr } = createMockManager();
 
       const med = {
@@ -682,15 +782,8 @@ describe('IpdService', () => {
 
       expect(result.status).toBe(MedicationStatus.ADMINISTERED);
       expect(result.administeredById).toBe(USER_ID);
+      expect(result.administeredAt).toBeInstanceOf(Date);
       expect(result.batchNumber).toBe('BATCH-001');
-
-      // Rx item dispensed count incremented
-      expect(mgr.increment).toHaveBeenCalledWith(
-        PrescriptionItem,
-        { id: RX_ITEM_ID },
-        'quantityDispensed',
-        1,
-      );
 
       // Audit log fired
       expect(auditLogService.log).toHaveBeenCalledWith(
@@ -700,6 +793,108 @@ describe('IpdService', () => {
           entityId: expect.any(String),
         }),
       );
+    });
+
+    it('does not stamp a giver and a time on a dose that was refused', async () => {
+      // administeredAt/administeredById mean "who gave it, and when". Filling
+      // them in for a refusal makes the MAR read as though the drug went in.
+      const { mgr } = createMockManager();
+      mgr.findOne.mockResolvedValueOnce({
+        id: MED_ID,
+        status: MedicationStatus.SCHEDULED,
+        admissionId: ADMISSION_ID,
+        drugName: 'Amoxicillin',
+      });
+      mgr.save.mockImplementation((entity: any) => Promise.resolve({ ...entity }));
+      dataSource.transaction.mockImplementation((cb: any) => cb(mgr));
+
+      const result = await service.administerMedication(
+        MED_ID,
+        { status: MedicationStatus.REFUSED, reason: 'Patient declined' } as any,
+        USER_ID,
+        TENANT_ID,
+      );
+
+      expect(result.status).toBe(MedicationStatus.REFUSED);
+      expect(result.administeredAt).toBeFalsy();
+      expect(result.administeredById).toBeFalsy();
+    });
+
+    it('does not count a refused dose against the prescription', async () => {
+      const { mgr } = createMockManager();
+      mgr.findOne.mockResolvedValueOnce({
+        id: MED_ID,
+        status: MedicationStatus.SCHEDULED,
+        admissionId: ADMISSION_ID,
+        drugName: 'Amoxicillin',
+        prescriptionItemId: RX_ITEM_ID,
+      });
+      mgr.save.mockImplementation((entity: any) => Promise.resolve({ ...entity }));
+      dataSource.transaction.mockImplementation((cb: any) => cb(mgr));
+
+      await service.administerMedication(
+        MED_ID,
+        { status: MedicationStatus.REFUSED } as any,
+        USER_ID,
+        TENANT_ID,
+      );
+
+      expect(mgr.increment).not.toHaveBeenCalled();
+    });
+
+    it('catches an allergy recorded as free text, not just a bare drug name', async () => {
+      // Real allergy lists read "Penicillin - rash", not "penicillin". Matching
+      // only when the recorded allergy is a substring of the drug name misses
+      // every one of those, and the dose goes in unchallenged.
+      const { mgr } = createMockManager();
+      mgr.findOne
+        .mockResolvedValueOnce({
+          id: MED_ID,
+          status: MedicationStatus.SCHEDULED,
+          admissionId: ADMISSION_ID,
+          drugName: 'Penicillin V',
+        })
+        .mockResolvedValueOnce({
+          id: ADMISSION_ID,
+          patient: { allergies: ['Penicillin - rash'] },
+        });
+      mgr.save.mockImplementation((entity: any) => Promise.resolve({ ...entity }));
+      dataSource.transaction.mockImplementation((cb: any) => cb(mgr));
+
+      await expect(
+        service.administerMedication(
+          MED_ID,
+          { status: MedicationStatus.ADMINISTERED } as any,
+          USER_ID,
+          TENANT_ID,
+        ),
+      ).rejects.toThrow(/documented allergy/);
+    });
+
+    it('does not flag a drug the patient is not allergic to', async () => {
+      const { mgr } = createMockManager();
+      mgr.findOne
+        .mockResolvedValueOnce({
+          id: MED_ID,
+          status: MedicationStatus.SCHEDULED,
+          admissionId: ADMISSION_ID,
+          drugName: 'Paracetamol',
+        })
+        .mockResolvedValueOnce({
+          id: ADMISSION_ID,
+          patient: { allergies: ['Penicillin - rash', 'Dust'] },
+        });
+      mgr.save.mockImplementation((entity: any) => Promise.resolve({ ...entity }));
+      dataSource.transaction.mockImplementation((cb: any) => cb(mgr));
+
+      const result = await service.administerMedication(
+        MED_ID,
+        { status: MedicationStatus.ADMINISTERED } as any,
+        USER_ID,
+        TENANT_ID,
+      );
+
+      expect(result.status).toBe(MedicationStatus.ADMINISTERED);
     });
 
     it('should throw BadRequestException when dose was already administered', async () => {
@@ -861,6 +1056,179 @@ describe('IpdService', () => {
         totalBeds: 11,
         occupiedBeds: 4,
       });
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Bed-day invoicing after discharge must be recoverable, not fire-and-forget
+  // -----------------------------------------------------------------------
+  describe('generateDischargeInvoice', () => {
+    const BED_LINE = {
+      serviceCode: 'BED-G01',
+      description: 'General bed G01',
+      chargeType: 'bed',
+      quantity: 3,
+      unitPrice: 20000,
+      referenceType: 'admission',
+      referenceId: ADMISSION_ID,
+    };
+
+    /** Routes the two raw SQL statements the service issues. */
+    const wireQuery = (invoiceStatus?: string) => {
+      const updates: any[] = [];
+      (admissionRepo.query as jest.Mock).mockImplementation((sql: string, params: any[]) => {
+        if (/FROM invoices/i.test(sql)) {
+          return Promise.resolve(invoiceStatus ? [{ status: invoiceStatus }] : []);
+        }
+        updates.push(JSON.parse(params[0]));
+        return Promise.resolve(undefined);
+      });
+      return updates;
+    };
+
+    const discharged = (metadata: any = null) => ({
+      id: ADMISSION_ID,
+      admissionNumber: 'ADM202608160001',
+      status: AdmissionStatus.DISCHARGED,
+      patientId: PATIENT_ID,
+      encounterId: ENCOUNTER_ID,
+      metadata,
+    });
+
+    it('refuses an admission whose stay is still open', async () => {
+      (admissionRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...discharged(),
+        status: AdmissionStatus.ADMITTED,
+      });
+
+      await expect(
+        service.generateDischargeInvoice(ADMISSION_ID, USER_ID, TENANT_ID),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(billingService.createInvoice).not.toHaveBeenCalled();
+    });
+
+    it('returns the invoice already raised rather than billing the stay twice', async () => {
+      (admissionRepo.findOne as jest.Mock).mockResolvedValueOnce(
+        discharged({ inpatientInvoiceId: uuid('inv9') }),
+      );
+      wireQuery('pending');
+
+      const result = await service.generateDischargeInvoice(ADMISSION_ID, USER_ID, TENANT_ID);
+
+      expect(result).toBe(uuid('inv9'));
+      expect(billingService.createInvoice).not.toHaveBeenCalled();
+    });
+
+    it('raises a fresh invoice when the recorded one was cancelled', async () => {
+      (admissionRepo.findOne as jest.Mock).mockResolvedValueOnce(
+        discharged({ inpatientInvoiceId: uuid('inv9') }),
+      );
+      wireQuery('cancelled');
+      bedBoardService.computeBedDayCharges.mockResolvedValueOnce([BED_LINE]);
+
+      const result = await service.generateDischargeInvoice(ADMISSION_ID, USER_ID, TENANT_ID);
+
+      expect(billingService.createInvoice).toHaveBeenCalled();
+      expect(result).toBe(uuid('inv1'));
+    });
+
+    it('records the failure on the admission when invoicing throws', async () => {
+      (admissionRepo.findOne as jest.Mock).mockResolvedValueOnce(discharged());
+      const updates = wireQuery();
+      bedBoardService.computeBedDayCharges.mockResolvedValueOnce([BED_LINE]);
+      billingService.createInvoice.mockRejectedValueOnce(new Error('billing period locked'));
+
+      await expect(
+        service.generateDischargeInvoice(ADMISSION_ID, USER_ID, TENANT_ID),
+      ).rejects.toThrow('billing period locked');
+
+      expect(updates).toHaveLength(1);
+      expect(updates[0].inpatientBilling.status).toBe('failed');
+      expect(updates[0].inpatientBilling.error).toContain('billing period locked');
+    });
+
+    it('marks a stay with no chargeable line as settled, not as a failure', async () => {
+      (admissionRepo.findOne as jest.Mock).mockResolvedValueOnce(discharged());
+      const updates = wireQuery();
+      bedBoardService.computeBedDayCharges.mockResolvedValueOnce([]);
+
+      const result = await service.generateDischargeInvoice(ADMISSION_ID, USER_ID, TENANT_ID);
+
+      expect(result).toBeUndefined();
+      expect(updates[0].inpatientBilling.status).toBe('nothing_to_bill');
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // updateBed must not destroy an active reservation
+  // -----------------------------------------------------------------------
+  describe('updateBed on a reserved bed', () => {
+    const reservationEnvelope = JSON.stringify({
+      reserved: {
+        until: '2026-08-16T18:00:00.000Z',
+        by: USER_ID,
+        reason: 'theatre list',
+      },
+    });
+
+    it('keeps the reservation when an unrelated field is edited', async () => {
+      (bedRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        id: BED_ID,
+        status: BedStatus.RESERVED,
+        notes: reservationEnvelope,
+        dailyRate: 20000,
+        tenantId: TENANT_ID,
+      });
+      (bedRepo.save as jest.Mock).mockImplementation((b) => Promise.resolve(b));
+
+      const result = await service.updateBed(BED_ID, { dailyRate: 25000 } as any, TENANT_ID);
+
+      expect(result.dailyRate).toBe(25000);
+      expect(JSON.parse(result.notes).reserved).toBeTruthy();
+    });
+
+    it('drops the envelope when the edit takes the bed out of RESERVED', async () => {
+      // The ward screen prints bed.notes verbatim, so a leftover envelope
+      // shows the nurse raw JSON where the bed's note should be.
+      (bedRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        id: BED_ID,
+        status: BedStatus.RESERVED,
+        notes: JSON.stringify({ reserved: { until: 'x', by: USER_ID }, note: 'window side' }),
+        tenantId: TENANT_ID,
+      });
+      (bedRepo.save as jest.Mock).mockImplementation((b) => Promise.resolve(b));
+
+      const result = await service.updateBed(
+        BED_ID,
+        { status: BedStatus.AVAILABLE } as any,
+        TENANT_ID,
+      );
+
+      expect(result.notes).toBe('window side');
+      expect(result.notes).not.toContain('reserved');
+    });
+
+    it('keeps the reservation when the notes themselves are edited', async () => {
+      // The reservation shares bed.notes with free-text ward notes, so a nurse
+      // annotating the bed would otherwise silently drop the hold — leaving it
+      // RESERVED with nothing to expire, i.e. a bed lost until freed by hand.
+      (bedRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        id: BED_ID,
+        status: BedStatus.RESERVED,
+        notes: reservationEnvelope,
+        tenantId: TENANT_ID,
+      });
+      (bedRepo.save as jest.Mock).mockImplementation((b) => Promise.resolve(b));
+
+      const result = await service.updateBed(
+        BED_ID,
+        { notes: 'side rail needs repair' } as any,
+        TENANT_ID,
+      );
+
+      const parsed = JSON.parse(result.notes);
+      expect(parsed.reserved).toBeTruthy();
+      expect(parsed.reserved.reason).toBe('theatre list');
     });
   });
 });

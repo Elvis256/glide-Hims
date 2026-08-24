@@ -7,6 +7,7 @@ import { Invoice } from '../../database/entities/invoice.entity';
 import { Appointment } from '../appointments/entities/appointment.entity';
 import { LabSample } from '../../database/entities/lab-sample.entity';
 import { Prescription } from '../../database/entities/prescription.entity';
+import { Encounter } from '../../database/entities/encounter.entity';
 import { AuditLog } from '../../database/entities/audit-log.entity';
 import { DischargeSummary } from '../../database/entities/discharge-summary.entity';
 import { CacheModule } from '../cache/cache.module';
@@ -23,6 +24,7 @@ import { PatientPortalGuard } from './patient-portal.guard';
       Appointment,
       LabSample,
       Prescription,
+      Encounter,
       AuditLog,
       DischargeSummary,
     ]),

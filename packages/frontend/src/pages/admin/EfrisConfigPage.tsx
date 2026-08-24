@@ -11,16 +11,24 @@ import { api, getApiErrorMessage } from '../../services/api';
 
 interface EfrisConfig {
   id?: string;
-  tinNumber?: string;
+  // These names are the API's, not invented ones. The page used to declare
+  // tinNumber / branchCode / apiBaseUrl / apiKey / defaultCurrency / notes and
+  // POST the whole form object; the API's DTO knows none of those, and the
+  // global ValidationPipe runs with forbidNonWhitelisted, so every Save was a
+  // 400. It also never sent deviceSerial, which the API requires. This page has
+  // never once saved a configuration — and EFRIS config is what gates fiscal
+  // submission for the whole tenant.
+  taxpayerTin?: string;
   taxpayerName?: string;
-  branchCode?: string;
+  deviceSerial?: string;
   environment?: 'sandbox' | 'production';
-  apiBaseUrl?: string;
-  apiKey?: string;
+  sandboxUrl?: string;
+  productionUrl?: string;
+  apiKeyEncrypted?: string;
   isEnabled?: boolean;
   submitOnCompletion?: boolean;
-  defaultCurrency?: string;
-  notes?: string;
+  /** Read-only, from the API: the key itself is never sent back. */
+  apiKeyConfigured?: boolean;
 }
 
 interface EfrisDocument {
@@ -58,7 +66,10 @@ export default function EfrisConfigPage() {
   });
 
   useEffect(() => {
-    if (cfg) setForm(cfg);
+    // apiKeyEncrypted is never in the response, so seeding the form from cfg
+    // leaves it blank — which is what we want: blank means "keep the stored
+    // key", and the server ignores empty strings on save.
+    if (cfg) setForm({ ...cfg, apiKeyEncrypted: '' });
   }, [cfg]);
 
   const { data: docsData, isLoading: docsLoading } = useQuery({
@@ -119,8 +130,8 @@ export default function EfrisConfigPage() {
           <Field label="TIN Number">
             <input
               className="input"
-              value={form.tinNumber || ''}
-              onChange={(e) => setForm({ ...form, tinNumber: e.target.value })}
+              value={form.taxpayerTin || ''}
+              onChange={(e) => setForm({ ...form, taxpayerTin: e.target.value })}
               placeholder="1000000000"
             />
           </Field>
@@ -131,11 +142,12 @@ export default function EfrisConfigPage() {
               onChange={(e) => setForm({ ...form, taxpayerName: e.target.value })}
             />
           </Field>
-          <Field label="Branch Code">
+          <Field label="Device Serial">
             <input
               className="input"
-              value={form.branchCode || ''}
-              onChange={(e) => setForm({ ...form, branchCode: e.target.value })}
+              value={form.deviceSerial || ''}
+              onChange={(e) => setForm({ ...form, deviceSerial: e.target.value })}
+              placeholder="TCS-001"
             />
           </Field>
           <Field label="Environment">
@@ -150,36 +162,35 @@ export default function EfrisConfigPage() {
               <option value="production">Production</option>
             </select>
           </Field>
-          <Field label="API Base URL">
+          <Field label="Sandbox URL">
             <input
               className="input"
-              value={form.apiBaseUrl || ''}
-              onChange={(e) => setForm({ ...form, apiBaseUrl: e.target.value })}
-              placeholder="https://efris.ura.go.ug/efris/..."
+              value={form.sandboxUrl || ''}
+              onChange={(e) => setForm({ ...form, sandboxUrl: e.target.value })}
+              placeholder="https://efrisws.ura.go.ug/sandbox/..."
+            />
+          </Field>
+          <Field label="Production URL">
+            <input
+              className="input"
+              value={form.productionUrl || ''}
+              onChange={(e) => setForm({ ...form, productionUrl: e.target.value })}
+              placeholder="https://efrisws.ura.go.ug/..."
             />
           </Field>
           <Field label="API Key / Secret">
             <input
               type="password"
               className="input"
-              value={form.apiKey || ''}
-              onChange={(e) => setForm({ ...form, apiKey: e.target.value })}
-              placeholder="(stored encrypted)"
+              value={form.apiKeyEncrypted || ''}
+              onChange={(e) => setForm({ ...form, apiKeyEncrypted: e.target.value })}
+              placeholder={cfg?.apiKeyConfigured ? '•••••••• (leave blank to keep)' : 'Not set'}
             />
-          </Field>
-          <Field label="Default Currency">
-            <input
-              className="input"
-              value={form.defaultCurrency || 'UGX'}
-              onChange={(e) => setForm({ ...form, defaultCurrency: e.target.value })}
-            />
-          </Field>
-          <Field label="Notes">
-            <input
-              className="input"
-              value={form.notes || ''}
-              onChange={(e) => setForm({ ...form, notes: e.target.value })}
-            />
+            <p className="mt-1 text-xs text-gray-500">
+              {cfg?.apiKeyConfigured
+                ? 'A key is stored. It is never sent back to the browser — leave this blank to keep it.'
+                : 'No key stored yet.'}
+            </p>
           </Field>
         </div>
         <div className="mt-4 flex flex-wrap items-center gap-6">

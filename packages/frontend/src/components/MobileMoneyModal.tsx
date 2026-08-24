@@ -3,6 +3,7 @@
  * Shows while waiting for customer to approve on their phone, polls status every 3s.
  */
 import { useEffect, useState, useCallback } from 'react';
+import { useDialogA11y } from '../hooks/useDialogA11y';
 import { Smartphone, Loader2, CheckCircle, XCircle, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, getApiErrorMessage } from '../services/api';
@@ -31,6 +32,8 @@ const POLL_INTERVAL_MS = 3000;
 const MAX_WAIT_S = 90;
 
 export function MobileMoneyModal({ saleId, amount, defaultPhone = '', onSuccess, onClose }: Props) {
+  // Mounted only while the payment modal is showing.
+  const dialogRef = useDialogA11y<HTMLDivElement>({ open: true, onClose });
   const [phone, setPhone] = useState(defaultPhone);
   const [provider, setProvider] = useState<MomoProvider>(() => detectProvider(defaultPhone));
   const [phase, setPhase] = useState<'input' | 'waiting' | 'success' | 'failed'>('input');
@@ -135,7 +138,12 @@ export function MobileMoneyModal({ saleId, amount, defaultPhone = '', onSuccess,
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      role="dialog"
+      aria-modal="true"
+      ref={dialogRef}
+    >
       <div className="bg-white rounded-xl p-6 max-w-sm w-full mx-4 shadow-2xl space-y-4">
         {/* Header */}
         <div className="flex items-center justify-between">

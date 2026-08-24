@@ -43,6 +43,7 @@ import {
 } from './dto/queue.dto';
 import { COVERAGE_METHODS } from '../../shared/payment-methods';
 import { requireTenantId } from '../../common/utils/tenant.util';
+import { localCalendarDate, localDateString } from '../../common/utils/timezone.util';
 
 const SERVICE_CONFIG_KEY = 'queue.serviceConfig';
 
@@ -92,8 +93,10 @@ export class QueueManagementService {
     billingMode: 'pre_pay' | 'post_pay';
   }> {
     const tid = requireTenantId(tenantId);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // The hospital's calendar day. setHours(0,0,0,0) is midnight in the
+    // server's zone, so on UTC+3 every "today" between local midnight and
+    // 03:00 was still yesterday.
+    const today = localCalendarDate();
 
     if (dto.departmentId) {
       const department = await this.departmentRepository.findOne({
@@ -352,8 +355,10 @@ export class QueueManagementService {
     tenantId?: string,
   ): Promise<Queue> {
     const tid = requireTenantId(tenantId);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // The hospital's calendar day. setHours(0,0,0,0) is midnight in the
+    // server's zone, so on UTC+3 every "today" between local midnight and
+    // 03:00 was still yesterday.
+    const today = localCalendarDate();
 
     const validation = await this.validateQueueRequest(dto, facilityId, tenantId);
     const resolvedPriority = validation.resolvedPriority;
@@ -431,7 +436,10 @@ export class QueueManagementService {
             manager,
           );
 
-          const visitNumber = `VN-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Date.now().toString(36).toUpperCase()}`;
+          // Hospital-local date, so a visit registered at 01:00 is not stamped
+          // with yesterday. Uniqueness comes from the timestamp suffix, not
+          // the date, so changing the prefix cannot collide.
+          const visitNumber = `VN-${localDateString(new Date()).replace(/-/g, '')}-${Date.now().toString(36).toUpperCase()}`;
           const encounter = this.encounterRepository.create({
             visitNumber,
             patientId: dto.patientId,
@@ -835,7 +843,9 @@ export class QueueManagementService {
     // billing module uses conceptually: MAX+1 against a UNIQUE column races
     // whenever two tokens are issued concurrently at different service
     // points/facilities (the addToQueue lock doesn't cover that).
-    const datePrefix = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    // Hospital-local date — must match BillingService.generateInvoiceNumber
+    // exactly, since the shared advisory-lock key below is derived from it.
+    const datePrefix = localDateString(new Date()).replace(/-/g, '');
     if (manager) {
       // Same key as BillingService.generateInvoiceNumber so both generators
       // serialize against each other, not just against themselves.
@@ -899,8 +909,9 @@ export class QueueManagementService {
 
   async getQueue(filter: QueueFilterDto, facilityId: string, tenantId?: string): Promise<Queue[]> {
     const tid = requireTenantId(tenantId);
-    const today = filter.date ? new Date(filter.date) : new Date();
-    today.setHours(0, 0, 0, 0);
+    // An explicit filter.date is already a calendar date; otherwise take the
+    // hospital's, not the server's.
+    const today = filter.date ? new Date(`${filter.date}T00:00:00.000Z`) : localCalendarDate();
 
     const query = this.queueRepository
       .createQueryBuilder('queue')
@@ -1496,8 +1507,10 @@ export class QueueManagementService {
     }
 
     // Update queueDate to today so ticket generation and unique constraint are aligned
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // The hospital's calendar day. setHours(0,0,0,0) is midnight in the
+    // server's zone, so on UTC+3 every "today" between local midnight and
+    // 03:00 was still yesterday.
+    const today = localCalendarDate();
     queue.queueDate = today;
 
     queue.estimatedWaitMinutes = await this.calculateSmartWaitTime(
@@ -1620,8 +1633,10 @@ export class QueueManagementService {
     });
     if (!encounter) return null;
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // The hospital's calendar day. setHours(0,0,0,0) is midnight in the
+    // server's zone, so on UTC+3 every "today" between local midnight and
+    // 03:00 was still yesterday.
+    const today = localCalendarDate();
 
     // Same serialization as addToQueue/transfer: numbers must be generated
     // under the per-(facility, service point, date) advisory lock.
@@ -1739,8 +1754,10 @@ export class QueueManagementService {
     if (![QueueStatus.SKIPPED, QueueStatus.NO_SHOW].includes(queue.status)) {
       throw new BadRequestException('Only skipped or no-show patients can be requeued');
     }
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // The hospital's calendar day. setHours(0,0,0,0) is midnight in the
+    // server's zone, so on UTC+3 every "today" between local midnight and
+    // 03:00 was still yesterday.
+    const today = localCalendarDate();
 
     // Check capacity before requeuing
     const config = await this.getServiceConfig(queue.facilityId, tenantId);
@@ -1839,8 +1856,10 @@ export class QueueManagementService {
 
   async getQueueStats(facilityId: string, servicePoint?: string, tenantId?: string) {
     const tid = requireTenantId(tenantId);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // The hospital's calendar day. setHours(0,0,0,0) is midnight in the
+    // server's zone, so on UTC+3 every "today" between local midnight and
+    // 03:00 was still yesterday.
+    const today = localCalendarDate();
 
     const buildCountQuery = (status: QueueStatus) => {
       const qb = this.queueRepository
@@ -1971,7 +1990,8 @@ export class QueueManagementService {
       });
     displayQb.andWhere('queue.tenant_id = :tenantId', { tenantId: tid });
     return displayQb
-      .orderBy('queue.called_at', 'DESC')
+      // Property name, not column — see the note in pos-retail listReceiptHistory.
+      .orderBy('queue.calledAt', 'DESC')
       .take(display.displaySettings?.maxDisplay || 10)
       .getMany();
   }
@@ -2072,6 +2092,12 @@ export class QueueManagementService {
    * Smart wait time: prefer actual_wait_minutes (real measured wait) over
    * service_duration_minutes (consultation time only, which underestimates).
    * Rolling 7-day average for the service point, fallback to 15 min.
+   *
+   * txn-connection-ok: called from inside createQueueEntry's transaction on
+   * its own connection. That transaction has only written Encounter rows by
+   * this point, and the new queue row is saved *after* this returns, so
+   * there is nothing uncommitted for this rolling average over other
+   * patients' historical entries to miss.
    */
   private async calculateSmartWaitTime(
     facilityId: string,
@@ -2282,6 +2308,10 @@ export class QueueManagementService {
    *
    * Returns the doctorId or null if nobody is available — in which case the
    * queue entry stays unassigned and is visible to the whole pool.
+   *
+   * txn-connection-ok: reads the doctor duty roster, which the calling
+   * queue transaction never writes, so its own connection sees the same
+   * committed state.
    */
   private async pickAvailableDoctor(
     facilityId: string,
@@ -2366,8 +2396,10 @@ export class QueueManagementService {
 
   async getPatientJourneys(facilityId: string, tenantId?: string) {
     const tid = requireTenantId(tenantId);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // The hospital's calendar day. setHours(0,0,0,0) is midnight in the
+    // server's zone, so on UTC+3 every "today" between local midnight and
+    // 03:00 was still yesterday.
+    const today = localCalendarDate();
 
     // 1. Get all queue entries for today (including overnight active ones)
     const qb = this.queueRepository

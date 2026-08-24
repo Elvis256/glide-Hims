@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -242,6 +243,37 @@ export default function POSSalePage() {
   const [currentShiftId, setCurrentShiftId] = useState<string | undefined>();
   const [currentRegisterId, setCurrentRegisterId] = useState<string | undefined>();
   const [currentStoreId, setCurrentStoreId] = useState<string | undefined>();
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showHoldModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showHoldModal,
+    onClose: () => setShowHoldModal(false),
+  });
+  const showRecallModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showRecallModal,
+    onClose: () => setShowRecallModal(false),
+  });
+  const showVoidModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showVoidModal,
+    onClose: () => setShowVoidModal(false),
+  });
+  const showDiscountPinModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showDiscountPinModal,
+    onClose: () => setShowDiscountPinModal(false),
+  });
+  const showPatientModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showPatientModal,
+    onClose: () => setShowPatientModal(false),
+  });
+  const showRxModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showRxModal,
+    onClose: () => setShowRxModal(false),
+  });
+  const showDdiOverrideModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showDdiOverrideModal,
+    onClose: () => setShowDdiOverrideModal(false),
+  });
 
   // Load current shift; the sale needs the register's store (falls back to the
   // facility's dispensing store so browsing/pricing still works without a shift)
@@ -1429,7 +1461,12 @@ export default function POSSalePage() {
 
       {/* B3: Hold sale modal */}
       {showHoldModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          role="dialog"
+          aria-modal="true"
+          ref={showHoldModalDialogRef}
+        >
           <div className="bg-white rounded-xl p-6 max-w-sm w-full shadow-2xl space-y-4">
             <h3 className="font-bold text-gray-900 flex items-center gap-2">
               <PauseCircle className="h-5 w-5 text-yellow-500" />
@@ -1463,7 +1500,12 @@ export default function POSSalePage() {
 
       {/* B3: Recall held sale modal */}
       {showRecallModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          role="dialog"
+          aria-modal="true"
+          ref={showRecallModalDialogRef}
+        >
           <div className="bg-white rounded-xl p-6 max-w-md w-full shadow-2xl space-y-4">
             <h3 className="font-bold text-gray-900">Recall Held Sale</h3>
             {heldSalesQuery.isLoading && <p className="text-sm text-gray-500">Loading...</p>}
@@ -1499,7 +1541,12 @@ export default function POSSalePage() {
 
       {/* B2: Void sale modal */}
       {showVoidModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          role="dialog"
+          aria-modal="true"
+          ref={showVoidModalDialogRef}
+        >
           <div className="bg-white rounded-xl p-6 max-w-sm w-full shadow-2xl space-y-4">
             <h3 className="font-bold text-gray-900 flex items-center gap-2">
               <Ban className="h-5 w-5 text-red-500" />
@@ -1555,7 +1602,12 @@ export default function POSSalePage() {
 
       {/* B4: Discount PIN modal */}
       {showDiscountPinModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          role="dialog"
+          aria-modal="true"
+          ref={showDiscountPinModalDialogRef}
+        >
           <div className="bg-white rounded-xl p-6 max-w-sm w-full shadow-2xl space-y-4">
             <h3 className="font-bold text-gray-900 flex items-center gap-2">
               <Tag className="h-5 w-5 text-blue-500" />
@@ -1603,7 +1655,12 @@ export default function POSSalePage() {
 
       {/* C1: Patient search modal */}
       {showPatientModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          role="dialog"
+          aria-modal="true"
+          ref={showPatientModalDialogRef}
+        >
           <div className="bg-white rounded-xl p-6 max-w-md w-full shadow-2xl space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-gray-900 flex items-center gap-2">
@@ -1663,7 +1720,12 @@ export default function POSSalePage() {
 
       {/* C2: Rx scan modal */}
       {showRxModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          role="dialog"
+          aria-modal="true"
+          ref={showRxModalDialogRef}
+        >
           <div className="bg-white rounded-xl p-6 max-w-xl w-full shadow-2xl space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-gray-900 flex items-center gap-2">
@@ -1794,7 +1856,12 @@ export default function POSSalePage() {
 
       {/* C3: DDI override modal */}
       {showDdiOverrideModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          role="dialog"
+          aria-modal="true"
+          ref={showDdiOverrideModalDialogRef}
+        >
           <div className="bg-white rounded-xl p-6 max-w-sm w-full shadow-2xl space-y-4">
             <h3 className="font-bold text-gray-900 flex items-center gap-2">
               <ShieldAlert className="h-5 w-5 text-red-600" />

@@ -22,10 +22,13 @@ import {
   EmergencyQueryDto,
   EmergencyDisposition,
 } from './dto/emergency.dto';
+import { IpdService } from '../ipd/ipd.service';
+import { AdmissionType } from '../../database/entities/admission.entity';
 import { VitalsService } from '../vitals/vitals.service';
 import { VitalSource } from '../../database/entities/vital.entity';
 import { AuditLogService } from '../../common/interceptors/audit-log.service';
 import { requireTenantId } from '../../common/utils/tenant.util';
+import { dayBoundsUtc, localDateString } from '../../common/utils/timezone.util';
 
 @Injectable()
 export class EmergencyService {
@@ -38,6 +41,7 @@ export class EmergencyService {
     private dataSource: DataSource,
     private vitalsService: VitalsService,
     private readonly auditLogService: AuditLogService,
+    private readonly ipdService: IpdService,
   ) {}
 
   /**
@@ -56,10 +60,13 @@ export class EmergencyService {
     tenantId?: string,
   ): Promise<string> {
     const tid = requireTenantId(tenantId);
+    // The ward's day, not the server's. getFullYear/getMonth/getDate run in the
+    // server zone (UTC), so between midnight and 03:00 locally the case number
+    // carried yesterday's date and counted against yesterday's cases — while
+    // the dashboard, which already uses dayBoundsUtc, called it today.
     const now = new Date();
-    const prefix = `EM${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
-    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-    const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    const prefix = `EM${localDateString(now).replace(/-/g, '')}`;
+    const { start: startOfDay, end: endOfDay } = dayBoundsUtc(now);
 
     await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
       `emergency_case_number:${tid}:${prefix}`,
@@ -85,11 +92,32 @@ export class EmergencyService {
     // of either insert rolls both back. Previously the two `save()` calls were
     // independent: a crash between them left an orphaned Encounter with no
     // EmergencyCase, corrupting the ER record on every admission.
-    return this.dataSource.transaction(async (manager) => {
+    const savedCase = await this.dataSource.transaction(async (manager) => {
       const patientWhere: any = { id: dto.patientId };
       patientWhere.tenantId = tid;
       const patient = await manager.findOne(Patient, { where: patientWhere });
       if (!patient) throw new NotFoundException('Patient not found');
+
+      // One open case per patient. Registering a second one split the record in
+      // two — two encounters, two sets of triage vitals, two dispositions — and
+      // whichever the clinician happened to open was missing half the story.
+      await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+        `emergency_case:${tid}:${dto.patientId}`,
+      ]);
+      const openCase = await manager
+        .createQueryBuilder(EmergencyCase, 'ec')
+        .innerJoin(Encounter, 'enc', 'enc.id = ec.encounter_id')
+        .where('enc.patient_id = :patientId', { patientId: dto.patientId })
+        .andWhere('ec.tenant_id = :tenantId', { tenantId: tid })
+        .andWhere('ec.status IN (:...open)', {
+          open: [TriageStatus.PENDING, TriageStatus.TRIAGED, TriageStatus.IN_TREATMENT],
+        })
+        .getOne();
+      if (openCase) {
+        throw new BadRequestException(
+          `${patient.fullName} already has an open emergency case (${openCase.caseNumber}). Close it before registering a new one.`,
+        );
+      }
 
       // Create emergency encounter
       const visitNumber = `EMV-${Date.now()}-${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
@@ -119,7 +147,10 @@ export class EmergencyService {
         pastMedicalHistory: dto.pastMedicalHistory,
         arrivalMode: dto.arrivalMode || ArrivalMode.WALK_IN,
         arrivalTime: new Date(),
-        triageLevel: TriageLevel.LESS_URGENT, // Default, to be updated during triage
+        // No acuity until a nurse assigns one. This used to default to
+        // LESS_URGENT, which showed an unassessed patient on the board as a
+        // green "Level 4" and sorted them among the triaged.
+        triageLevel: null,
         status: TriageStatus.PENDING,
         encounterId: encounter.id,
         facilityId,
@@ -132,30 +163,90 @@ export class EmergencyService {
         `[AUDIT] Emergency case registered: ${caseNumber}, patientId: ${dto.patientId}, userId: ${userId}, facilityId: ${facilityId}`,
       );
 
-      this.auditLogService
-        .log({
-          action: 'REGISTER_EMERGENCY_CASE',
-          entityType: 'EmergencyCase',
-          entityId: savedCase.id,
-          userId,
-          tenantId,
-          oldValue: undefined,
-          newValue: {
-            caseNumber: savedCase.caseNumber,
-            patientId: dto.patientId,
-            chiefComplaint: savedCase.chiefComplaint,
-            arrivalMode: savedCase.arrivalMode,
-            status: savedCase.status,
-            facilityId,
-          },
-        })
-        .catch(() => {});
-
       return savedCase;
     });
+
+    // Audit after the commit — it writes on its own connection, so inside the
+    // transaction the log row committed independently of the case it
+    // described. Still best-effort.
+    this.auditLogService
+      .log({
+        action: 'REGISTER_EMERGENCY_CASE',
+        entityType: 'EmergencyCase',
+        entityId: savedCase.id,
+        userId,
+        tenantId,
+        oldValue: undefined,
+        newValue: {
+          caseNumber: savedCase.caseNumber,
+          patientId: dto.patientId,
+          chiefComplaint: savedCase.chiefComplaint,
+          arrivalMode: savedCase.arrivalMode,
+          status: savedCase.status,
+          facilityId: savedCase.facilityId,
+        },
+      })
+      .catch(() => {});
+
+    return savedCase;
   }
 
   // ========== TRIAGE ==========
+  /**
+   * The acuity the recorded physiology demands, regardless of what was typed.
+   *
+   * A nurse could chart GCS 3, SpO2 70% and a systolic of 70 and still assign
+   * level 5, "non-urgent" — and because both the treatment queue and the active
+   * case list sort by triage level ascending, that patient went to the BOTTOM
+   * of the board. Triage now cannot be set below what the numbers say; a case
+   * that has to be raised is raised, said so in the notes, and the team is told.
+   *
+   * Thresholds are the red-flag physiology of the Uganda/WHO emergency triage
+   * guidance: any single one of them means resuscitation or emergent.
+   */
+  /** GCS mapped onto the AVPU scale NEWS2 scores against. */
+  private gcsToAvpu(gcs?: number | null): 'A' | 'V' | 'P' | 'U' | undefined {
+    if (gcs == null) return undefined;
+    if (gcs >= 15) return 'A';
+    if (gcs >= 13) return 'V';
+    if (gcs >= 9) return 'P';
+    return 'U';
+  }
+
+  private acuityFloorFromVitals(dto: TriageDto): { level: TriageLevel; reasons: string[] } | null {
+    const resus: string[] = [];
+    const emergent: string[] = [];
+
+    if (dto.gcsScore != null && dto.gcsScore <= 8) resus.push(`GCS ${dto.gcsScore}`);
+    else if (dto.gcsScore != null && dto.gcsScore <= 13) emergent.push(`GCS ${dto.gcsScore}`);
+
+    if (dto.oxygenSaturation != null && dto.oxygenSaturation < 90) {
+      (dto.oxygenSaturation < 85 ? resus : emergent).push(`SpO2 ${dto.oxygenSaturation}%`);
+    }
+    if (dto.bloodPressureSystolic != null && dto.bloodPressureSystolic < 90) {
+      (dto.bloodPressureSystolic < 80 ? resus : emergent).push(
+        `systolic ${dto.bloodPressureSystolic} mmHg`,
+      );
+    }
+    if (dto.respiratoryRate != null && (dto.respiratoryRate < 8 || dto.respiratoryRate > 30)) {
+      (dto.respiratoryRate < 8 || dto.respiratoryRate > 35 ? resus : emergent).push(
+        `respiratory rate ${dto.respiratoryRate}/min`,
+      );
+    }
+    if (dto.heartRate != null && (dto.heartRate < 40 || dto.heartRate > 130)) {
+      (dto.heartRate < 40 ? resus : emergent).push(`pulse ${dto.heartRate} bpm`);
+    }
+    if (dto.temperature != null && (dto.temperature >= 40 || dto.temperature <= 35)) {
+      emergent.push(`temperature ${dto.temperature} °C`);
+    }
+
+    if (resus.length > 0) {
+      return { level: TriageLevel.RESUSCITATION, reasons: [...resus, ...emergent] };
+    }
+    if (emergent.length > 0) return { level: TriageLevel.EMERGENT, reasons: emergent };
+    return null;
+  }
+
   async triageCase(
     id: string,
     dto: TriageDto,
@@ -175,8 +266,18 @@ export class EmergencyService {
     const oldTriageLevel = emergencyCase.triageLevel;
     const oldStatus = emergencyCase.status;
 
+    const floor = this.acuityFloorFromVitals(dto);
+    let effectiveLevel = dto.triageLevel;
+    let escalationNote: string | null = null;
+    if (floor && dto.triageLevel > floor.level) {
+      effectiveLevel = floor.level;
+      escalationNote =
+        `Triage raised from level ${dto.triageLevel} to level ${floor.level} ` +
+        `on recorded observations: ${floor.reasons.join(', ')}.`;
+    }
+
     Object.assign(emergencyCase, {
-      triageLevel: dto.triageLevel,
+      triageLevel: effectiveLevel,
       bloodPressureSystolic: dto.bloodPressureSystolic,
       bloodPressureDiastolic: dto.bloodPressureDiastolic,
       heartRate: dto.heartRate,
@@ -186,7 +287,9 @@ export class EmergencyService {
       gcsScore: dto.gcsScore,
       painScore: dto.painScore,
       bloodGlucose: dto.bloodGlucose,
-      triageNotes: dto.triageNotes,
+      triageNotes: escalationNote
+        ? [dto.triageNotes, escalationNote].filter(Boolean).join('\n')
+        : dto.triageNotes,
       triageTime: new Date(),
       triageNurseId: nurseId,
       status: TriageStatus.TRIAGED,
@@ -214,7 +317,11 @@ export class EmergencyService {
         userId: nurseId,
         tenantId,
         oldValue: { triageLevel: oldTriageLevel, status: oldStatus },
-        newValue: { triageLevel: savedCase.triageLevel, status: savedCase.status },
+        newValue: {
+          triageLevel: savedCase.triageLevel,
+          status: savedCase.status,
+          ...(escalationNote ? { requestedLevel: dto.triageLevel, escalationNote } : {}),
+        },
       })
       .catch(() => {});
 
@@ -251,6 +358,10 @@ export class EmergencyService {
           painScale: dto.painScore,
           notes: dto.triageNotes,
         },
+        // GCS is the only consciousness measure the ED records, and it was not
+        // being passed on. NEWS2 defaults a missing AVPU to 'Alert', so an
+        // unresponsive patient scored as awake — three points light.
+        consciousnessLevel: this.gcsToAvpu(dto.gcsScore),
       });
     }
 
@@ -320,6 +431,7 @@ export class EmergencyService {
   async dischargeCase(
     id: string,
     dto: DischargeEmergencyDto,
+    userId: string | undefined,
     tenantId?: string,
   ): Promise<EmergencyCase> {
     const tid = requireTenantId(tenantId);
@@ -357,6 +469,10 @@ export class EmergencyService {
 
     emergencyCase.status = targetStatus;
     emergencyCase.dischargeTime = new Date();
+    // Who sent this patient home — or recorded them as leaving against advice,
+    // or as having died in the department. The audit row logged `undefined`
+    // because the controller never passed the caller down.
+    emergencyCase.dischargedById = userId ?? null;
     if (dto.primaryDiagnosis) emergencyCase.primaryDiagnosis = dto.primaryDiagnosis;
     if (dto.dispositionNotes) emergencyCase.dispositionNotes = dto.dispositionNotes;
     if (dto.treatmentNotes)
@@ -385,13 +501,14 @@ export class EmergencyService {
         action: 'DISCHARGE_EMERGENCY_CASE',
         entityType: 'EmergencyCase',
         entityId: savedCase.id,
-        userId: undefined,
+        userId,
         tenantId,
         oldValue: { status: oldStatus },
         newValue: {
           status: savedCase.status,
           dischargeTime: savedCase.dischargeTime,
           primaryDiagnosis: savedCase.primaryDiagnosis,
+          dischargedById: savedCase.dischargedById,
         },
       })
       .catch(() => {});
@@ -400,9 +517,21 @@ export class EmergencyService {
   }
 
   // ========== ADMIT TO IPD ==========
+  /**
+   * Admit out of the department — and actually admit them.
+   *
+   * This used to flip the case status to 'admitted', write
+   * "Admitted to ward <uuid>" into a free-text note and stop. `bedId` was
+   * accepted by the DTO and thrown away. No IPD admission existed, no bed was
+   * occupied and no ward worklist showed the patient; the only thing that made
+   * a real admission was the browser making a second, separate call first — so
+   * the patient's ward stay depended on which client was used, and on the two
+   * calls both surviving. The admission is created here now, in one place.
+   */
   async admitToWard(
     id: string,
     dto: AdmitFromEmergencyDto,
+    userId: string,
     tenantId?: string,
   ): Promise<EmergencyCase> {
     const tid = requireTenantId(tenantId);
@@ -421,9 +550,43 @@ export class EmergencyService {
       );
     }
 
+    if (!dto.bedId) {
+      throw new BadRequestException(
+        'A bed is required to admit from the emergency department — without one the patient reaches no ward worklist.',
+      );
+    }
+
+    const patientId = emergencyCase.encounter?.patientId;
+    if (!patientId) {
+      throw new BadRequestException('This case has no linked patient record');
+    }
+
+    // The IPD admission is the real event: it locks and occupies the bed,
+    // refuses a duplicate admission and puts the patient on the ward board.
+    // If it throws — bed taken, patient already admitted — the emergency case
+    // stays where it was, which is the honest outcome.
+    const admission = await this.ipdService.createAdmission(
+      {
+        patientId,
+        encounterId: emergencyCase.encounterId ?? undefined,
+        wardId: dto.wardId,
+        bedId: dto.bedId,
+        type: AdmissionType.EMERGENCY,
+        admissionDiagnosis: dto.primaryDiagnosis,
+        admissionReason: dto.admissionNotes || emergencyCase.chiefComplaint,
+        attendingDoctorId: emergencyCase.attendingDoctorId || undefined,
+      } as any,
+      userId,
+      tenantId,
+    );
+
     emergencyCase.status = TriageStatus.ADMITTED;
     emergencyCase.primaryDiagnosis = dto.primaryDiagnosis;
-    emergencyCase.dispositionNotes = dto.admissionNotes || `Admitted to ward ${dto.wardId}`;
+    emergencyCase.dispositionNotes =
+      dto.admissionNotes || `Admitted as ${admission.admissionNumber}`;
+    emergencyCase.admissionId = admission.id;
+    emergencyCase.admittedById = userId;
+    emergencyCase.admittedAt = new Date();
 
     // Update encounter to admitted
     if (emergencyCase.encounterId) {
@@ -433,13 +596,30 @@ export class EmergencyService {
       );
     }
 
-    // Note: IPD admission should be created via IPD module
-    // This just marks the emergency case as admitted
     const savedCase = await this.caseRepo.save(emergencyCase);
 
     this.logger.log(
-      `[AUDIT] Emergency case admitted to IPD: ${emergencyCase.caseNumber}, wardId: ${dto.wardId}, diagnosis: ${dto.primaryDiagnosis}`,
+      `[AUDIT] Emergency case admitted to IPD: ${emergencyCase.caseNumber}, admission: ${admission.admissionNumber}, wardId: ${dto.wardId}, diagnosis: ${dto.primaryDiagnosis}`,
     );
+
+    this.auditLogService
+      .log({
+        action: 'ADMIT_FROM_EMERGENCY',
+        entityType: 'EmergencyCase',
+        entityId: savedCase.id,
+        userId,
+        tenantId,
+        oldValue: { status: TriageStatus.IN_TREATMENT },
+        newValue: {
+          status: savedCase.status,
+          admissionId: admission.id,
+          admissionNumber: admission.admissionNumber,
+          wardId: dto.wardId,
+          bedId: dto.bedId,
+          admittedById: userId,
+        },
+      })
+      .catch(() => {});
 
     return savedCase;
   }
@@ -498,8 +678,10 @@ export class EmergencyService {
   // ========== DASHBOARD ==========
   async getEmergencyDashboard(facilityId: string, tenantId?: string): Promise<any> {
     const tid = requireTenantId(tenantId);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // The ward's today, not the server's: setHours works in the server zone,
+    // which is UTC, so "today" began at 03:00 locally and cases registered
+    // overnight were counted against yesterday.
+    const { start: today } = dayBoundsUtc(new Date());
 
     // Count by triage level (active cases)
     const byTriageLevelQb = this.caseRepo
@@ -562,21 +744,15 @@ export class EmergencyService {
 
     const avgWaitTime = await avgWaitQb.getRawOne();
 
-    // Critical cases (Level 1 & 2)
-    const criticalWhere: any[] = [
-      {
-        facilityId,
-        triageLevel: TriageLevel.RESUSCITATION,
-        status: TriageStatus.IN_TREATMENT,
-        tenantId: tid,
-      },
-      {
-        facilityId,
-        triageLevel: TriageLevel.EMERGENT,
-        status: TriageStatus.IN_TREATMENT,
-        tenantId: tid,
-      },
-    ];
+    // Critical cases (Level 1 & 2). Counting only those already IN_TREATMENT
+    // hid the dangerous ones: a resuscitation patient who has been triaged and
+    // is still WAITING is exactly what this tile exists to surface.
+    const criticalWhere: any[] = [TriageStatus.TRIAGED, TriageStatus.IN_TREATMENT].flatMap(
+      (status) => [
+        { facilityId, triageLevel: TriageLevel.RESUSCITATION, status, tenantId: tid },
+        { facilityId, triageLevel: TriageLevel.EMERGENT, status, tenantId: tid },
+      ],
+    );
 
     const criticalCases = await this.caseRepo.count({
       where: criticalWhere,

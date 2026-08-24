@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -561,6 +562,12 @@ function TransferListTab({
   const [actionReason, setActionReason] = useState('');
   const [actionDialog, setActionDialog] = useState<{ type: string; transferId: string } | null>(null);
 
+  // Declared here, in the tab that owns the state, rather than on the page.
+  const actionDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!actionDialog,
+    onClose: () => setActionDialog(null),
+  });
+
   const { data: transfersData, isLoading } = useQuery({
     queryKey: ['stock-transfers', direction, facilityId, statusFilter],
     queryFn: () =>
@@ -726,7 +733,12 @@ function TransferListTab({
 
       {/* Reason Dialog (reject / cancel) */}
       {actionDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+          role="dialog"
+          aria-modal="true"
+          ref={actionDialogRef}
+        >
           <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
             <h3 className="text-lg font-semibold text-gray-900 mb-3">
               {actionDialog.type === 'reject' ? 'Reject Transfer' : 'Cancel Transfer'}

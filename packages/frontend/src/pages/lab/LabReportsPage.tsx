@@ -1,4 +1,5 @@
 import { usePermissions } from '../../components/PermissionGate';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import AccessDenied from '../../components/AccessDenied';
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
@@ -139,6 +140,17 @@ export default function LabReportsPage() {
   const [recipientPhone, setRecipientPhone] = useState('');
   const [shareMessage, setShareMessage] = useState('');
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showShareModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showShareModal,
+    onClose: () => setShowShareModal(false),
+  });
+  const showPreviewModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showPreviewModal,
+    onClose: () => setShowPreviewModal(false),
+  });
 
   // ─── Data fetching ────────────────────────────────────────────────
 
@@ -718,7 +730,12 @@ export default function LabReportsPage() {
 
       {/* ── Share Modal ── */}
       {showShareModal && selectedPatient && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showShareModalDialogRef}
+        >
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4">
             <div className="flex items-center justify-between p-5 border-b border-slate-100">
               <div className="flex items-center gap-2.5">
@@ -792,7 +809,12 @@ export default function LabReportsPage() {
 
       {/* ── Preview Modal ── */}
       {showPreviewModal && selectedPatient && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showPreviewModalDialogRef}
+        >
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl mx-4 max-h-[85vh] flex flex-col">
             <div className="flex items-center justify-between p-5 border-b border-slate-100">
               <div className="flex items-center gap-2.5">

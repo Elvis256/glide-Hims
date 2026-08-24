@@ -156,7 +156,10 @@ export class DURReportsService {
       .leftJoin('p.prescribedBy', 'u')
       .leftJoin('p.items', 'pi')
       .select('p.prescribedById', 'prescriberId')
-      .addSelect("COALESCE(CONCAT(u.firstName, ' ', u.lastName), 'Unknown')", 'prescriberName')
+      // `User` has one name column, `fullName` — there is no firstName/lastName
+      // pair, so this query threw "column u.firstname does not exist" and the
+      // prescriber analytics endpoint had never returned a row.
+      .addSelect("COALESCE(u.fullName, 'Unknown')", 'prescriberName')
       .addSelect('COUNT(DISTINCT p.id)', 'totalPrescriptions')
       .addSelect('COUNT(pi.id)', 'totalItems')
       .addSelect(
@@ -173,8 +176,7 @@ export class DURReportsService {
     }
 
     qb.groupBy('p.prescribedById')
-      .addGroupBy('u.firstName')
-      .addGroupBy('u.lastName')
+      .addGroupBy('u.fullName')
       .orderBy('"totalPrescriptions"', 'DESC');
 
     const results = await qb.getRawMany();

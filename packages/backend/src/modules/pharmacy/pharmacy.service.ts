@@ -69,6 +69,12 @@ import { BillingService } from '../billing/billing.service';
 import { Patient } from '../../database/entities/patient.entity';
 import { Store } from '../../database/entities/store.entity';
 import { requireTenantId } from '../../common/utils/tenant.util';
+import {
+  dayBoundsUtc,
+  localCalendarDate,
+  localDateString,
+  localDayStart,
+} from '../../common/utils/timezone.util';
 
 // C4: VAT rate is loaded per-tenant from efris_config, fallback to UG default.
 // This is retrieved in getDefaultVatRate() which caches the result.
@@ -177,8 +183,10 @@ export class PharmacyService {
   }
 
   private async generateSaleNumber(manager: EntityManager, tenantId?: string): Promise<string> {
-    const today = new Date();
-    const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
+    // Hospital-local date: a sale rung up at 01:00 was numbered under
+    // yesterday. Lock key and sequence lookup derive from the same string, so
+    // they stay consistent; nothing else uses this key.
+    const dateStr = localDateString(new Date()).replace(/-/g, '');
     const lockKey = `pharm_sale_num_${dateStr}_${tenantId || 'global'}`;
 
     // Use advisory lock to prevent concurrent generation collisions
@@ -209,8 +217,9 @@ export class PharmacyService {
     tenantId?: string,
   ): Promise<{ pending: number; dispensed: number }> {
     const tid = requireTenantId(tenantId);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // "Dispensed today" starts at the hospital's midnight, not the server's —
+    // the counter used to reset at 03:00.
+    const today = localDayStart(0);
 
     // Count pending prescriptions
     const pendingQuery = this.prescriptionRepo
@@ -530,6 +539,7 @@ export class PharmacyService {
     // completeSale calls on the same sale id cannot both pass the
     // status==PENDING check and double-deduct stock (P0).
     const txnResult = await this.dataSource.transaction(async (manager) => {
+      let glFacilityId: string | null = null;
       const sale = await manager.findOne(PharmacySale, {
         where: { id, tenantId: tid },
         lock: { mode: 'pessimistic_write' },
@@ -705,9 +715,10 @@ export class PharmacyService {
         }
       }
 
-      // Normalize to midnight for consistent expiry comparisons regardless of time-of-day
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+      // The hospital's calendar date, for expiry comparisons: batch expiry is
+      // a calendar date, and server-midnight let an expired batch sell for
+      // three more hours after local midnight.
+      const today = localCalendarDate();
 
       // Validate and deduct stock using pre-locked records
       for (const item of sale.items) {
@@ -962,27 +973,11 @@ export class PharmacyService {
         }
       }
 
-      // Auto-post GL entry within the same transaction: DR Cash/Bank, CR Pharmacy Revenue
-      const facilityIdForGL = sale.store?.facilityId;
-      if (facilityIdForGL) {
-        try {
-          await this.financeService.autoPostPharmacySaleJournal(
-            {
-              facilityId: facilityIdForGL,
-              saleNumber: sale.saleNumber,
-              totalAmount: Number(sale.totalAmount) || 0,
-              paymentMethod: dto.paymentMethod || sale.paymentMethod || 'cash',
-              userId,
-            },
-            tenantId,
-          );
-        } catch (err) {
-          this.logger.error(
-            `GL auto-post failed for sale ${sale.saleNumber}: ${err.message}`,
-            err.stack,
-          );
-        }
-      }
+      // GL is posted after this transaction commits — see below. The comment
+      // here used to claim the journal was written "within the same
+      // transaction", which it never was: FinanceService holds its own
+      // connection.
+      glFacilityId = sale.store?.facilityId || null;
 
       // POS shift recording — for retail-counter sales, record the payment splits
       // against the shift and bump cached totals. This is what X/Z reports read from.
@@ -1019,8 +1014,14 @@ export class PharmacyService {
       // to submit to URA. Skip for legacy sales and when the tenant has not
       // enabled EFRIS submission.
       try {
+        // txn-connection-ok: getConfig is a single findOne on the tenant's
+        // EFRIS settings and buildInvoicePayload is pure — it formats the
+        // sale it is handed. Neither touches a row this sale writes. The
+        // enqueue below is the part that must be transactional, and it is
+        // given the manager.
         const cfg = tenantId ? await this.efrisService.getConfig(tenantId) : null;
         if (cfg?.isEnabled && cfg?.submitOnCompletion && sale.saleChannel !== SaleChannel.LEGACY) {
+          // txn-connection-ok: pure — it formats the sale it is handed.
           const payload = this.efrisService.buildInvoicePayload(sale, sale.items, cfg);
           await this.efrisService.enqueueDocument(
             manager,
@@ -1041,7 +1042,7 @@ export class PharmacyService {
         );
       }
 
-      return { alreadyCompleted: false as const, sale };
+      return { alreadyCompleted: false as const, sale, glFacilityId };
     });
 
     // Already-completed idempotent return: skip event/retail-upsert/etc.
@@ -1049,6 +1050,32 @@ export class PharmacyService {
       return this.findSale(id, tenantId);
     }
     const sale = txnResult.sale;
+
+    // Post the sale to the General Ledger: DR Cash/Bank, CR Pharmacy Revenue.
+    //
+    // This ran inside the transaction, on FinanceService's own connection, so
+    // the journal committed the moment it was written while the sale beside
+    // it could still roll back — leaving the ledger carrying revenue for a
+    // sale that never completed. Failure is logged, not fatal, as before.
+    if (txnResult.glFacilityId) {
+      try {
+        await this.financeService.autoPostPharmacySaleJournal(
+          {
+            facilityId: txnResult.glFacilityId,
+            saleNumber: sale.saleNumber,
+            totalAmount: Number(sale.totalAmount) || 0,
+            paymentMethod: dto.paymentMethod || sale.paymentMethod || 'cash',
+            userId,
+          },
+          tenantId,
+        );
+      } catch (err: any) {
+        this.logger.error(
+          `GL auto-post failed for sale ${sale.saleNumber}: ${err.message}`,
+          err.stack,
+        );
+      }
+    }
 
     // After-commit: notify async listeners (SMS receipt, analytics, etc.).
     this.eventEmitter.emit('pharmacy.sale.completed', {
@@ -1176,11 +1203,11 @@ export class PharmacyService {
       throw new BadRequestException('tenantId is required for daily summary queries');
     }
 
+    // The hospital's day, whichever way the date arrived. setHours(0,0,0,0)
+    // was the server's midnight, so the daily summary the pharmacist closes
+    // against was cut three hours into the shift.
     const parsedDate = date ? new Date(date) : new Date();
-    const start = isNaN(parsedDate.getTime()) ? new Date() : parsedDate;
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(start);
-    end.setDate(end.getDate() + 1);
+    const { start, end } = dayBoundsUtc(isNaN(parsedDate.getTime()) ? new Date() : date || new Date());
 
     const qb = this.saleRepo
       .createQueryBuilder('s')
@@ -1211,7 +1238,7 @@ export class PharmacyService {
     }
 
     const result = await qb.getRawOne();
-    return { ...result, date: start.toISOString().slice(0, 10) };
+    return { ...result, date: localDateString(start) };
   }
 
   async getProfitAnalytics(params: {
@@ -1433,8 +1460,7 @@ export class PharmacyService {
     if (Number.isNaN(parsedExpiry.getTime())) {
       throw new BadRequestException('expiryDate is not a valid date');
     }
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const today = localCalendarDate();
     if (parsedExpiry < today) {
       throw new BadRequestException(
         `Cannot receive stock with a past expiry date (${parsedExpiry.toISOString().slice(0, 10)}). Expired stock requires the remediation workflow.`,

@@ -44,7 +44,6 @@ export class CoverageCheckService {
         coverageDetails: dto.items.map((item) => ({
           drugId: item.drugId,
           covered: false,
-          copayAmount: 0,
           requiresPreAuth: false,
           rejectionReason: 'No active insurance policy found for patient',
         })),
@@ -61,7 +60,6 @@ export class CoverageCheckService {
         return {
           drugId: item.drugId,
           covered: false,
-          copayAmount: 0,
           requiresPreAuth: false,
           rejectionReason: 'Drug is excluded from coverage under this policy',
         };
@@ -72,17 +70,17 @@ export class CoverageCheckService {
         return {
           drugId: item.drugId,
           covered: false,
-          copayAmount: 0,
           requiresPreAuth: false,
           rejectionReason: 'Annual coverage limit has been exceeded',
         };
       }
 
-      // Calculate copay
-      const copayAmount =
-        Number(policy.copayPercentage) > 0
-          ? Number(policy.copayPercentage)
-          : Number(policy.copayAmount) || 0;
+      // A percentage and a fixed sum are different things. Collapsing them into
+      // one `copayAmount` meant a 10% copay reached the pharmacy as the number
+      // 10, and a 5,000/= fixed copay was rendered as "5000%". Report whichever
+      // the policy actually defines, under its own name.
+      const copayPercentage = Number(policy.copayPercentage) || 0;
+      const copayFixed = Number(policy.copayAmount) || 0;
 
       // High-quantity orders may require pre-authorization
       const requiresPreAuth = item.quantity > 90;
@@ -90,7 +88,11 @@ export class CoverageCheckService {
       return {
         drugId: item.drugId,
         covered: true,
-        copayAmount,
+        ...(copayPercentage > 0
+          ? { copayPercentage }
+          : copayFixed > 0
+            ? { copayAmount: copayFixed }
+            : {}),
         requiresPreAuth,
         rejectionReason: undefined,
       };

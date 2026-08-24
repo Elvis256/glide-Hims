@@ -39,8 +39,11 @@ export class EmergencyCase extends BaseEntity {
   @Column({ name: 'case_number' })
   caseNumber: string;
 
-  @Column({ name: 'triage_level', type: 'enum', enum: TriageLevel })
-  triageLevel: TriageLevel;
+  // Nullable on purpose: a case that has not been triaged has no acuity, and
+  // saying "level 4 — less urgent" about a patient nobody has looked at puts a
+  // green badge on the board and sorts them among the assessed.
+  @Column({ name: 'triage_level', type: 'enum', enum: TriageLevel, nullable: true })
+  triageLevel: TriageLevel | null;
 
   @Column({ name: 'status', type: 'enum', enum: TriageStatus, default: TriageStatus.PENDING })
   status: TriageStatus;
@@ -151,4 +154,25 @@ export class EmergencyCase extends BaseEntity {
 
   @Column({ name: 'attending_doctor_id', nullable: true })
   attendingDoctorId: string;
+
+  @ManyToOne(() => User, { nullable: true })
+  @JoinColumn({ name: 'discharged_by_id' })
+  dischargedBy: User;
+
+  @Column({ name: 'discharged_by_id', type: 'uuid', nullable: true })
+  dischargedById: string | null;
+
+  @ManyToOne(() => User, { nullable: true })
+  @JoinColumn({ name: 'admitted_by_id' })
+  admittedBy: User;
+
+  @Column({ name: 'admitted_by_id', type: 'uuid', nullable: true })
+  admittedById: string | null;
+
+  @Column({ name: 'admitted_at', type: 'timestamptz', nullable: true })
+  admittedAt: Date | null;
+
+  /** The IPD admission this case became, once the patient reached a bed. */
+  @Column({ name: 'admission_id', type: 'uuid', nullable: true })
+  admissionId: string | null;
 }

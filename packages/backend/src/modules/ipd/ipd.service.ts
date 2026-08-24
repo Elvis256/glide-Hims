@@ -23,7 +23,6 @@ import {
   EncounterType,
 } from '../../database/entities/encounter.entity';
 import { Patient } from '../../database/entities/patient.entity';
-import { PrescriptionItem } from '../../database/entities/prescription.entity';
 import {
   CreateWardDto,
   UpdateWardDto,
@@ -45,6 +44,7 @@ import { AuditLogService } from '../../common/interceptors/audit-log.service';
 import { VitalsService } from '../vitals/vitals.service';
 import { VitalSource } from '../../database/entities/vital.entity';
 import { requireTenantId } from '../../common/utils/tenant.util';
+import { hospitalTimeZone } from '../../common/utils/timezone.util';
 
 @Injectable()
 export class IpdService {
@@ -60,7 +60,6 @@ export class IpdService {
     @InjectRepository(BedTransfer) private transferRepo: Repository<BedTransfer>,
     @InjectRepository(Encounter) private encounterRepo: Repository<Encounter>,
     @InjectRepository(Patient) private patientRepo: Repository<Patient>,
-    @InjectRepository(PrescriptionItem) private prescriptionItemRepo: Repository<PrescriptionItem>,
     private dataSource: DataSource,
     @Inject(forwardRef(() => BillingService))
     private billingService: BillingService,
@@ -125,9 +124,29 @@ export class IpdService {
     qb.andWhere('ward.tenant_id = :tenantId', { tenantId: tid });
 
     const wards = await qb.getRawMany();
+
+    // Count the beds a patient can actually be put in, rather than deriving
+    // it as total - occupied.
+    //
+    // A bed being unoccupied does not make it available: it may be in
+    // cleaning, maintenance, or reserved. On this dev data every one of ICU's
+    // three unoccupied beds was in cleaning, so the board advertised three
+    // free ICU beds when there were none — the difference between "we have
+    // space" and "we do not" during an emergency admission.
+    const freeRows = await this.bedRepo
+      .createQueryBuilder('bed')
+      .select('bed.wardId', 'wardId')
+      .addSelect('COUNT(*)', 'freeBeds')
+      .where('bed.status = :status', { status: BedStatus.AVAILABLE })
+      .andWhere('bed.tenant_id = :tenantId', { tenantId: tid })
+      .andWhere('bed.deleted_at IS NULL')
+      .groupBy('bed.wardId')
+      .getRawMany();
+    const freeByWard = new Map(freeRows.map((r) => [r.wardId, Number(r.freeBeds) || 0]));
+
     return wards.map((w) => ({
       ...w,
-      availableBeds: w.totalBeds - w.occupiedBeds,
+      availableBeds: freeByWard.get(w.id) ?? 0,
       occupancyRate: w.totalBeds > 0 ? Math.round((w.occupiedBeds / w.totalBeds) * 100) : 0,
     }));
   }
@@ -209,33 +228,43 @@ export class IpdService {
         );
       }
     }
+    // A reservation lives in bed.notes as a JSON envelope, sharing the column
+    // with free-text notes. Assigning dto.notes over it drops the hold while
+    // leaving the bed RESERVED — nothing is left for the expiry sweep to parse,
+    // so the bed stays held until someone releases it by hand.
+    const { reservation, note } = this.parseBedNotes(bed.notes);
     Object.assign(bed, dto);
+    if (reservation) {
+      if (bed.status === BedStatus.RESERVED) {
+        if (dto.notes !== undefined) {
+          bed.notes = JSON.stringify({ reserved: reservation, note: dto.notes });
+        }
+      } else {
+        // Left RESERVED by this edit: the hold is over, so the envelope goes
+        // with it, keeping any free text. Leaving it behind strands
+        // machine-readable JSON in a field the ward screen prints verbatim.
+        bed.notes = dto.notes !== undefined ? dto.notes : note;
+      }
+    }
     return this.bedRepo.save(bed);
   }
 
-  async markBedAvailable(id: string, tenantId?: string): Promise<Bed> {
-    const tid = requireTenantId(tenantId);
-    const bed = await this.bedRepo.findOne({
-      where: { id, tenantId: tid },
-      relations: ['ward'],
-    });
-    if (!bed) throw new NotFoundException('Bed not found');
-    if (bed.status !== BedStatus.CLEANING) {
-      throw new BadRequestException(
-        `Bed can only be marked available from 'cleaning' status, current status is '${bed.status}'`,
-      );
+  /** Splits bed.notes into the reservation envelope and the free text beside it. */
+  private parseBedNotes(notes?: string): {
+    reservation: Record<string, unknown> | null;
+    note: string;
+  } {
+    if (!notes) return { reservation: null, note: '' };
+    try {
+      const parsed = JSON.parse(notes);
+      return {
+        reservation: parsed?.reserved ?? null,
+        note: typeof parsed?.note === 'string' ? parsed.note : '',
+      };
+    } catch {
+      // Plain free text, not an envelope.
+      return { reservation: null, note: notes };
     }
-
-    bed.status = BedStatus.AVAILABLE;
-    const saved = await this.bedRepo.save(bed);
-
-    // Update ward bed counts
-    if (bed.wardId) {
-      await this.updateWardBedCount(bed.wardId, tenantId);
-    }
-
-    this.logger.log(`Bed ${bed.bedNumber} marked as available after cleaning`);
-    return saved;
   }
 
   private async updateWardBedCount(wardId: string, tenantId?: string): Promise<void> {
@@ -287,10 +316,12 @@ export class IpdService {
 
       if (!bed) throw new NotFoundException('Bed not found');
       if (bed.status !== BedStatus.AVAILABLE) throw new BadRequestException('Bed is not available');
-      if (bed.wardId && bed.wardId !== dto.wardId) {
-        throw new BadRequestException(
-          'Selected bed does not belong to the selected ward',
-        );
+      // A bed with no ward of its own used to skip this check and be admitted
+      // into whichever ward the caller named. The admission then claims a ward
+      // the bed is not in: it counts against that ward's occupancy, while the
+      // bed board — which reaches beds through their ward — never shows it.
+      if (bed.wardId !== dto.wardId) {
+        throw new BadRequestException('Selected bed does not belong to the selected ward');
       }
 
       // Generate admission number: MAX+1 under a tenant+day advisory lock
@@ -529,30 +560,14 @@ export class IpdService {
     // AFTER the txn commits: BillingService + computeBedDayCharges use their
     // own connections — inside the txn they could not see the just-set
     // dischargeDate (wrong bed-day count) and a rollback would orphan the
-    // invoice. Failures are logged but don't undo the discharge (a clerk can
-    // re-run billing manually).
+    // invoice. A failure must not undo the discharge, but it must not vanish
+    // either: it is recorded on the admission so the ward can find it and
+    // retry via generateDischargeInvoice.
     let invoiceId: string | undefined;
     try {
-      const bedLines = await this.bedBoardService.computeBedDayCharges(saved.id, tenantId);
-      if (bedLines.length) {
-        const invoice = await this.billingService.createInvoice(
-          {
-            patientId: saved.patientId,
-            encounterId: saved.encounterId,
-            items: bedLines as any,
-          } as any,
-          userId,
-          tenantId,
-        );
-        invoiceId = invoice.id;
-        saved.metadata = {
-          ...(saved.metadata || {}),
-          inpatientInvoiceId: invoiceId,
-        };
-        await this.admissionRepo.save(saved);
-      }
+      invoiceId = await this.generateDischargeInvoice(saved.id, userId, tenantId);
     } catch (err: any) {
-      this.logger.warn(
+      this.logger.error(
         `Auto-bill on discharge failed for admission ${saved.admissionNumber}: ${err.message}`,
       );
     }
@@ -570,6 +585,137 @@ export class IpdService {
         relations: ['patient', 'ward', 'bed', 'encounter', 'attendingDoctor'],
       })) ?? saved
     );
+  }
+
+  /**
+   * Build (or rebuild) the bed-day invoice for a discharged admission.
+   *
+   * Discharge calls this straight after committing, and the ward can call it
+   * again through the API when that attempt failed. Returns the invoice id, or
+   * undefined when the stay produced no chargeable line at all (every bed on
+   * the stay unpriced, or the whole thing already covered by the first-night
+   * charge) — that is a legitimately zero bill, not a failure.
+   *
+   * Idempotent by design. A second call on an admission that already carries a
+   * live invoice returns that invoice instead of raising a second one, because
+   * computeBedDayCharges cannot tell its own previous output from the
+   * first-night charge — both are invoice_items with reference_type
+   * 'admission' and this admission's id — and so would happily price the whole
+   * stay again.
+   */
+  async generateDischargeInvoice(
+    admissionId: string,
+    userId: string,
+    tenantId?: string,
+  ): Promise<string | undefined> {
+    const tid = requireTenantId(tenantId);
+    const admission = await this.admissionRepo.findOne({
+      where: { id: admissionId, tenantId: tid },
+    });
+    if (!admission) throw new NotFoundException('Admission not found');
+    if (admission.status !== AdmissionStatus.DISCHARGED) {
+      throw new BadRequestException(
+        'Bed-day invoicing applies to discharged admissions; the stay is still open',
+      );
+    }
+
+    const existingId = admission.metadata?.inpatientInvoiceId;
+    if (existingId && (await this.invoiceStillStands(existingId, tid))) {
+      return existingId;
+    }
+
+    try {
+      const bedLines = await this.bedBoardService.computeBedDayCharges(admissionId, tenantId);
+      if (!bedLines.length) {
+        await this.recordBillingOutcome(admission, { status: 'nothing_to_bill' }, tid);
+        return undefined;
+      }
+
+      const invoice = await this.billingService.createInvoice(
+        {
+          patientId: admission.patientId,
+          encounterId: admission.encounterId,
+          items: bedLines as any,
+        } as any,
+        userId,
+        tenantId,
+      );
+
+      await this.recordBillingOutcome(
+        admission,
+        { status: 'invoiced', inpatientInvoiceId: invoice.id },
+        tid,
+      );
+      return invoice.id;
+    } catch (err: any) {
+      // Persist the failure before rethrowing. Without this the only trace is
+      // a log line, and a stay walks out of the ward unbilled with nothing in
+      // the system that knows it.
+      await this.recordBillingOutcome(
+        admission,
+        { status: 'failed', error: String(err?.message ?? err) },
+        tid,
+      ).catch(() => undefined);
+      throw err;
+    }
+  }
+
+  /** True when the recorded invoice still exists and still owes its money. */
+  private async invoiceStillStands(invoiceId: string, tid: string): Promise<boolean> {
+    const [row] = await this.admissionRepo.query(
+      `SELECT status FROM invoices WHERE id = $1 AND tenant_id = $2 LIMIT 1`,
+      [invoiceId, tid],
+    );
+    return Boolean(row) && !['cancelled', 'written_off'].includes(row.status);
+  }
+
+  /**
+   * Write the billing outcome onto the admission with a targeted jsonb merge.
+   * Saving the whole entity here would clobber anything the ward changed since
+   * discharge, and this runs outside the discharge transaction.
+   */
+  private async recordBillingOutcome(
+    admission: Admission,
+    outcome: { status: string; inpatientInvoiceId?: string; error?: string },
+    tid: string,
+  ): Promise<void> {
+    const patch: Record<string, any> = {
+      inpatientBilling: {
+        status: outcome.status,
+        at: new Date().toISOString(),
+        ...(outcome.error ? { error: outcome.error } : {}),
+      },
+    };
+    if (outcome.inpatientInvoiceId) patch.inpatientInvoiceId = outcome.inpatientInvoiceId;
+
+    await this.admissionRepo.query(
+      `UPDATE admissions
+          SET metadata = COALESCE(metadata, '{}'::jsonb) || $1::jsonb
+        WHERE id = $2 AND tenant_id = $3`,
+      [JSON.stringify(patch), admission.id, tid],
+    );
+  }
+
+  /**
+   * Discharged admissions whose bed-day invoice never got raised. This is the
+   * queue a billing clerk works: without it a failed auto-bill is invisible
+   * and the money is simply never collected.
+   */
+  async getUnbilledDischarges(tenantId?: string): Promise<Admission[]> {
+    const tid = requireTenantId(tenantId);
+    return this.admissionRepo
+      .createQueryBuilder('admission')
+      .leftJoinAndSelect('admission.patient', 'patient')
+      .leftJoinAndSelect('admission.ward', 'ward')
+      .where('admission.tenant_id = :tenantId', { tenantId: tid })
+      .andWhere('admission.status = :status', { status: AdmissionStatus.DISCHARGED })
+      .andWhere(`COALESCE(admission.metadata->>'inpatientInvoiceId', '') = ''`)
+      .andWhere(
+        `COALESCE(admission.metadata->'inpatientBilling'->>'status', '') <> 'nothing_to_bill'`,
+      )
+      .orderBy('admission.dischargeDate', 'DESC')
+      .take(200)
+      .getMany();
   }
 
   async transferBed(
@@ -610,7 +756,7 @@ export class IpdService {
       if (!newBed) throw new NotFoundException('New bed not found');
       if (newBed.status !== BedStatus.AVAILABLE)
         throw new BadRequestException('New bed is not available');
-      if (newBed.wardId && newBed.wardId !== dto.toWardId) {
+      if (newBed.wardId !== dto.toWardId) {
         throw new BadRequestException('Selected bed does not belong to the selected ward');
       }
 
@@ -945,6 +1091,80 @@ export class IpdService {
     return saved;
   }
 
+  /**
+   * Match a drug against a patient's documented allergies.
+   *
+   * patient.allergies is a free-text array a nurse types into, so entries read
+   * "Penicillin - rash" or "Allergic to penicillin" far more often than a bare
+   * "penicillin". Testing only whether the recorded allergy is a substring of
+   * the drug name misses every one of those — the entry is longer than the drug
+   * name, so it can never be contained in it — and the dose goes in unchallenged.
+   *
+   * Each recorded allergy is compared whole and word by word. A false match
+   * only asks the nurse for an override reason; a missed one gives the drug to
+   * someone allergic to it, so this deliberately leans towards matching.
+   *
+   * Returns the matching allergy entry, or null.
+   *
+   * NOTE: this is name matching, not drug-class knowledge. A penicillin allergy
+   * will not flag amoxicillin, which shares no substring with it. Catching that
+   * needs a drug-class map the catalogue does not carry yet.
+   */
+  private matchDocumentedAllergy(drugName: string, allergies: string[]): string | null {
+    const normalise = (value: unknown) =>
+      String(value ?? '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim();
+
+    // Words that describe a reaction rather than name a substance. Dropping
+    // them keeps "Penicillin - severe rash" from matching on "severe".
+    const REACTION_WORDS = new Set([
+      'allergic',
+      'allergy',
+      'allergies',
+      'reaction',
+      'severe',
+      'moderate',
+      'mild',
+      'rash',
+      'itching',
+      'hives',
+      'swelling',
+      'nausea',
+      'vomiting',
+      'anaphylaxis',
+      'unknown',
+      'none',
+      'nil',
+      'suspected',
+      'possible',
+    ]);
+
+    const drug = normalise(drugName);
+    if (!drug) return null;
+    const drugWords = drug.split(' ').filter((w) => w.length > 2);
+
+    for (const entry of allergies) {
+      const tag = normalise(entry);
+      if (!tag) continue;
+
+      // The recorded allergy appears verbatim in the drug name:
+      // "penicillin" against "Penicillin V".
+      if (tag.length > 2 && drug.includes(tag)) return String(entry);
+
+      // Otherwise compare the substance words of each side, so a note like
+      // "Penicillin - rash" still lines up with "Penicillin V".
+      const tagWords = tag.split(' ').filter((w) => w.length > 3 && !REACTION_WORDS.has(w));
+      const matched = tagWords.some((tw) =>
+        drugWords.some((dw) => dw.includes(tw) || tw.includes(dw)),
+      );
+      if (matched) return String(entry);
+    }
+
+    return null;
+  }
+
   async getMedicationSchedule(
     admissionId: string,
     date?: string,
@@ -957,7 +1177,14 @@ export class IpdService {
     qb.andWhere('med.tenant_id = :tenantId', { tenantId: tid });
 
     if (date) {
-      qb.andWhere('DATE(med.scheduledTime) = :date', { date });
+      // Bucket by the ward's own day, not the server's. scheduled_time is
+      // timestamptz and Postgres runs on UTC, so a bare DATE() put every dose
+      // due between midnight and 03:00 in Kampala onto the previous day's
+      // chart — the night drug round simply was not on the sheet.
+      qb.andWhere('DATE(med.scheduledTime AT TIME ZONE :tz) = :date', {
+        tz: hospitalTimeZone(),
+        date,
+      });
     }
 
     return qb.orderBy('med.scheduledTime', 'ASC').getMany();
@@ -970,7 +1197,8 @@ export class IpdService {
     tenantId?: string,
   ): Promise<MedicationAdministration> {
     const tid = requireTenantId(tenantId);
-    return this.dataSource.transaction(async (manager) => {
+    let auditPreviousStatus: string | undefined;
+    const saved = await this.dataSource.transaction(async (manager) => {
       // C2: pessimistic lock prevents two nurses double-administering the same dose.
       const med = await manager.findOne(MedicationAdministration, {
         where: { id, tenantId: tid },
@@ -992,13 +1220,7 @@ export class IpdService {
           relations: ['patient'],
         });
         const allergies = admission?.patient?.allergies || [];
-        const drug = med.drugName.toLowerCase();
-        const hit = allergies.find((a) => {
-          const tag = String(a || '')
-            .trim()
-            .toLowerCase();
-          return tag.length > 2 && drug.includes(tag);
-        });
+        const hit = this.matchDocumentedAllergy(med.drugName, allergies);
         if (hit && !dto.allergyOverrideReason) {
           throw new BadRequestException(
             `Patient has documented allergy to "${hit}". Provide allergyOverrideReason to proceed.`,
@@ -1008,50 +1230,68 @@ export class IpdService {
 
       const previousStatus = med.status;
       med.status = dto.status;
-      med.administeredById = userId;
-      med.administeredAt = new Date();
+      // administeredById/administeredAt mean "who gave this, and when". Setting
+      // them for a hold, refusal or miss makes the MAR read as though the drug
+      // went in — the chart then says both that it was refused and that a named
+      // nurse gave it at a stated time. Who recorded the refusal is still
+      // captured, by the audit log entry written below.
+      if (dto.status === MedicationStatus.ADMINISTERED) {
+        med.administeredById = userId;
+        med.administeredAt = new Date();
+      }
       if (dto.batchNumber) med.batchNumber = dto.batchNumber;
       if (dto.notes) med.notes = dto.notes;
       if (dto.reason) med.reason = dto.reason;
 
       const saved = await manager.save(med);
 
-      // C5: dose tracking — increment quantityDispensed on the linked Rx item
-      // so prescription remaining-count reflects what was actually given.
-      if (dto.status === MedicationStatus.ADMINISTERED && med.prescriptionItemId) {
-        await manager.increment(
-          PrescriptionItem,
-          { id: med.prescriptionItemId },
-          'quantityDispensed',
-          1,
-        );
-      }
+      // Administering a dose deliberately does NOT touch the prescription's
+      // quantityDispensed. That column counts UNITS the pharmacy has issued —
+      // prescriptions.service gates re-dispensing on
+      // `quantity - quantityDispensed` and calls the item fully dispensed once
+      // it is reached. Adding 1 per dose event wrote a different unit of
+      // measure into the same column: the pharmacy issues 20 tablets to the
+      // ward (quantityDispensed 20), the nurse gives 20 doses from that supply,
+      // and the column reaches 40 for a 20-unit prescription. Where pharmacy
+      // had issued only part of the course, the doses ate the remainder and
+      // the counter refused to release the rest with "Cannot dispense more
+      // than 0 units" — a patient's course stopped by their own drug round.
+      //
+      // Doses given are already recorded, one row per dose, on this very
+      // table: count medication_administrations with status ADMINISTERED.
 
-      // C6: audit log (best-effort, never blocks the dose).
-      this.auditLogService
-        .log({
-          userId,
-          action: 'MEDICATION_ADMINISTERED',
-          entityType: 'MedicationAdministration',
-          entityId: saved.id,
-          oldValue: { status: previousStatus },
-          newValue: {
-            status: saved.status,
-            drugName: saved.drugName,
-            admissionId: saved.admissionId,
-            allergyOverrideReason: dto.allergyOverrideReason || null,
-          },
-          tenantId: tid,
-        })
-        .catch((err) =>
-          this.logger.error(`Audit log failed for med admin ${saved.id}: ${err.message}`),
-        );
-
+      auditPreviousStatus = previousStatus;
       this.logger.log(
         `Medication administered: ${med.drugName} status ${dto.status} for admission ${med.admissionId} by user ${userId}`,
       );
       return saved;
     });
+
+    // C6: audit log (best-effort, never blocks the dose) — after the commit.
+    // AuditLogService writes on its own connection, so from inside the
+    // transaction the log row committed independently of the dose it
+    // recorded: roll the administration back and the record still said the
+    // patient had been given it.
+    this.auditLogService
+      .log({
+        userId,
+        action: 'MEDICATION_ADMINISTERED',
+        entityType: 'MedicationAdministration',
+        entityId: saved.id,
+        oldValue: { status: auditPreviousStatus },
+        newValue: {
+          status: saved.status,
+          drugName: saved.drugName,
+          admissionId: saved.admissionId,
+          allergyOverrideReason: dto.allergyOverrideReason || null,
+        },
+        tenantId: tid,
+      })
+      .catch((err) =>
+        this.logger.error(`Audit log failed for med admin ${saved.id}: ${err.message}`),
+      );
+
+    return saved;
   }
 
   // ========== DASHBOARD STATS ==========
@@ -1070,14 +1310,19 @@ export class IpdService {
       .andWhere('a.status = :status', { status: AdmissionStatus.ADMITTED })
       .getCount();
 
+    // "Today" is the ward's today. CURRENT_DATE is the server's, and Postgres
+    // runs on UTC: for the first three hours of every Kampala day the tile read
+    // yesterday's date, so admissions taken overnight were counted against the
+    // day before and the morning's figure started from the wrong number.
+    const tz = hospitalTimeZone();
     const todayAdmissions = await admissionQb
       .clone()
-      .andWhere('DATE(a.admissionDate) = CURRENT_DATE')
+      .andWhere('DATE(a.admissionDate AT TIME ZONE :tz) = DATE(NOW() AT TIME ZONE :tz)', { tz })
       .getCount();
 
     const todayDischarges = await admissionQb
       .clone()
-      .andWhere('DATE(a.dischargeDate) = CURRENT_DATE')
+      .andWhere('DATE(a.dischargeDate AT TIME ZONE :tz) = DATE(NOW() AT TIME ZONE :tz)', { tz })
       .andWhere('a.status = :status', { status: AdmissionStatus.DISCHARGED })
       .getCount();
 

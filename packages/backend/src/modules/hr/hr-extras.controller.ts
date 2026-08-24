@@ -10,12 +10,14 @@ import {
   Request,
   Res,
   NotFoundException,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 import {
   PerformanceImprovementPlan,
   PipStatus,
@@ -28,6 +30,7 @@ import { requireTenantId } from '../../common/utils/tenant.util';
 @ApiTags('HR - PIP / Goals / Letters')
 @ApiBearerAuth()
 @RequireModule('hr')
+@UseGuards(ModuleGuard)
 @Controller('hr')
 export class HrExtrasController {
   constructor(

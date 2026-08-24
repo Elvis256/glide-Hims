@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { formatCurrency } from '../../../lib/currency';
@@ -71,6 +72,17 @@ export default function BudgetPage() {
   const [activeBudgetId, setActiveBudgetId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [vsActualBudgetId, setVsActualBudgetId] = useState<string | null>(null);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showCreateModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showCreateModal,
+    onClose: () => setShowCreateModal(false),
+  });
+  const showLineModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showLineModal,
+    onClose: () => setShowLineModal(false),
+  });
 
   const { data: budgets = [], isLoading } = useQuery<Budget[]>({
     queryKey: ['budgets', facilityId],
@@ -419,7 +431,12 @@ export default function BudgetPage() {
 
       {/* Create Budget Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showCreateModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <h2 className="text-lg font-bold text-gray-900">Create Budget</h2>
@@ -482,7 +499,12 @@ export default function BudgetPage() {
 
       {/* Add Budget Line Modal */}
       {showLineModal && activeBudgetId && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showLineModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <h2 className="text-lg font-bold text-gray-900">Add Budget Line</h2>

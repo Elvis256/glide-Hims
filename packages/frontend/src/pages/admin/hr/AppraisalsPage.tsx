@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -31,6 +32,17 @@ export default function AppraisalsPage() {
   });
   const [createQuestions, setCreateQuestions] = useState<{ id: string; question: string }[]>([]);
   const [createNewQuestion, setCreateNewQuestion] = useState('');
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showModal,
+    onClose: () => setShowModal(false),
+  });
+  const showBulkModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showBulkModal,
+    onClose: () => setShowBulkModal(false),
+  });
   const [bulkData, setBulkData] = useState<Partial<BulkCreateAppraisalDto>>({
     appraisalPeriod: 'Q1',
     year: new Date().getFullYear(),
@@ -383,7 +395,12 @@ export default function AppraisalsPage() {
 
       {/* Create Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showModalDialogRef}
+        >
           <div className="bg-white rounded-lg p-6 w-full max-w-lg">
             <h2 className="text-xl font-semibold mb-4">New Performance Appraisal</h2>
             <div className="space-y-4">
@@ -511,7 +528,12 @@ export default function AppraisalsPage() {
 
       {/* Bulk Create Modal */}
       {showBulkModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showBulkModalDialogRef}
+        >
           <div className="bg-white rounded-lg p-6 w-full max-w-lg">
             <h2 className="text-xl font-semibold mb-4">Bulk Create Appraisals</h2>
             <p className="text-sm text-gray-500 mb-4">Create appraisals for all active employees in a department</p>

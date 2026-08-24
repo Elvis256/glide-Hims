@@ -371,6 +371,22 @@ describe('AuthService', () => {
         }),
         save: jest.fn().mockImplementation((data: any) => Promise.resolve(data)),
         update: jest.fn().mockResolvedValue({}),
+        // refreshToken() reads roles, permissions and facility through the
+        // transaction manager rather than the injected repositories — it has to
+        // stay on the connection holding the user row lock. Route those calls
+        // to the same repository mocks each test already arranges, so the
+        // manager and repository paths cannot drift apart again.
+        find: jest.fn().mockImplementation((entity: any, options?: any) => {
+          if (entity === UserRole) return mockUserRoleRepo.find(options);
+          if (entity === RolePermission) return mockRolePermissionRepo.find(options);
+          if (entity === UserPermission) return mockUserPermissionRepo.find(options);
+          return Promise.resolve([]);
+        }),
+        findOne: jest.fn().mockImplementation((entity: any, options?: any) => {
+          if (entity === Facility) return mockFacilityRepo.findOne(options);
+          if (entity === User) return Promise.resolve(user);
+          return Promise.resolve(null);
+        }),
       };
 
       mockDataSource.transaction.mockImplementation(async (cb: any) => cb(mockManager));

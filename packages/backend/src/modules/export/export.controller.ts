@@ -7,11 +7,13 @@ import {
   Res,
   BadRequestException,
   Logger,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiParam } from '@nestjs/swagger';
 import { Response } from 'express';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 import { SkipTransform } from '../../common/interceptors/response-transform.interceptor';
 import { ExportService } from './export.service';
 
@@ -19,6 +21,7 @@ const SUPPORTED_ENTITIES = ['users', 'audit-logs', 'patients', 'invoices', 'inve
 
 @ApiTags('export')
 @RequireModule('reports')
+@UseGuards(ModuleGuard)
 @Controller('export')
 export class ExportController {
   private readonly logger = new Logger(ExportController.name);

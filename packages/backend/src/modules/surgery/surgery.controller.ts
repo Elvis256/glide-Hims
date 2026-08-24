@@ -26,6 +26,7 @@ import {
   UpdateTheatreStatusDto,
   RecordConsumableDto,
   RecordMultipleConsumablesDto,
+  DischargeRecoveryDto,
 } from './dto/surgery.dto';
 import { SurgeryStatus } from '../../database/entities/surgery-case.entity';
 import { RequireModule } from '../auth/decorators/module.decorator';
@@ -156,8 +157,17 @@ export class SurgeryController {
   @Put('cases/:id/discharge-recovery')
   @AuthWithPermissions('surgery.update')
   @ApiOperation({ summary: 'Discharge patient from recovery' })
-  dischargeFromRecovery(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
-    return this.surgeryService.dischargeFromRecovery(id, req.user?.tenantId);
+  dischargeFromRecovery(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: DischargeRecoveryDto,
+    @Request() req: any,
+  ) {
+    return this.surgeryService.dischargeFromRecovery(
+      id,
+      req.user?.tenantId,
+      req.user?.id,
+      dto?.recoveryNotes,
+    );
   }
 
   @Put('cases/:id/cancel')

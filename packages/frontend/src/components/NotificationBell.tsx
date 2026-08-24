@@ -24,7 +24,15 @@ const typeColors: Record<string, string> = {
 };
 
 export default function NotificationBell() {
-  const { notifications, unreadCount, isOpen, toggle, setOpen, markRead, markAllRead: storeMarkAllRead } = useNotificationStore();
+  const {
+    notifications,
+    unreadCount,
+    isOpen,
+    toggle,
+    setOpen,
+    markRead,
+    markAllRead: storeMarkAllRead,
+  } = useNotificationStore();
   const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -39,24 +47,43 @@ export default function NotificationBell() {
 
   const handleMarkRead = async (id: string) => {
     markRead(id);
-    try { await markAsRead(id); } catch { /* ignore */ }
+    try {
+      await markAsRead(id);
+    } catch {
+      /* ignore */
+    }
   };
 
   const handleMarkAllRead = async () => {
     storeMarkAllRead();
-    try { await markAllAsRead(); } catch { /* ignore */ }
+    try {
+      await markAllAsRead();
+    } catch {
+      /* ignore */
+    }
   };
 
   return (
     <div className="relative" ref={panelRef}>
+      {/* First thing a keyboard user reaches on every screen. It carried only a
+          title, which names it but is announced inconsistently and never shown
+          on focus, and said "Notifications" whether there were none or forty. */}
       <button
         onClick={toggle}
         className="relative p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-full transition-colors"
         title="Notifications"
+        aria-label={
+          unreadCount > 0 ? `Notifications, ${unreadCount} unread` : 'Notifications, none unread'
+        }
+        aria-expanded={isOpen}
+        aria-haspopup="dialog"
       >
-        <Bell className="w-5 h-5" />
+        <Bell className="w-5 h-5" aria-hidden="true" />
         {unreadCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
+          <span
+            aria-hidden="true"
+            className="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1"
+          >
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         )}
@@ -103,10 +130,14 @@ export default function NotificationBell() {
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-0.5">
-                        <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${typeColors[n.type] || 'bg-gray-100 text-gray-700'}`}>
+                        <span
+                          className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${typeColors[n.type] || 'bg-gray-100 text-gray-700'}`}
+                        >
                           {n.type.replace(/_/g, ' ')}
                         </span>
-                        {!n.isRead && <span className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0" />}
+                        {!n.isRead && (
+                          <span className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0" />
+                        )}
                       </div>
                       <p className="text-sm font-medium text-gray-900 truncate">{n.title}</p>
                       <p className="text-xs text-gray-500 line-clamp-2">{n.message}</p>
@@ -114,7 +145,10 @@ export default function NotificationBell() {
                     </div>
                     {!n.isRead && (
                       <button
-                        onClick={(e) => { e.stopPropagation(); handleMarkRead(n.id); }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleMarkRead(n.id);
+                        }}
                         className="text-gray-400 hover:text-green-600 p-1 flex-shrink-0"
                         title="Mark as read"
                       >

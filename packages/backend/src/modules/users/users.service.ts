@@ -373,13 +373,22 @@ export class UsersService {
           userId: savedUser.id,
           roleId: roleId,
           facilityId: facilityId || undefined,
+          // Same reason as assignRole(): a NULL tenant_id here is invisible to
+          // every tenant-filtered read of user_roles — getUserRoles() shows the
+          // user no roles, and getUserIdsByRole() never finds them, so no
+          // role-targeted notification ever reaches anyone created this way.
+          tenantId: savedUser.tenantId || tenantId,
         });
         await queryRunner.manager.save(userRole);
       }
 
       await queryRunner.commitTransaction();
 
-      return { ...savedUser, employee };
+      // Attach to the User instance rather than spreading into a plain object:
+      // ClassSerializerInterceptor strips @Exclude() fields (passwordHash,
+      // mfaSecret, backupCodes) only from class instances, and a spread copy
+      // loses that metadata, putting the credentials in the response.
+      return Object.assign(savedUser, { employee });
     } catch (error) {
       await queryRunner.rollbackTransaction();
       throw error;
@@ -1371,8 +1380,66 @@ export class UsersService {
     return { created, skipped };
   }
 
+  /**
+   * Spreading the entity into a plain object steps around the global
+   * ClassSerializerInterceptor, so the entity's own `@Exclude()` markers do not
+   * apply here — this deny-list is the only thing standing between the users
+   * API and the raw row, and it had drifted. `tokenVersion` (the token-
+   * revocation counter) was being published, and so were every staff member's
+   * salary, allowances, deductions, bank account number, national ID, home
+   * address, date of birth, emergency contact and leave balances — to anyone
+   * holding `users.read`.
+   *
+   * Payroll and personal data belong to the HR module, which reads them from
+   * Employee, not from here. If a field is added to User it is published by
+   * default, so anything sensitive must be added below as well as marked on the
+   * entity.
+   */
   private sanitizeUser(user: User) {
-    const { passwordHash, mfaSecret, userRoles, ...sanitized } = user;
+    const {
+      passwordHash,
+      mfaSecret,
+      backupCodes,
+      tokenVersion,
+      userRoles,
+      // lockout state
+      failedLoginAttempts,
+      lockedUntil,
+      // payroll / personal — HR reads these from Employee
+      basicSalary,
+      allowances,
+      deductions,
+      bankName,
+      bankAccountNumber,
+      nationalId,
+      address,
+      dateOfBirth,
+      emergencyContactName,
+      emergencyContactPhone,
+      annualLeaveBalance,
+      sickLeaveBalance,
+      leaveLastAccruedMonth,
+      ...sanitized
+    } = user;
+    void passwordHash;
+    void mfaSecret;
+    void backupCodes;
+    void tokenVersion;
+    void failedLoginAttempts;
+    void lockedUntil;
+    void basicSalary;
+    void allowances;
+    void deductions;
+    void bankName;
+    void bankAccountNumber;
+    void nationalId;
+    void address;
+    void dateOfBirth;
+    void emergencyContactName;
+    void emergencyContactPhone;
+    void annualLeaveBalance;
+    void sickLeaveBalance;
+    void leaveLastAccruedMonth;
     return {
       ...sanitized,
       roles:
@@ -1599,6 +1666,9 @@ export class UsersService {
                 userId: savedUser.id,
                 roleId: role.id,
                 facilityId: facilityId || undefined,
+                // NULL tenant_id here hides the row from every tenant-filtered
+                // read — see create() and assignRole().
+                tenantId: savedUser.tenantId || tenantId,
               });
               await queryRunner.manager.save(userRole);
             }

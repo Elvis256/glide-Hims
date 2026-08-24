@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useId } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -32,7 +32,11 @@ import {
   Info,
   FileText,
 } from 'lucide-react';
-import { ipdService, type AdministerMedicationDto, type MedicationStatus } from '../../services/ipd';
+import {
+  ipdService,
+  type AdministerMedicationDto,
+  type MedicationStatus,
+} from '../../services/ipd';
 import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
 import { getApiErrorMessage } from '../../services/api';
@@ -125,7 +129,7 @@ const holdReasons = [
 const refusalReasons = [
   { value: 'no_reason', label: 'No reason given' },
   { value: 'side_effects', label: 'Concerned about side effects' },
-  { value: 'feeling_better', label: 'Feels better, doesn\'t need it' },
+  { value: 'feeling_better', label: "Feels better, doesn't need it" },
   { value: 'taste', label: 'Does not like taste' },
   { value: 'religious', label: 'Religious/cultural reasons' },
   { value: 'swallowing', label: 'Difficulty swallowing' },
@@ -144,14 +148,19 @@ const patientReactions = [
 ];
 
 // Helper to determine time status
-function getTimeStatus(scheduledTime?: string): { status: 'on-time' | 'early' | 'late'; label: string; color: string } {
+function getTimeStatus(scheduledTime?: string): {
+  status: 'on-time' | 'early' | 'late';
+  label: string;
+  color: string;
+} {
   if (!scheduledTime) return { status: 'on-time', label: 'On time', color: 'green' };
-  
+
   const scheduled = new Date(scheduledTime);
   const now = new Date();
   const diffMinutes = Math.round((now.getTime() - scheduled.getTime()) / 60000);
-  
-  if (diffMinutes < -30) return { status: 'early', label: `${Math.abs(diffMinutes)} min early`, color: 'blue' };
+
+  if (diffMinutes < -30)
+    return { status: 'early', label: `${Math.abs(diffMinutes)} min early`, color: 'blue' };
   if (diffMinutes > 30) return { status: 'late', label: `${diffMinutes} min late`, color: 'red' };
   return { status: 'on-time', label: 'On time', color: 'green' };
 }
@@ -168,6 +177,7 @@ function formatDateTime(dateStr?: string): string {
 }
 
 export default function AdministerMedsPage() {
+  const fid = useId();
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
@@ -190,7 +200,7 @@ export default function AdministerMedsPage() {
   const [currentWizardStep, setCurrentWizardStep] = useState(1);
   const [administered, setAdministered] = useState(false);
   const [action, setAction] = useState<ActionType>(null);
-  
+
   // Verification states
   const [patientVerified, setPatientVerified] = useState(false);
   const [drugVerified, setDrugVerified] = useState(false);
@@ -199,7 +209,7 @@ export default function AdministerMedsPage() {
   const [timeVerified, setTimeVerified] = useState(false);
   const [scannedMRN, setScannedMRN] = useState('');
   const [scannedDrugBarcode, setScannedDrugBarcode] = useState('');
-  
+
   // Administration form state
   const [actualDose, setActualDose] = useState('');
   const [injectionSite, setInjectionSite] = useState('');
@@ -212,28 +222,30 @@ export default function AdministerMedsPage() {
   const [showPinEntry, setShowPinEntry] = useState(false);
 
   // Use passed medication data
-  const medication: MedicationDetails | null = medFromSchedule ? {
-    id: medFromSchedule.id,
-    patientName: medFromSchedule.patientName || 'Unknown Patient',
-    patientMrn: medFromSchedule.patientMrn || 'N/A',
-    ward: medFromSchedule.ward || 'Unknown Ward',
-    bed: medFromSchedule.bed || 'N/A',
-    medication: medFromSchedule.medication || medFromSchedule.drugName || 'Unknown',
-    genericName: medFromSchedule.genericName,
-    brandName: medFromSchedule.brandName,
-    dose: medFromSchedule.dose || 'N/A',
-    route: medFromSchedule.route || 'Oral',
-    frequency: medFromSchedule.frequency || 'N/A',
-    prescribedBy: medFromSchedule.prescribedBy || 'Unknown',
-    allergies: medFromSchedule.allergies || [],
-    specialInstructions: medFromSchedule.specialInstructions || medFromSchedule.notes,
-    lastGiven: medFromSchedule.lastGiven,
-    scheduledTime: medFromSchedule.scheduledTime,
-    isControlled: medFromSchedule.isControlled || false,
-    isNPO: medFromSchedule.isNPO || false,
-    patientInfo: medFromSchedule.patientInfo,
-    vitals: medFromSchedule.vitals,
-  } : null;
+  const medication: MedicationDetails | null = medFromSchedule
+    ? {
+        id: medFromSchedule.id,
+        patientName: medFromSchedule.patientName || 'Unknown Patient',
+        patientMrn: medFromSchedule.patientMrn || 'N/A',
+        ward: medFromSchedule.ward || 'Unknown Ward',
+        bed: medFromSchedule.bed || 'N/A',
+        medication: medFromSchedule.medication || medFromSchedule.drugName || 'Unknown',
+        genericName: medFromSchedule.genericName,
+        brandName: medFromSchedule.brandName,
+        dose: medFromSchedule.dose || 'N/A',
+        route: medFromSchedule.route || 'Oral',
+        frequency: medFromSchedule.frequency || 'N/A',
+        prescribedBy: medFromSchedule.prescribedBy || 'Unknown',
+        allergies: medFromSchedule.allergies || [],
+        specialInstructions: medFromSchedule.specialInstructions || medFromSchedule.notes,
+        lastGiven: medFromSchedule.lastGiven,
+        scheduledTime: medFromSchedule.scheduledTime,
+        isControlled: medFromSchedule.isControlled || false,
+        isNPO: medFromSchedule.isNPO || false,
+        patientInfo: medFromSchedule.patientInfo,
+        vitals: medFromSchedule.vitals,
+      }
+    : null;
 
   // Initialize actual dose from prescribed dose
   useEffect(() => {
@@ -255,21 +267,28 @@ export default function AdministerMedsPage() {
   }
 
   // Check for allergy warning - now more comprehensive
-  const allergyWarnings = medication.allergies?.filter(allergy => {
-    const medLower = medication.medication.toLowerCase();
-    const allergyLower = allergy.toLowerCase();
-    // Check for penicillin-related allergies with amoxicillin
-    if (allergyLower.includes('penicillin') && 
-        (medLower.includes('amoxicillin') || medLower.includes('ampicillin') || medLower.includes('penicillin'))) {
-      return true;
-    }
-    // Check for sulfa allergies
-    if (allergyLower.includes('sulfa') && 
-        (medLower.includes('sulfamethoxazole') || medLower.includes('bactrim'))) {
-      return true;
-    }
-    return false;
-  }) || [];
+  const allergyWarnings =
+    medication.allergies?.filter((allergy) => {
+      const medLower = medication.medication.toLowerCase();
+      const allergyLower = allergy.toLowerCase();
+      // Check for penicillin-related allergies with amoxicillin
+      if (
+        allergyLower.includes('penicillin') &&
+        (medLower.includes('amoxicillin') ||
+          medLower.includes('ampicillin') ||
+          medLower.includes('penicillin'))
+      ) {
+        return true;
+      }
+      // Check for sulfa allergies
+      if (
+        allergyLower.includes('sulfa') &&
+        (medLower.includes('sulfamethoxazole') || medLower.includes('bactrim'))
+      ) {
+        return true;
+      }
+      return false;
+    }) || [];
 
   const hasAllergyWarning = allergyWarnings.length > 0;
   const timeStatus = getTimeStatus(medication.scheduledTime);
@@ -284,8 +303,9 @@ export default function AdministerMedsPage() {
     { step: 5, label: 'Right Time', verified: timeVerified, icon: Clock },
   ];
 
-  const allVerified = patientVerified && drugVerified && doseVerified && routeVerified && timeVerified;
-  const completedSteps = verificationSteps.filter(s => s.verified).length;
+  const allVerified =
+    patientVerified && drugVerified && doseVerified && routeVerified && timeVerified;
+  const completedSteps = verificationSteps.filter((s) => s.verified).length;
 
   // Administer medication mutation
   const administerMutation = useMutation({
@@ -294,10 +314,13 @@ export default function AdministerMedsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['medications-today'] });
       toast.success(
-        action === 'give' ? 'Medication administered successfully' :
-        action === 'hold' ? 'Medication held' :
-        action === 'refuse' ? 'Refusal recorded' :
-        'Pharmacy notified - medication not available'
+        action === 'give'
+          ? 'Medication administered successfully'
+          : action === 'hold'
+            ? 'Medication held'
+            : action === 'refuse'
+              ? 'Refusal recorded'
+              : 'Pharmacy notified - medication not available',
       );
       setAdministered(true);
     },
@@ -312,7 +335,7 @@ export default function AdministerMedsPage() {
   const handlePatientVerification = useCallback(() => {
     const mrnToCheck = scannedMRN.trim().toUpperCase();
     const expectedMRN = medication.patientMrn.toUpperCase();
-    
+
     if (!mrnToCheck) {
       toast.error('Please scan or enter the patient MRN');
       return;
@@ -364,26 +387,42 @@ export default function AdministerMedsPage() {
     }
 
     const statusMap: Record<string, MedicationStatus> = {
-      give: 'given',
+      give: 'administered',
       hold: 'held',
       refuse: 'refused',
       not_available: 'missed',
     };
 
     const dto: AdministerMedicationDto = {
-      status: statusMap[action!] || 'given',
-      notes: [
-        notes,
-        actualDose !== medication.dose ? `Actual dose: ${actualDose}` : '',
-        injectionSite ? `Site: ${injectionSite}` : '',
-        patientReaction !== 'tolerated' ? `Reaction: ${patientReaction}` : '',
-        witnessedBy ? `Witnessed by: ${witnessedBy}` : '',
-      ].filter(Boolean).join('. ') || undefined,
+      status: statusMap[action!] || 'administered',
+      notes:
+        [
+          notes,
+          actualDose !== medication.dose ? `Actual dose: ${actualDose}` : '',
+          injectionSite ? `Site: ${injectionSite}` : '',
+          patientReaction !== 'tolerated' ? `Reaction: ${patientReaction}` : '',
+          witnessedBy ? `Witnessed by: ${witnessedBy}` : '',
+        ]
+          .filter(Boolean)
+          .join('. ') || undefined,
       reason: action === 'hold' ? holdReason : action === 'refuse' ? refuseReason : undefined,
     };
 
     administerMutation.mutate({ id: medication.id, dto });
-  }, [canAdminister, allVerified, action, medication, notes, actualDose, injectionSite, patientReaction, witnessedBy, holdReason, refuseReason, administerMutation]);
+  }, [
+    canAdminister,
+    allVerified,
+    action,
+    medication,
+    notes,
+    actualDose,
+    injectionSite,
+    patientReaction,
+    witnessedBy,
+    holdReason,
+    refuseReason,
+    administerMutation,
+  ]);
 
   // Print label handler
   const handlePrintLabel = () => {
@@ -419,11 +458,17 @@ export default function AdministerMedsPage() {
     return (
       <div className="h-[calc(100vh-120px)] flex items-center justify-center">
         <div className="text-center max-w-lg">
-          <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 ${
-            action === 'give' ? 'bg-green-100' : 
-            action === 'hold' ? 'bg-yellow-100' : 
-            action === 'not_available' ? 'bg-orange-100' : 'bg-red-100'
-          }`}>
+          <div
+            className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 ${
+              action === 'give'
+                ? 'bg-green-100'
+                : action === 'hold'
+                  ? 'bg-yellow-100'
+                  : action === 'not_available'
+                    ? 'bg-orange-100'
+                    : 'bg-red-100'
+            }`}
+          >
             {action === 'give' ? (
               <CheckCircle className="w-10 h-10 text-green-600" />
             ) : action === 'hold' ? (
@@ -434,20 +479,28 @@ export default function AdministerMedsPage() {
               <XCircle className="w-10 h-10 text-red-600" />
             )}
           </div>
-          
+
           <h2 className="text-2xl font-semibold text-gray-900 mb-2">
-            {action === 'give' ? 'Medication Administered Successfully' : 
-             action === 'hold' ? 'Medication Held' : 
-             action === 'not_available' ? 'Pharmacy Notified' : 'Refusal Recorded'}
+            {action === 'give'
+              ? 'Medication Administered Successfully'
+              : action === 'hold'
+                ? 'Medication Held'
+                : action === 'not_available'
+                  ? 'Pharmacy Notified'
+                  : 'Refusal Recorded'}
           </h2>
-          
+
           <div className="bg-gray-50 rounded-lg p-4 mb-6">
-            <p className="text-lg font-medium text-gray-900">{medication.medication} {medication.dose}</p>
-            <p className="text-gray-600">{medication.patientName} • {medication.patientMrn}</p>
+            <p className="text-lg font-medium text-gray-900">
+              {medication.medication} {medication.dose}
+            </p>
+            <p className="text-gray-600">
+              {medication.patientName} • {medication.patientMrn}
+            </p>
             <p className="text-sm text-gray-500 mt-1">
-              {new Date().toLocaleString('en-US', { 
-                dateStyle: 'medium', 
-                timeStyle: 'short' 
+              {new Date().toLocaleString('en-US', {
+                dateStyle: 'medium',
+                timeStyle: 'short',
               })}
             </p>
           </div>
@@ -460,7 +513,7 @@ export default function AdministerMedsPage() {
               <Printer className="w-4 h-4" />
               Print Label
             </button>
-            
+
             <button
               onClick={handleNextMedication}
               className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700"
@@ -474,7 +527,7 @@ export default function AdministerMedsPage() {
                 'Back to Schedule'
               )}
             </button>
-            
+
             <button
               onClick={() => {
                 setAdministered(false);
@@ -497,7 +550,9 @@ export default function AdministerMedsPage() {
           {nextMedication && (
             <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
               <p className="text-sm text-blue-700 font-medium">Next medication due:</p>
-              <p className="text-blue-900">{nextMedication.medication} - {nextMedication.patientName}</p>
+              <p className="text-blue-900">
+                {nextMedication.medication} - {nextMedication.patientName}
+              </p>
             </div>
           )}
         </div>
@@ -519,7 +574,7 @@ export default function AdministerMedsPage() {
               <p className="text-sm text-gray-500">Enter your PIN to confirm</p>
             </div>
           </div>
-          
+
           <input
             type="password"
             value={pinConfirmation}
@@ -529,7 +584,7 @@ export default function AdministerMedsPage() {
             className="w-full px-4 py-3 border border-gray-300 rounded-lg text-center text-2xl tracking-widest mb-4"
             autoFocus
           />
-          
+
           <div className="flex gap-3">
             <button
               onClick={() => setShowPinEntry(false)}
@@ -558,10 +613,7 @@ export default function AdministerMedsPage() {
       {/* Header with Progress */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-4">
-          <button
-            onClick={() => navigate(-1)}
-            className="p-2 hover:bg-gray-100 rounded-lg"
-          >
+          <button onClick={() => navigate(-1)} className="p-2 hover:bg-gray-100 rounded-lg">
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div className="flex items-center gap-2">
@@ -572,7 +624,7 @@ export default function AdministerMedsPage() {
             </div>
           </div>
         </div>
-        
+
         {/* Progress indicator */}
         <div className="hidden md:flex items-center gap-2">
           <div className="flex items-center gap-1">
@@ -580,18 +632,14 @@ export default function AdministerMedsPage() {
               <div
                 key={step.step}
                 className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium ${
-                  step.verified
-                    ? 'bg-green-500 text-white'
-                    : 'bg-gray-200 text-gray-500'
+                  step.verified ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-500'
                 }`}
               >
                 {step.verified ? <CheckCircle className="w-4 h-4" /> : idx + 1}
               </div>
             ))}
           </div>
-          <span className="text-sm text-gray-500 ml-2">
-            {completedSteps}/5 verified
-          </span>
+          <span className="text-sm text-gray-500 ml-2">{completedSteps}/5 verified</span>
         </div>
       </div>
 
@@ -613,13 +661,13 @@ export default function AdministerMedsPage() {
                 Scan
               </button>
             </div>
-            
+
             {/* Patient Photo & Basic Info */}
             <div className="flex items-start gap-3 mb-4">
               <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center overflow-hidden">
                 {medication.patientInfo?.photo ? (
-                  <img 
-                    src={medication.patientInfo.photo} 
+                  <img
+                    src={medication.patientInfo.photo}
                     alt={medication.patientName}
                     className="w-full h-full object-cover"
                   />
@@ -630,7 +678,9 @@ export default function AdministerMedsPage() {
               <div className="flex-1">
                 <p className="font-semibold text-gray-900">{medication.patientName}</p>
                 <p className="text-sm text-gray-600">{medication.patientMrn}</p>
-                <p className="text-xs text-teal-600">{medication.ward} • Bed {medication.bed}</p>
+                <p className="text-xs text-teal-600">
+                  {medication.ward} • Bed {medication.bed}
+                </p>
               </div>
             </div>
 
@@ -680,20 +730,24 @@ export default function AdministerMedsPage() {
 
           {/* Allergies Alert */}
           {medication.allergies && medication.allergies.length > 0 && (
-            <div className={`rounded-xl border p-4 ${
-              hasAllergyWarning 
-                ? 'bg-red-50 border-red-300' 
-                : 'bg-yellow-50 border-yellow-200'
-            }`}>
+            <div
+              className={`rounded-xl border p-4 ${
+                hasAllergyWarning ? 'bg-red-50 border-red-300' : 'bg-yellow-50 border-yellow-200'
+              }`}
+            >
               <div className="flex items-center gap-2 mb-2">
-                <AlertTriangle className={`w-5 h-5 ${hasAllergyWarning ? 'text-red-600' : 'text-yellow-600'}`} />
-                <span className={`text-sm font-semibold ${hasAllergyWarning ? 'text-red-700' : 'text-yellow-700'}`}>
+                <AlertTriangle
+                  className={`w-5 h-5 ${hasAllergyWarning ? 'text-red-600' : 'text-yellow-600'}`}
+                />
+                <span
+                  className={`text-sm font-semibold ${hasAllergyWarning ? 'text-red-700' : 'text-yellow-700'}`}
+                >
                   {hasAllergyWarning ? 'ALLERGY WARNING!' : 'Known Allergies'}
                 </span>
               </div>
               <div className="flex flex-wrap gap-1">
                 {medication.allergies.map((allergy, idx) => (
-                  <span 
+                  <span
                     key={idx}
                     className={`px-2 py-1 rounded text-xs font-medium ${
                       allergyWarnings.includes(allergy)
@@ -746,7 +800,9 @@ export default function AdministerMedsPage() {
                 </div>
                 <div className="flex items-center gap-2 p-2 bg-gray-50 rounded">
                   <Activity className="w-4 h-4 text-blue-400" />
-                  <span className="text-sm">{medication.vitals.bpSystolic}/{medication.vitals.bpDiastolic}</span>
+                  <span className="text-sm">
+                    {medication.vitals.bpSystolic}/{medication.vitals.bpDiastolic}
+                  </span>
                 </div>
                 <div className="flex items-center gap-2 p-2 bg-gray-50 rounded">
                   <Wind className="w-4 h-4 text-cyan-400" />
@@ -767,9 +823,7 @@ export default function AdministerMedsPage() {
                 onClick={handleDrugVerification}
                 disabled={drugVerified}
                 className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm ${
-                  drugVerified
-                    ? 'bg-green-100 text-green-700'
-                    : 'bg-gray-100 hover:bg-gray-200'
+                  drugVerified ? 'bg-green-100 text-green-700' : 'bg-gray-100 hover:bg-gray-200'
                 }`}
               >
                 <Scan className="w-4 h-4" />
@@ -784,7 +838,9 @@ export default function AdministerMedsPage() {
                   <RouteIcon className="w-5 h-5 text-purple-600" />
                 </div>
                 <div className="flex-1">
-                  <p className="font-semibold text-gray-900 text-lg">{medication.brandName || medication.medication}</p>
+                  <p className="font-semibold text-gray-900 text-lg">
+                    {medication.brandName || medication.medication}
+                  </p>
                   {medication.genericName && (
                     <p className="text-sm text-purple-600">({medication.genericName})</p>
                   )}
@@ -829,10 +885,15 @@ export default function AdministerMedsPage() {
                 <p className="text-sm font-medium text-gray-900">
                   {formatDateTime(medication.scheduledTime)}
                 </p>
-                <span className={`text-xs font-medium ${
-                  timeStatus.color === 'green' ? 'text-green-600' :
-                  timeStatus.color === 'blue' ? 'text-blue-600' : 'text-red-600'
-                }`}>
+                <span
+                  className={`text-xs font-medium ${
+                    timeStatus.color === 'green'
+                      ? 'text-green-600'
+                      : timeStatus.color === 'blue'
+                        ? 'text-blue-600'
+                        : 'text-red-600'
+                  }`}
+                >
                   {timeStatus.label}
                 </span>
               </div>
@@ -907,11 +968,11 @@ export default function AdministerMedsPage() {
                         : 'border-gray-200 bg-white hover:border-teal-300 hover:bg-teal-50'
                     }`}
                   >
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                      item.verified
-                        ? 'bg-green-500 text-white'
-                        : 'bg-gray-100 text-gray-500'
-                    }`}>
+                    <div
+                      className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                        item.verified ? 'bg-green-500 text-white' : 'bg-gray-100 text-gray-500'
+                      }`}
+                    >
                       {item.verified ? (
                         <CheckCircle className="w-5 h-5" />
                       ) : (
@@ -954,7 +1015,7 @@ export default function AdministerMedsPage() {
           {/* Action Selection */}
           <div className="bg-white rounded-xl border border-gray-200 p-4">
             <h2 className="font-semibold text-gray-900 mb-4">Administration Action</h2>
-            
+
             <div className="space-y-2">
               <button
                 onClick={() => setAction('give')}
@@ -965,10 +1026,14 @@ export default function AdministerMedsPage() {
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                    action === 'give' ? 'bg-green-500' : 'bg-green-100'
-                  }`}>
-                    <CheckCircle className={`w-5 h-5 ${action === 'give' ? 'text-white' : 'text-green-600'}`} />
+                  <div
+                    className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                      action === 'give' ? 'bg-green-500' : 'bg-green-100'
+                    }`}
+                  >
+                    <CheckCircle
+                      className={`w-5 h-5 ${action === 'give' ? 'text-white' : 'text-green-600'}`}
+                    />
                   </div>
                   <div>
                     <p className="font-medium text-gray-900">Give Medication</p>
@@ -986,10 +1051,14 @@ export default function AdministerMedsPage() {
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                    action === 'hold' ? 'bg-yellow-500' : 'bg-yellow-100'
-                  }`}>
-                    <Clock className={`w-5 h-5 ${action === 'hold' ? 'text-white' : 'text-yellow-600'}`} />
+                  <div
+                    className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                      action === 'hold' ? 'bg-yellow-500' : 'bg-yellow-100'
+                    }`}
+                  >
+                    <Clock
+                      className={`w-5 h-5 ${action === 'hold' ? 'text-white' : 'text-yellow-600'}`}
+                    />
                   </div>
                   <div>
                     <p className="font-medium text-gray-900">Hold Medication</p>
@@ -1007,10 +1076,14 @@ export default function AdministerMedsPage() {
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                    action === 'refuse' ? 'bg-red-500' : 'bg-red-100'
-                  }`}>
-                    <XCircle className={`w-5 h-5 ${action === 'refuse' ? 'text-white' : 'text-red-600'}`} />
+                  <div
+                    className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                      action === 'refuse' ? 'bg-red-500' : 'bg-red-100'
+                    }`}
+                  >
+                    <XCircle
+                      className={`w-5 h-5 ${action === 'refuse' ? 'text-white' : 'text-red-600'}`}
+                    />
                   </div>
                   <div>
                     <p className="font-medium text-gray-900">Patient Refused</p>
@@ -1028,10 +1101,14 @@ export default function AdministerMedsPage() {
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                    action === 'not_available' ? 'bg-orange-500' : 'bg-orange-100'
-                  }`}>
-                    <Phone className={`w-5 h-5 ${action === 'not_available' ? 'text-white' : 'text-orange-600'}`} />
+                  <div
+                    className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                      action === 'not_available' ? 'bg-orange-500' : 'bg-orange-100'
+                    }`}
+                  >
+                    <Phone
+                      className={`w-5 h-5 ${action === 'not_available' ? 'text-white' : 'text-orange-600'}`}
+                    />
                   </div>
                   <div>
                     <p className="font-medium text-gray-900">Not Available</p>
@@ -1046,14 +1123,18 @@ export default function AdministerMedsPage() {
           {action === 'give' && (
             <div className="bg-white rounded-xl border border-gray-200 p-4">
               <h3 className="font-semibold text-gray-900 mb-4">Administration Details</h3>
-              
+
               <div className="space-y-4">
                 {/* Actual Dose */}
                 <div>
-                  <label className="text-sm font-medium text-gray-700 mb-1 block">
+                  <label
+                    htmlFor={`${fid}-dose-given`}
+                    className="text-sm font-medium text-gray-700 mb-1 block"
+                  >
                     Dose Given
                   </label>
                   <input
+                    id={`${fid}-dose-given`}
                     type="text"
                     value={actualDose}
                     onChange={(e) => setActualDose(e.target.value)}
@@ -1070,17 +1151,23 @@ export default function AdministerMedsPage() {
                 {/* Injection Site (for IM/SC/IV) */}
                 {isInjection && (
                   <div>
-                    <label className="text-sm font-medium text-gray-700 mb-1 block">
+                    <label
+                      htmlFor={`${fid}-injection-site`}
+                      className="text-sm font-medium text-gray-700 mb-1 block"
+                    >
                       Injection Site *
                     </label>
                     <select
+                      id={`${fid}-injection-site`}
                       value={injectionSite}
                       onChange={(e) => setInjectionSite(e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
                     >
                       <option value="">Select site...</option>
                       {injectionSites.map((site) => (
-                        <option key={site} value={site}>{site}</option>
+                        <option key={site} value={site}>
+                          {site}
+                        </option>
                       ))}
                     </select>
                   </div>
@@ -1088,10 +1175,14 @@ export default function AdministerMedsPage() {
 
                 {/* Patient Reaction */}
                 <div>
-                  <label className="text-sm font-medium text-gray-700 mb-1 block">
+                  <label
+                    htmlFor={`${fid}-patient-response`}
+                    className="text-sm font-medium text-gray-700 mb-1 block"
+                  >
                     Patient Response
                   </label>
                   <select
+                    id={`${fid}-patient-response`}
                     value={patientReaction}
                     onChange={(e) => setPatientReaction(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
@@ -1107,28 +1198,34 @@ export default function AdministerMedsPage() {
                 {/* Witnessed By (for controlled substances) */}
                 {medication.isControlled && (
                   <div>
-                    <label className="text-sm font-medium text-gray-700 mb-1 block">
+                    <label
+                      htmlFor={`${fid}-witnessed-by`}
+                      className="text-sm font-medium text-gray-700 mb-1 block"
+                    >
                       Witnessed By *
                     </label>
                     <input
+                      id={`${fid}-witnessed-by`}
                       type="text"
                       value={witnessedBy}
                       onChange={(e) => setWitnessedBy(e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
                       placeholder="Enter witness name/ID"
                     />
-                    <p className="text-xs text-gray-500 mt-1">
-                      Required for controlled substances
-                    </p>
+                    <p className="text-xs text-gray-500 mt-1">Required for controlled substances</p>
                   </div>
                 )}
 
                 {/* Notes */}
                 <div>
-                  <label className="text-sm font-medium text-gray-700 mb-1 block">
+                  <label
+                    htmlFor={`${fid}-notes`}
+                    className="text-sm font-medium text-gray-700 mb-1 block"
+                  >
                     Notes
                   </label>
                   <textarea
+                    id={`${fid}-notes`}
                     rows={2}
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
@@ -1146,10 +1243,14 @@ export default function AdministerMedsPage() {
               <h3 className="font-semibold text-gray-900 mb-4">Reason for Hold</h3>
               <div className="space-y-4">
                 <div>
-                  <label className="text-sm font-medium text-gray-700 mb-1 block">
+                  <label
+                    htmlFor={`${fid}-select-reason`}
+                    className="text-sm font-medium text-gray-700 mb-1 block"
+                  >
                     Select Reason *
                   </label>
                   <select
+                    id={`${fid}-select-reason`}
                     value={holdReason}
                     onChange={(e) => setHoldReason(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
@@ -1163,10 +1264,14 @@ export default function AdministerMedsPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-gray-700 mb-1 block">
+                  <label
+                    htmlFor={`${fid}-additional-notes`}
+                    className="text-sm font-medium text-gray-700 mb-1 block"
+                  >
                     Additional Notes
                   </label>
                   <textarea
+                    id={`${fid}-additional-notes`}
                     rows={2}
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
@@ -1184,10 +1289,14 @@ export default function AdministerMedsPage() {
               <h3 className="font-semibold text-gray-900 mb-4">Reason for Refusal</h3>
               <div className="space-y-4">
                 <div>
-                  <label className="text-sm font-medium text-gray-700 mb-1 block">
+                  <label
+                    htmlFor={`${fid}-select-reason-2`}
+                    className="text-sm font-medium text-gray-700 mb-1 block"
+                  >
                     Select Reason *
                   </label>
                   <select
+                    id={`${fid}-select-reason-2`}
                     value={refuseReason}
                     onChange={(e) => setRefuseReason(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
@@ -1201,10 +1310,14 @@ export default function AdministerMedsPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-gray-700 mb-1 block">
+                  <label
+                    htmlFor={`${fid}-additional-notes-2`}
+                    className="text-sm font-medium text-gray-700 mb-1 block"
+                  >
                     Additional Notes
                   </label>
                   <textarea
+                    id={`${fid}-additional-notes-2`}
                     rows={2}
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
@@ -1226,10 +1339,14 @@ export default function AdministerMedsPage() {
                 </p>
               </div>
               <div>
-                <label className="text-sm font-medium text-gray-700 mb-1 block">
+                <label
+                  htmlFor={`${fid}-additional-notes-3`}
+                  className="text-sm font-medium text-gray-700 mb-1 block"
+                >
                   Additional Notes
                 </label>
                 <textarea
+                  id={`${fid}-additional-notes-3`}
                   rows={2}
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
@@ -1250,8 +1367,8 @@ export default function AdministerMedsPage() {
               }
             }}
             disabled={
-              !action || 
-              administering || 
+              !action ||
+              administering ||
               (action === 'give' && !allVerified) ||
               (action === 'give' && isInjection && !injectionSite) ||
               (action === 'give' && medication.isControlled && !witnessedBy) ||
@@ -1268,11 +1385,15 @@ export default function AdministerMedsPage() {
             ) : (
               <>
                 <Save className="w-5 h-5" />
-                {action === 'give' ? 'Record Administration' :
-                 action === 'hold' ? 'Record Hold' :
-                 action === 'refuse' ? 'Record Refusal' :
-                 action === 'not_available' ? 'Notify Pharmacy' :
-                 'Select an Action'}
+                {action === 'give'
+                  ? 'Record Administration'
+                  : action === 'hold'
+                    ? 'Record Hold'
+                    : action === 'refuse'
+                      ? 'Record Refusal'
+                      : action === 'not_available'
+                        ? 'Notify Pharmacy'
+                        : 'Select an Action'}
               </>
             )}
           </button>

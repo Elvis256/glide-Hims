@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useId } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useAuthStore } from '../../../store/auth';
 import { api } from '../../../services/api';
@@ -47,6 +47,7 @@ const lineTotalOf = (i: Pick<PurchaseOrderItem, 'quantityOrdered' | 'unitPrice' 
   i.quantityOrdered * i.unitPrice * (1 - i.discountPercent / 100) * (1 + i.taxRate / 100);
 
 export function DirectPOPage() {
+  const fid = useId();
   const { user } = useAuthStore();
 
   const [formData, setFormData] = useState<DirectPOFormData>({
@@ -404,10 +405,10 @@ export function DirectPOPage() {
                     />
                   </div>
                   <div className="md:col-span-1">
-                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                    <label htmlFor={`${fid}-qty`} className="block text-xs font-medium text-gray-700 mb-1">
                       Qty <span className="text-red-500">*</span>
                     </label>
-                    <input
+                    <input id={`${fid}-qty`}
                       type="number"
                       value={newItem.quantityOrdered}
                       onChange={(e) =>
@@ -419,10 +420,10 @@ export function DirectPOPage() {
                     />
                   </div>
                   <div className="md:col-span-2">
-                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                    <label htmlFor={`${fid}-unit-price`} className="block text-xs font-medium text-gray-700 mb-1">
                       Unit Price <span className="text-red-500">*</span>
                     </label>
-                    <input
+                    <input id={`${fid}-unit-price`}
                       type="number"
                       value={newItem.unitPrice}
                       onChange={(e) =>
@@ -435,8 +436,8 @@ export function DirectPOPage() {
                     />
                   </div>
                   <div className="md:col-span-1">
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Tax %</label>
-                    <input
+                    <label htmlFor={`${fid}-tax`} className="block text-xs font-medium text-gray-700 mb-1">Tax %</label>
+                    <input id={`${fid}-tax`}
                       type="number"
                       value={newItem.taxRate}
                       onChange={(e) =>
@@ -450,8 +451,8 @@ export function DirectPOPage() {
                     />
                   </div>
                   <div className="md:col-span-1">
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Disc %</label>
-                    <input
+                    <label htmlFor={`${fid}-disc`} className="block text-xs font-medium text-gray-700 mb-1">Disc %</label>
+                    <input id={`${fid}-disc`}
                       type="number"
                       value={newItem.discountPercent}
                       onChange={(e) =>
@@ -550,8 +551,8 @@ export function DirectPOPage() {
             <div className="p-6 space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Tax Rate (%)</label>
-                  <input
+                  <label htmlFor={`${fid}-tax-rate`} className="block text-sm font-medium text-gray-700 mb-2">Tax Rate (%)</label>
+                  <input id={`${fid}-tax-rate`}
                     type="number"
                     value={formData.taxRate}
                     onChange={(e) => setFormData({ ...formData, taxRate: parseFloat(e.target.value) || 0 })}
@@ -563,8 +564,8 @@ export function DirectPOPage() {
                     />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Discount (%)</label>
-                  <input
+                  <label htmlFor={`${fid}-discount`} className="block text-sm font-medium text-gray-700 mb-2">Discount (%)</label>
+                  <input id={`${fid}-discount`}
                     type="number"
                     value={formData.discountPercent}
                     onChange={(e) =>
@@ -581,10 +582,10 @@ export function DirectPOPage() {
 
               {total > 50000 && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label htmlFor={`${fid}-emergency-justification-required-for-ord`} className="block text-sm font-medium text-gray-700 mb-2">
                     Emergency Justification <span className="text-red-600">(required for orders over 50,000)</span>
                   </label>
-                  <textarea
+                  <textarea id={`${fid}-emergency-justification-required-for-ord`}
                     value={formData.emergencyJustification || ''}
                     onChange={(e) =>
                       setFormData({ ...formData, emergencyJustification: e.target.value })
@@ -598,8 +599,8 @@ export function DirectPOPage() {
               )}
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Notes</label>
-                <textarea
+                <label htmlFor={`${fid}-notes`} className="block text-sm font-medium text-gray-700 mb-2">Notes</label>
+                <textarea id={`${fid}-notes`}
                   value={formData.notes || ''}
                   onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                   rows={2}

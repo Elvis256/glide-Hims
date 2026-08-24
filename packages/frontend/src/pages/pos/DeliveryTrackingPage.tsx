@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Truck, Plus, Search, X, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -82,6 +83,13 @@ export default function DeliveryTrackingPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [form, setForm] = useState<DeliveryFormData>(emptyForm);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showCreateModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showCreateModal,
+    onClose: () => setShowCreateModal(false),
+  });
 
   const { data: deliveriesData, isLoading } = useQuery({
     queryKey: ['pos-deliveries', facilityId],
@@ -350,7 +358,12 @@ export default function DeliveryTrackingPage() {
 
       {/* Create Delivery Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={showCreateModalDialogRef}
+        >
           <div className="w-full max-w-lg rounded-xl bg-white shadow-xl">
             <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
               <h2 className="text-lg font-semibold text-gray-900">Create Delivery</h2>

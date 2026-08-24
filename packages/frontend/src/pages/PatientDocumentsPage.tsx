@@ -1,4 +1,5 @@
-import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
+import { useState, useRef, useCallback, useMemo, useEffect, useId } from 'react';
+import { useDialogA11y } from '../hooks/useDialogA11y';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -113,6 +114,7 @@ interface UploadFile {
 }
 
 export default function PatientDocumentsPage() {
+  const fid = useId();
   const queryClient = useQueryClient();
   const { hasPermission } = usePermissions();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -176,6 +178,21 @@ export default function PatientDocumentsPage() {
   const [shareLink, setShareLink] = useState('');
   const [shareLinkExpiry, setShareLinkExpiry] = useState('24h');
   const [isGeneratingLink, setIsGeneratingLink] = useState(false);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const previewDocDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!previewDoc,
+    onClose: () => setPreviewDoc(null),
+  });
+  const editingDocDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!editingDoc,
+    onClose: () => setEditingDoc(null),
+  });
+  const shareDocDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!shareDoc,
+    onClose: () => setShareDoc(null),
+  });
 
   // Permissions
   const canDelete = hasPermission('patients.delete');
@@ -943,8 +960,8 @@ export default function PatientDocumentsPage() {
             {showFilters && (
               <div className="card p-3 flex items-end gap-4 flex-shrink-0">
                 <div className="flex-1">
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Date From</label>
-                  <input
+                  <label htmlFor={`${fid}-date-from`} className="block text-xs font-medium text-gray-700 mb-1">Date From</label>
+                  <input id={`${fid}-date-from`}
                     type="date"
                     value={dateRange.from}
                     onChange={(e) => setDateRange({ ...dateRange, from: e.target.value })}
@@ -952,8 +969,8 @@ export default function PatientDocumentsPage() {
                   />
                 </div>
                 <div className="flex-1">
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Date To</label>
-                  <input
+                  <label htmlFor={`${fid}-date-to`} className="block text-xs font-medium text-gray-700 mb-1">Date To</label>
+                  <input id={`${fid}-date-to`}
                     type="date"
                     value={dateRange.to}
                     onChange={(e) => setDateRange({ ...dateRange, to: e.target.value })}
@@ -961,8 +978,8 @@ export default function PatientDocumentsPage() {
                   />
                 </div>
                 <div className="flex-1">
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Uploaded By</label>
-                  <select
+                  <label htmlFor={`${fid}-uploaded-by`} className="block text-xs font-medium text-gray-700 mb-1">Uploaded By</label>
+                  <select id={`${fid}-uploaded-by`}
                     value={uploadedByFilter}
                     onChange={(e) => setUploadedByFilter(e.target.value)}
                     className="input py-1.5 text-sm"
@@ -1278,8 +1295,8 @@ export default function PatientDocumentsPage() {
 
               {/* Category Selection */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Category *</label>
-                <select
+                <label htmlFor={`${fid}-category`} className="block text-sm font-medium text-gray-700 mb-1">Category *</label>
+                <select id={`${fid}-category`}
                   value={uploadCategory}
                   onChange={(e) => setUploadCategory(e.target.value as DocumentCategory)}
                   className="input text-sm"
@@ -1292,8 +1309,8 @@ export default function PatientDocumentsPage() {
 
               {/* Title */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
-                <input
+                <label htmlFor={`${fid}-title`} className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+                <input id={`${fid}-title`}
                   type="text"
                   value={uploadTitle}
                   onChange={(e) => setUploadTitle(e.target.value)}
@@ -1304,8 +1321,8 @@ export default function PatientDocumentsPage() {
 
               {/* Description */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                <textarea
+                <label htmlFor={`${fid}-description`} className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                <textarea id={`${fid}-description`}
                   value={uploadDescription}
                   onChange={(e) => setUploadDescription(e.target.value)}
                   placeholder="Add notes or description (optional)"
@@ -1343,7 +1360,12 @@ export default function PatientDocumentsPage() {
 
       {/* Preview Modal */}
       {previewDoc && (
-        <div className="fixed inset-0 bg-black/90 flex flex-col z-50">
+        <div
+          className="fixed inset-0 bg-black/90 flex flex-col z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={previewDocDialogRef}
+        >
           {/* Preview Header */}
           <div className="flex items-center justify-between p-4 bg-black/50 text-white">
             <div className="flex items-center gap-4">
@@ -1487,7 +1509,12 @@ export default function PatientDocumentsPage() {
 
       {/* Edit Metadata Modal */}
       {editingDoc && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={editingDocDialogRef}
+        >
           <div className="bg-white rounded-xl w-full max-w-md">
             <div className="flex items-center justify-between p-4 border-b">
               <h2 className="font-semibold">Edit Document</h2>
@@ -1497,8 +1524,8 @@ export default function PatientDocumentsPage() {
             </div>
             <div className="p-4 space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
-                <input
+                <label htmlFor={`${fid}-title-2`} className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+                <input id={`${fid}-title-2`}
                   type="text"
                   value={editTitle}
                   onChange={(e) => setEditTitle(e.target.value)}
@@ -1506,8 +1533,8 @@ export default function PatientDocumentsPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
-                <select
+                <label htmlFor={`${fid}-category-2`} className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                <select id={`${fid}-category-2`}
                   value={editCategory}
                   onChange={(e) => setEditCategory(e.target.value as DocumentCategory)}
                   className="input text-sm"
@@ -1518,8 +1545,8 @@ export default function PatientDocumentsPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                <textarea
+                <label htmlFor={`${fid}-description-2`} className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                <textarea id={`${fid}-description-2`}
                   value={editDescription}
                   onChange={(e) => setEditDescription(e.target.value)}
                   rows={3}
@@ -1549,7 +1576,12 @@ export default function PatientDocumentsPage() {
 
       {/* Share Modal */}
       {shareDoc && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={shareDocDialogRef}
+        >
           <div className="bg-white rounded-xl w-full max-w-md">
             <div className="flex items-center justify-between p-4 border-b">
               <h2 className="font-semibold">Share Document</h2>
@@ -1567,8 +1599,8 @@ export default function PatientDocumentsPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Link Expiry</label>
-                <select
+                <label htmlFor={`${fid}-link-expiry`} className="block text-sm font-medium text-gray-700 mb-1">Link Expiry</label>
+                <select id={`${fid}-link-expiry`}
                   value={shareLinkExpiry}
                   onChange={(e) => setShareLinkExpiry(e.target.value)}
                   className="input text-sm"

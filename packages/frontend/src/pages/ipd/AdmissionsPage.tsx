@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -40,6 +41,13 @@ export default function AdmissionsPage() {
   const [diagnosis, setDiagnosis] = useState('');
   const [attendingDoctorId, setAttendingDoctorId] = useState('');
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showSuccessModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showSuccessModal,
+    onClose: () => setShowSuccessModal(false),
+  });
 
   // Doctors for the attending-doctor picker
   const { data: doctors = [] } = useQuery({
@@ -489,7 +497,7 @@ export default function AdmissionsPage() {
                       <div className="flex items-center gap-2">
                         <Bed className="w-4 h-4 text-green-500" />
                         <span className="text-sm text-gray-600">
-                          {ward.totalBeds ?? ward.capacity ?? 0} total beds
+                          {ward.totalBeds ?? 0} total beds
                         </span>
                       </div>
                     </div>
@@ -506,7 +514,12 @@ export default function AdmissionsPage() {
 
       {/* Success Modal */}
       {showSuccessModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showSuccessModalDialogRef}
+        >
           <div className="bg-white rounded-xl p-6 max-w-md w-full mx-4">
             <div className="text-center">
               <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">

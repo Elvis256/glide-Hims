@@ -43,12 +43,23 @@ export class RlsPhase31782900000064 implements MigrationInterface {
   ];
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(
-      `ALTER TABLE "backups" ALTER COLUMN "tenant_id" TYPE uuid USING tenant_id::uuid`,
-    );
-    await queryRunner.query(
-      `ALTER TABLE "onboarding_tasks" ALTER COLUMN "tenant_id" TYPE uuid USING tenant_id::uuid`,
-    );
+    // Only when not already uuid — see the same guard in RlsPhase2: Postgres
+    // rejects ALTER COLUMN ... TYPE once a policy references the column, even
+    // for an unchanged type, and a database built from the baseline already
+    // has these as uuid.
+    for (const table of ['backups', 'onboarding_tasks']) {
+      await queryRunner.query(`
+        DO $$ BEGIN
+          IF EXISTS (
+            SELECT 1 FROM information_schema.columns
+             WHERE table_schema = 'public' AND table_name = '${table}'
+               AND column_name = 'tenant_id' AND udt_name <> 'uuid'
+          ) THEN
+            EXECUTE 'ALTER TABLE "${table}" ALTER COLUMN "tenant_id" TYPE uuid USING tenant_id::uuid';
+          END IF;
+        END $$;
+      `);
+    }
 
     const tenantMatch = `
       current_setting('app.tenant', true) = 'system'

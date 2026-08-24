@@ -1,5 +1,5 @@
 import { usePermissions } from '../../../components/PermissionGate';
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useId } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -51,6 +51,7 @@ const urgencyLevels = [
 ];
 
 export default function NewReferralPage() {
+  const fid = useId();
   const { hasPermission } = usePermissions();
   const queryClient = useQueryClient();
   const facilityId = useFacilityId();
@@ -382,8 +383,8 @@ export default function NewReferralPage() {
                   )}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Doctor (Optional)</label>
-                  <select
+                  <label htmlFor={`${fid}-doctor-optional`} className="block text-sm font-medium text-gray-700 mb-1">Doctor (Optional)</label>
+                  <select id={`${fid}-doctor-optional`}
                     value={selectedDoctor}
                     onChange={(e) => setSelectedDoctor(e.target.value)}
                     className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
@@ -406,13 +407,13 @@ export default function NewReferralPage() {
               <h3 className="font-medium text-gray-900 mb-4">External Facility Details</h3>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label htmlFor={`${fid}-facility-name`} className="block text-sm font-medium text-gray-700 mb-1">
                     <div className="flex items-center gap-1">
                       <Building2 className="w-4 h-4" />
                       Facility Name
                     </div>
                   </label>
-                  <input
+                  <input id={`${fid}-facility-name`}
                     type="text"
                     value={externalFacility}
                     onChange={(e) => setExternalFacility(e.target.value)}
@@ -421,13 +422,13 @@ export default function NewReferralPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label htmlFor={`${fid}-address`} className="block text-sm font-medium text-gray-700 mb-1">
                     <div className="flex items-center gap-1">
                       <MapPin className="w-4 h-4" />
                       Address
                     </div>
                   </label>
-                  <input
+                  <input id={`${fid}-address`}
                     type="text"
                     value={externalAddress}
                     onChange={(e) => setExternalAddress(e.target.value)}
@@ -436,13 +437,13 @@ export default function NewReferralPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label htmlFor={`${fid}-receiving-doctor-optional`} className="block text-sm font-medium text-gray-700 mb-1">
                     <div className="flex items-center gap-1">
                       <User className="w-4 h-4" />
                       Receiving Doctor (Optional)
                     </div>
                   </label>
-                  <input
+                  <input id={`${fid}-receiving-doctor-optional`}
                     type="text"
                     value={externalDoctor}
                     onChange={(e) => setExternalDoctor(e.target.value)}
@@ -488,8 +489,8 @@ export default function NewReferralPage() {
 
           {/* Reason for Referral */}
           <div className="bg-white rounded-lg border p-4 mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">Reason for Referral *</label>
-            <textarea
+            <label htmlFor={`${fid}-reason-for-referral`} className="block text-sm font-medium text-gray-700 mb-2">Reason for Referral *</label>
+            <textarea id={`${fid}-reason-for-referral`}
               value={referralReason}
               onChange={(e) => setReferralReason(e.target.value)}
               placeholder="Describe the reason for this referral..."
@@ -500,8 +501,8 @@ export default function NewReferralPage() {
 
           {/* Clinical Summary */}
           <div className="bg-white rounded-lg border p-4 mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">Clinical Summary</label>
-            <textarea
+            <label htmlFor={`${fid}-clinical-summary`} className="block text-sm font-medium text-gray-700 mb-2">Clinical Summary</label>
+            <textarea id={`${fid}-clinical-summary`}
               value={clinicalSummary}
               onChange={(e) => setClinicalSummary(e.target.value)}
               placeholder="Provide relevant clinical history, findings, and treatment to date..."
@@ -512,13 +513,13 @@ export default function NewReferralPage() {
 
           {/* Preferred Date */}
           <div className="bg-white rounded-lg border p-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label htmlFor={`${fid}-preferred-appointment-date`} className="block text-sm font-medium text-gray-700 mb-2">
               <div className="flex items-center gap-1">
                 <Calendar className="w-4 h-4" />
                 Preferred Appointment Date
               </div>
             </label>
-            <input
+            <input id={`${fid}-preferred-appointment-date`}
               type="date"
               value={preferredDate}
               onChange={(e) => setPreferredDate(e.target.value)}

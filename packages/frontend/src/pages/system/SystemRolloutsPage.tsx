@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { Link } from 'react-router-dom';
 import api from '../../services/api';
 import {
@@ -93,6 +94,13 @@ export default function SystemRolloutsPage() {
   const [reportSummary, setReportSummary] = useState<any | null>(null);
   const [hideSimulated, setHideSimulated] = useState(false);
   const [payloadReport, setPayloadReport] = useState<any | null>(null);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showCreateDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showCreate,
+    onClose: () => setShowCreate(false),
+  });
 
   const openReports = async (r: Rollout) => {
     setReportsRollout(r);
@@ -416,7 +424,12 @@ export default function SystemRolloutsPage() {
       )}
 
       {showCreate && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={showCreateDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
               <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">

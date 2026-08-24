@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -55,6 +56,13 @@ export default function ProviderCredentialsPage() {
   const [windowDays, setWindowDays] = useState<number>(30);
   const [renewing, setRenewing] = useState<Provider | null>(null);
   const [newExpiry, setNewExpiry] = useState('');
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const renewingDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!renewing,
+    onClose: () => setRenewing(null),
+  });
 
   const { data: providers = [], isLoading } = useQuery({
     queryKey: ['provider-license-expiry', windowDays],
@@ -299,7 +307,12 @@ export default function ProviderCredentialsPage() {
       </div>
 
       {renewing && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={renewingDialogRef}
+        >
           <div className="bg-white rounded-xl p-6 w-full max-w-md mx-4">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-bold text-gray-900">Update Licence Expiry</h2>

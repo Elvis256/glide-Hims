@@ -38,21 +38,20 @@ export interface InsurancePolicy {
   };
   policyNumber: string;
   memberNumber?: string;
-  principalName?: string;
+  // This interface carried a phantom alias beside each real field —
+  // principalName, relationship, coverageLimit, copayPercent, startDate and
+  // endDate. None of them exist on the payload and, unlike billing.ts, this
+  // service has no normaliser, so anything reading them got undefined. Only
+  // the names the API actually sends are declared now.
   principalMemberNumber?: string;
   memberType?: 'principal' | 'spouse' | 'child' | 'dependent';
-  relationship?: string;
   coverageType: 'inpatient' | 'outpatient' | 'comprehensive' | 'maternity' | 'dental' | 'optical' | 'both';
-  coverageLimit?: number;
   annualLimit?: number;
   usedAmount?: number;
-  copayPercent?: number;
   copayPercentage?: number;
   copayAmount?: number;
   effectiveDate?: string;
   expiryDate?: string;
-  startDate?: string;
-  endDate?: string;
   status: 'active' | 'inactive' | 'expired' | 'suspended' | 'pending' | 'cancelled';
   isVerified?: boolean;
   verifiedAt?: string;
@@ -219,7 +218,9 @@ export const insuranceService = {
     coverageDetails: {
       drugId: string;
       covered: boolean;
-      copayAmount: number;
+      /** Exactly one of these is set — a share of the price, or a flat sum. */
+      copayPercentage?: number;
+      copayAmount?: number;
       requiresPreAuth: boolean;
       rejectionReason?: string;
     }[];

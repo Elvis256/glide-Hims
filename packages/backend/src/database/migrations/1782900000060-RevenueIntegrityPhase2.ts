@@ -6,16 +6,20 @@ export class RevenueIntegrityPhase21782900000060 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     // --- Enum types ---
     await queryRunner.query(`
-      CREATE TYPE "consent_type_enum" AS ENUM (
-        'data_processing', 'treatment', 'research', 'communication',
-        'data_sharing', 'photography', 'telemedicine'
-      )
+      DO $$ BEGIN
+        CREATE TYPE "consent_type_enum" AS ENUM (
+          'data_processing', 'treatment', 'research', 'communication',
+          'data_sharing', 'photography', 'telemedicine'
+        );
+      EXCEPTION WHEN duplicate_object THEN NULL; END $$;
     `);
 
     await queryRunner.query(`
-      CREATE TYPE "patient_debt_status_enum" AS ENUM (
-        'none', 'current', 'overdue_30', 'overdue_60', 'overdue_90', 'collections'
-      )
+      DO $$ BEGIN
+        CREATE TYPE "patient_debt_status_enum" AS ENUM (
+          'none', 'current', 'overdue_30', 'overdue_60', 'overdue_90', 'collections'
+        );
+      EXCEPTION WHEN duplicate_object THEN NULL; END $$;
     `);
 
     // --- New table: patient_consents ---
@@ -47,30 +51,30 @@ export class RevenueIntegrityPhase21782900000060 implements MigrationInterface {
     // pharmacy_sales: add encounter_id
     await queryRunner.query(`
       ALTER TABLE "pharmacy_sales"
-      ADD COLUMN "encounter_id" uuid
+      ADD COLUMN IF NOT EXISTS "encounter_id" uuid
     `);
 
     // queues: add appointment_id
     await queryRunner.query(`
       ALTER TABLE "queues"
-      ADD COLUMN "appointment_id" uuid
+      ADD COLUMN IF NOT EXISTS "appointment_id" uuid
     `);
 
     // appointments: add encounter_id, queue_id, checked_in_at
     await queryRunner.query(`
       ALTER TABLE "appointments"
-      ADD COLUMN "encounter_id" uuid,
-      ADD COLUMN "queue_id" uuid,
-      ADD COLUMN "checked_in_at" TIMESTAMPTZ
+      ADD COLUMN IF NOT EXISTS "encounter_id" uuid,
+      ADD COLUMN IF NOT EXISTS "queue_id" uuid,
+      ADD COLUMN IF NOT EXISTS "checked_in_at" TIMESTAMPTZ
     `);
 
     // patients: add debt tracking columns
     await queryRunner.query(`
       ALTER TABLE "patients"
-      ADD COLUMN "debt_status" "patient_debt_status_enum" NOT NULL DEFAULT 'none',
-      ADD COLUMN "total_outstanding_balance" decimal(14,2) NOT NULL DEFAULT 0,
-      ADD COLUMN "blocks_new_visits" boolean NOT NULL DEFAULT false,
-      ADD COLUMN "debt_last_calculated_at" TIMESTAMPTZ
+      ADD COLUMN IF NOT EXISTS "debt_status" "patient_debt_status_enum" NOT NULL DEFAULT 'none',
+      ADD COLUMN IF NOT EXISTS "total_outstanding_balance" decimal(14,2) NOT NULL DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS "blocks_new_visits" boolean NOT NULL DEFAULT false,
+      ADD COLUMN IF NOT EXISTS "debt_last_calculated_at" TIMESTAMPTZ
     `);
 
     // --- Indexes ---

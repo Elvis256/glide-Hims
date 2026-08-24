@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuthStore } from '../../store/auth';
 import api from '../../services/api';
@@ -73,6 +74,11 @@ export default function TenantManagementPage() {
   const [actionMenuId, setActionMenuId] = useState<string | null>(null);
   const [resetPasswordTenant, setResetPasswordTenant] = useState<Tenant | null>(null);
   const [enterTenantTarget, setEnterTenantTarget] = useState<Tenant | null>(null);
+
+  const enterTenantDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!enterTenantTarget,
+    onClose: () => setEnterTenantTarget(null),
+  });
   const [enteringTenant, setEnteringTenant] = useState(false);
   const [deploymentCounts, setDeploymentCounts] = useState<Record<string, number>>({});
   const [changeModeTenant, setChangeModeTenant] = useState<Tenant | null>(null);
@@ -713,7 +719,12 @@ export default function TenantManagementPage() {
 
       {/* Enter Organization Confirmation Dialog */}
       {enterTenantTarget && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={enterTenantDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6">
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 bg-indigo-100 rounded-lg flex items-center justify-center">
@@ -792,8 +803,15 @@ function TenantDetailModal({
   copyLoginUrl: (slug: string) => void;
   copiedSlug: string | null;
 }) {
+  // Mounted only while this modal is showing.
+  const dialogRef = useDialogA11y<HTMLDivElement>({ open: true, onClose });
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+      role="dialog"
+      aria-modal="true"
+      ref={dialogRef}
+    >
       <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         <div className="px-6 py-4 border-b flex items-center justify-between sticky top-0 bg-white">
           <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
@@ -964,6 +982,8 @@ function TenantDetailModal({
 
 // ─── Create Tenant Modal ───
 function CreateTenantModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+  // Mounted only while this modal is showing.
+  const dialogRef = useDialogA11y<HTMLDivElement>({ open: true, onClose });
   const [form, setForm] = useState<CreateTenantForm>({ name: '', description: '' });
   const [saving, setSaving] = useState(false);
 
@@ -989,7 +1009,12 @@ function CreateTenantModal({ onClose, onCreated }: { onClose: () => void; onCrea
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+      role="dialog"
+      aria-modal="true"
+      ref={dialogRef}
+    >
       <div className="bg-white rounded-xl shadow-xl w-full max-w-lg">
         <div className="px-6 py-4 border-b flex items-center justify-between">
           <h3 className="text-lg font-semibold text-gray-900">New Organization</h3>
@@ -1054,6 +1079,8 @@ function CreateTenantModal({ onClose, onCreated }: { onClose: () => void; onCrea
 
 // ─── Edit Tenant Modal ───
 function EditTenantModal({ tenant, onClose, onUpdated }: { tenant: Tenant; onClose: () => void; onUpdated: () => void }) {
+  // Mounted only while this modal is showing.
+  const dialogRef = useDialogA11y<HTMLDivElement>({ open: true, onClose });
   const [form, setForm] = useState({
     name: tenant.name,
     slug: tenant.slug,
@@ -1077,7 +1104,12 @@ function EditTenantModal({ tenant, onClose, onUpdated }: { tenant: Tenant; onClo
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+      role="dialog"
+      aria-modal="true"
+      ref={dialogRef}
+    >
       <div className="bg-white rounded-xl shadow-xl w-full max-w-lg">
         <div className="px-6 py-4 border-b flex items-center justify-between">
           <h3 className="text-lg font-semibold text-gray-900">Edit Organization</h3>
@@ -1151,6 +1183,8 @@ function TenantAdminResetPasswordModal({
   tenant: Tenant;
   onClose: () => void;
 }) {
+  // Mounted only while this modal is showing.
+  const dialogRef = useDialogA11y<HTMLDivElement>({ open: true, onClose });
   const [tenantUsers, setTenantUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedUser, setSelectedUser] = useState<any | null>(null);
@@ -1206,7 +1240,12 @@ function TenantAdminResetPasswordModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+      role="dialog"
+      aria-modal="true"
+      ref={dialogRef}
+    >
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
           <div>
@@ -1353,6 +1392,8 @@ function ChangeFacilityModeModal({
   onClose: () => void;
   onChanged: () => void;
 }) {
+  // Mounted only while this modal is showing.
+  const dialogRef = useDialogA11y<HTMLDivElement>({ open: true, onClose });
   const currentMode: string | null =
     (tenant.settings?.facilityMode as string | undefined) || null;
 
@@ -1415,7 +1456,12 @@ function ChangeFacilityModeModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+      role="dialog"
+      aria-modal="true"
+      ref={dialogRef}
+    >
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
         <div className="px-6 py-4 border-b flex items-center justify-between sticky top-0 bg-white z-10">
           <div className="flex items-center gap-3">

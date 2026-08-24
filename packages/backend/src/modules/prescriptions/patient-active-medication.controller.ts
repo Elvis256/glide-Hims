@@ -1,7 +1,8 @@
-import { Controller, Get, Post, Body, Param, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 import { PatientActiveMedicationService } from './patient-active-medication.service';
 import { IsUUID, IsString, MaxLength } from 'class-validator';
 
@@ -12,6 +13,7 @@ export class StopActiveMedicationDto {
 }
 
 @RequireModule('pharmacy')
+@UseGuards(ModuleGuard)
 @Controller('patient-active-medications')
 export class PatientActiveMedicationController {
   constructor(private readonly service: PatientActiveMedicationService) {}

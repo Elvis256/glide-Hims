@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ClipboardList,
@@ -82,6 +83,13 @@ export default function IPDNursingNotesPage() {
   const [activeTab, setActiveTab] = useState<'notes' | 'vitals' | 'medications' | 'carePlan'>('notes');
   const [selectedShift, setSelectedShift] = useState<string>('All');
   const [showAddNoteModal, setShowAddNoteModal] = useState(false);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showAddNoteModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showAddNoteModal,
+    onClose: () => setShowAddNoteModal(false),
+  });
   const [newNote, setNewNote] = useState({
     shift: 'Day',
     noteType: 'assessment',
@@ -209,7 +217,12 @@ export default function IPDNursingNotesPage() {
     <div className="h-[calc(100vh-120px)] flex flex-col p-6 bg-gray-50">
       {/* Add Note Modal */}
       {showAddNoteModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showAddNoteModalDialogRef}
+        >
           <div className="bg-white rounded-xl p-6 w-[500px] max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-bold">Add Nursing Note</h2>

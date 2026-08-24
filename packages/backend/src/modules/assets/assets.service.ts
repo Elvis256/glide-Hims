@@ -28,6 +28,7 @@ import {
   AllocationStatus,
 } from '../../database/entities/fixed-asset.entity';
 import { AuditLogService } from '../../common/interceptors/audit-log.service';
+import { localDateString } from '../../common/utils/timezone.util';
 import { FinanceService } from '../finance/finance.service';
 import { requireTenantId } from '../../common/utils/tenant.util';
 
@@ -156,6 +157,18 @@ export class AssetsService {
         'assetCode',
       );
     }
+    // acquisition_date, depreciation_start_date and useful_life_months are all
+    // NOT NULL. Nothing supplied them, so a create that passed validation still
+    // died in Postgres and surfaced as a 500 rather than a message naming the
+    // field. Depreciation almost always starts the day the asset arrives, so
+    // default it rather than making every caller repeat the date.
+    if (!data.acquisitionDate) {
+      throw new BadRequestException('acquisitionDate is required');
+    }
+    if (!data.depreciationStartDate) {
+      data.depreciationStartDate = data.acquisitionDate;
+    }
+
     const asset = this.assetRepo.create({
       ...data,
       totalCost: (Number(data.acquisitionCost) || 0) + (Number(data.installationCost) || 0),
@@ -183,6 +196,16 @@ export class AssetsService {
         if (!asset.maintenanceIntervalDays && cat.defaultMaintenanceIntervalDays)
           asset.maintenanceIntervalDays = cat.defaultMaintenanceIntervalDays;
       }
+    }
+
+    // Checked after the category defaults above have had their chance to supply
+    // it. A life of zero is worse than a missing one: it divides by zero in
+    // calculateMonthlyDepreciation and writes the asset down to salvage in a
+    // single month.
+    if (!asset.usefulLifeMonths || Number(asset.usefulLifeMonths) < 1) {
+      throw new BadRequestException(
+        'usefulLifeMonths is required (at least 1) — set it on the asset or give the category a default',
+      );
     }
 
     // Auto-derive next-calibration-due if interval set but date missing
@@ -364,6 +387,17 @@ export class AssetsService {
     month: number,
     ctx?: ActorContext,
   ): Promise<AssetDepreciation[]> {
+    // The hospital's calendar, not the server's: on UTC+3 the first three hours
+    // of a new month are still the previous month in UTC, and a run in that
+    // window would have been refused as "in the future".
+    const today = localDateString(new Date());
+    const [curYear, curMonth] = [Number(today.slice(0, 4)), Number(today.slice(5, 7))];
+    if (year > curYear || (year === curYear && month > curMonth)) {
+      throw new BadRequestException(
+        `Cannot run depreciation for ${year}-${String(month).padStart(2, '0')}: that period has not ended yet.`,
+      );
+    }
+
     return this.dataSource.transaction(async (manager) => {
       const assetRepoTx = manager.getRepository(FixedAsset);
       const depRepoTx = manager.getRepository(AssetDepreciation);

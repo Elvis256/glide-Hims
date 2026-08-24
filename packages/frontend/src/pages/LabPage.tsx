@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useDialogA11y } from '../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -442,6 +443,12 @@ function CollectSampleModal({
   onClose: () => void;
   onSuccess: () => void;
 }) {
+  // This component is mounted only while the modal is showing.
+  const dialogRef = useDialogA11y<HTMLDivElement>({
+    open: true,
+    onClose,
+  });
+
   const [sampleType, setSampleType] = useState<'blood' | 'serum' | 'plasma' | 'urine' | 'stool' | 'sputum' | 'csf' | 'swab' | 'tissue' | 'other'>('blood');
   const [priority, setPriority] = useState<'routine' | 'urgent' | 'stat'>(order.priority as 'routine' | 'urgent' | 'stat' || 'routine');
   const [notes, setNotes] = useState('');
@@ -460,7 +467,12 @@ function CollectSampleModal({
   });
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+      role="dialog"
+      aria-modal="true"
+      ref={dialogRef}
+    >
       <div className="bg-white rounded-xl w-full max-w-md">
         <div className="flex items-center justify-between p-4 border-b">
           <h2 className="text-lg font-semibold">Collect Sample — {order.orderNumber}</h2>

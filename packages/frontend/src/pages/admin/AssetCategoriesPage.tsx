@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -110,6 +111,13 @@ export default function AssetCategoriesPage() {
   const [showModal, setShowModal] = useState(false);
   const [editingCategory, setEditingCategory] = useState<AssetCategory | null>(null);
   const [formData, setFormData] = useState<FormState>(emptyForm);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: showModal,
+    onClose: () => closeModal(),
+  });
 
   const { data: categories = [], isLoading, error } = useQuery<AssetCategory[]>({
     queryKey: ['asset-categories'],
@@ -367,7 +375,12 @@ export default function AssetCategoriesPage() {
 
       {/* Add/Edit Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showModalDialogRef}
+        >
           <div className="bg-white rounded-lg shadow-xl w-full max-w-lg">
             <div className="border-b px-6 py-4 flex items-center justify-between">
               <h2 className="text-lg font-semibold">

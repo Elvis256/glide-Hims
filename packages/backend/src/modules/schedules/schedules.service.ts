@@ -188,18 +188,26 @@ export class SchedulesService {
 
   async getDoctorsWithSchedules(facilityId: string, tenantId?: string) {
     const tid = requireTenantId(tenantId);
-    const qb = this.scheduleRepository
+    // /schedules/doctors had never returned anything. It failed twice over:
+    //
+    //   1. it selected doctor.firstName and doctor.lastName, and User has ONE
+    //      name column, full_name — "column doctor.firstname does not exist",
+    //      the same shape as the prescriber analytics fixed in f4cb958b;
+    //   2. underneath that, `leftJoinAndSelect` had already built a select
+    //      list, so `.select('DISTINCT doctor.id')` spliced the keyword into
+    //      the middle of it — "syntax error at or near DISTINCT".
+    //
+    // A plain leftJoin with .distinct(true) lets TypeORM place the keyword.
+    const result = await this.scheduleRepository
       .createQueryBuilder('schedule')
-      .leftJoinAndSelect('schedule.doctor', 'doctor')
+      .leftJoin('schedule.doctor', 'doctor')
+      .select('doctor.id', 'id')
+      .addSelect('doctor.fullName', 'fullName')
+      .distinct(true)
       .where('schedule.deletedAt IS NULL')
       .andWhere('schedule.facilityId = :facilityId', { facilityId })
       .andWhere('schedule.isActive = :isActive', { isActive: true })
-      .andWhere('schedule.tenant_id = :tenantId', { tenantId: tid });
-
-    const result = await qb
-      .select('DISTINCT doctor.id', 'id')
-      .addSelect('doctor.firstName', 'firstName')
-      .addSelect('doctor.lastName', 'lastName')
+      .andWhere('schedule.tenant_id = :tenantId', { tenantId: tid })
       .getRawMany();
 
     return result;

@@ -1,4 +1,5 @@
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, useId } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api, getApiErrorMessage } from '../../../services/api';
@@ -115,6 +116,7 @@ const getStockStatus = (current: number, reorderLevel: number) => {
 };
 
 export default function ReagentsInventoryPage() {
+  const fid = useId();
   const facilityId = useFacilityId();
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
@@ -126,6 +128,13 @@ export default function ReagentsInventoryPage() {
   const [deleteModal, setDeleteModal] = useState<{ open: boolean; reagent: Reagent | null }>({ open: false, reagent: null });
   const [receiveModal, setReceiveModal] = useState<{ open: boolean; reagent: Reagent | null }>({ open: false, reagent: null });
   const [receiveForm, setReceiveForm] = useState<ReceiveStockForm>({ lotNumber: '', quantity: '', expiryDate: '', costPerUnit: '', supplier: '' });
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showModal,
+    onClose: () => setShowModal(false),
+  });
   const importInputRef = useRef<HTMLInputElement>(null);
 
   const { data: reagents = [], isLoading } = useQuery<Reagent[]>({
@@ -583,7 +592,12 @@ export default function ReagentsInventoryPage() {
 
       {/* Add/Edit Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showModalDialogRef}
+        >
           <div className="bg-white rounded-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <h2 className="text-lg font-semibold">
@@ -598,8 +612,8 @@ export default function ReagentsInventoryPage() {
             </div>
             <div className="p-6 grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Code *</label>
-                <input
+                <label htmlFor={`${fid}-code`} className="block text-sm font-medium text-gray-700 mb-1">Code *</label>
+                <input id={`${fid}-code`}
                   type="text"
                   value={formData.code}
                   onChange={(e) => setFormData(prev => ({ ...prev, code: e.target.value }))}
@@ -608,8 +622,8 @@ export default function ReagentsInventoryPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
-                <input
+                <label htmlFor={`${fid}-name`} className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+                <input id={`${fid}-name`}
                   type="text"
                   value={formData.name}
                   onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
@@ -618,8 +632,8 @@ export default function ReagentsInventoryPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Category *</label>
-                <select
+                <label htmlFor={`${fid}-category`} className="block text-sm font-medium text-gray-700 mb-1">Category *</label>
+                <select id={`${fid}-category`}
                   value={formData.category}
                   onChange={(e) => setFormData(prev => ({ ...prev, category: e.target.value as ReagentCategory }))}
                   className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -630,8 +644,8 @@ export default function ReagentsInventoryPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Manufacturer</label>
-                <input
+                <label htmlFor={`${fid}-manufacturer`} className="block text-sm font-medium text-gray-700 mb-1">Manufacturer</label>
+                <input id={`${fid}-manufacturer`}
                   type="text"
                   value={formData.manufacturer}
                   onChange={(e) => setFormData(prev => ({ ...prev, manufacturer: e.target.value }))}
@@ -640,8 +654,8 @@ export default function ReagentsInventoryPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Catalog Number</label>
-                <input
+                <label htmlFor={`${fid}-catalog-number`} className="block text-sm font-medium text-gray-700 mb-1">Catalog Number</label>
+                <input id={`${fid}-catalog-number`}
                   type="text"
                   value={formData.catalogNumber}
                   onChange={(e) => setFormData(prev => ({ ...prev, catalogNumber: e.target.value }))}
@@ -650,8 +664,8 @@ export default function ReagentsInventoryPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Unit *</label>
-                <input
+                <label htmlFor={`${fid}-unit`} className="block text-sm font-medium text-gray-700 mb-1">Unit *</label>
+                <input id={`${fid}-unit`}
                   type="text"
                   value={formData.unit}
                   onChange={(e) => setFormData(prev => ({ ...prev, unit: e.target.value }))}
@@ -660,8 +674,8 @@ export default function ReagentsInventoryPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Unit Size *</label>
-                <input
+                <label htmlFor={`${fid}-unit-size`} className="block text-sm font-medium text-gray-700 mb-1">Unit Size *</label>
+                <input id={`${fid}-unit-size`}
                   type="number"
                   value={formData.unitSize}
                   onChange={(e) => setFormData(prev => ({ ...prev, unitSize: Number(e.target.value) }))}
@@ -671,8 +685,8 @@ export default function ReagentsInventoryPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Stock Quantity</label>
-                <input
+                <label htmlFor={`${fid}-stock-quantity`} className="block text-sm font-medium text-gray-700 mb-1">Stock Quantity</label>
+                <input id={`${fid}-stock-quantity`}
                   type="number"
                   value={formData.stockQuantity}
                   onChange={(e) => setFormData(prev => ({ ...prev, stockQuantity: Number(e.target.value) }))}
@@ -681,8 +695,8 @@ export default function ReagentsInventoryPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Reorder Level</label>
-                <input
+                <label htmlFor={`${fid}-reorder-level`} className="block text-sm font-medium text-gray-700 mb-1">Reorder Level</label>
+                <input id={`${fid}-reorder-level`}
                   type="number"
                   value={formData.reorderLevel}
                   onChange={(e) => setFormData(prev => ({ ...prev, reorderLevel: Number(e.target.value) }))}
@@ -691,8 +705,8 @@ export default function ReagentsInventoryPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Max Stock Level</label>
-                <input
+                <label htmlFor={`${fid}-max-stock-level`} className="block text-sm font-medium text-gray-700 mb-1">Max Stock Level</label>
+                <input id={`${fid}-max-stock-level`}
                   type="number"
                   value={formData.maxStockLevel}
                   onChange={(e) => setFormData(prev => ({ ...prev, maxStockLevel: Number(e.target.value) }))}
@@ -711,8 +725,8 @@ export default function ReagentsInventoryPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Storage Temperature</label>
-                <input
+                <label htmlFor={`${fid}-storage-temperature`} className="block text-sm font-medium text-gray-700 mb-1">Storage Temperature</label>
+                <input id={`${fid}-storage-temperature`}
                   type="text"
                   value={formData.storageTemperature}
                   onChange={(e) => setFormData(prev => ({ ...prev, storageTemperature: e.target.value }))}
@@ -721,8 +735,8 @@ export default function ReagentsInventoryPage() {
                 />
               </div>
               <div className="col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                <input
+                <label htmlFor={`${fid}-description`} className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                <input id={`${fid}-description`}
                   type="text"
                   value={formData.description}
                   onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
@@ -788,8 +802,8 @@ export default function ReagentsInventoryPage() {
             </div>
             <div className="p-6 grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Lot Number *</label>
-                <input
+                <label htmlFor={`${fid}-lot-number`} className="block text-sm font-medium text-gray-700 mb-1">Lot Number *</label>
+                <input id={`${fid}-lot-number`}
                   type="text"
                   value={receiveForm.lotNumber}
                   onChange={e => setReceiveForm(p => ({ ...p, lotNumber: e.target.value }))}
@@ -798,8 +812,8 @@ export default function ReagentsInventoryPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Quantity *</label>
-                <input
+                <label htmlFor={`${fid}-quantity`} className="block text-sm font-medium text-gray-700 mb-1">Quantity *</label>
+                <input id={`${fid}-quantity`}
                   type="number"
                   value={receiveForm.quantity}
                   onChange={e => setReceiveForm(p => ({ ...p, quantity: e.target.value }))}
@@ -809,8 +823,8 @@ export default function ReagentsInventoryPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Expiry Date</label>
-                <input
+                <label htmlFor={`${fid}-expiry-date`} className="block text-sm font-medium text-gray-700 mb-1">Expiry Date</label>
+                <input id={`${fid}-expiry-date`}
                   type="date"
                   value={receiveForm.expiryDate}
                   onChange={e => setReceiveForm(p => ({ ...p, expiryDate: e.target.value }))}
@@ -829,8 +843,8 @@ export default function ReagentsInventoryPage() {
                 />
               </div>
               <div className="col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Supplier</label>
-                <input
+                <label htmlFor={`${fid}-supplier`} className="block text-sm font-medium text-gray-700 mb-1">Supplier</label>
+                <input id={`${fid}-supplier`}
                   type="text"
                   value={receiveForm.supplier}
                   onChange={e => setReceiveForm(p => ({ ...p, supplier: e.target.value }))}

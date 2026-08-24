@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useId } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   FolderTree,
@@ -63,6 +64,7 @@ const EMPTY_FORM: CategoryFormData = {
 const API_PATH = '/item-classifications/categories';
 
 export default function DrugCategoriesPage() {
+  const fid = useId();
   const facilityId = useFacilityId();
   const queryClient = useQueryClient();
 
@@ -74,6 +76,21 @@ export default function DrugCategoriesPage() {
   const [editingCategory, setEditingCategory] = useState<DrugCategory | null>(null);
   const [formData, setFormData] = useState<CategoryFormData>(EMPTY_FORM);
   const [mutationError, setMutationError] = useState<string | null>(null);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showAddModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showAddModal,
+    onClose: () => setShowAddModal(false),
+  });
+  const showEditModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showEditModal,
+    onClose: () => setShowEditModal(false),
+  });
+  const showDeleteConfirmDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showDeleteConfirm,
+    onClose: () => setShowDeleteConfirm(null),
+  });
 
   const { data: categories = [], isLoading, error: fetchError } = useQuery<DrugCategory[]>({
     queryKey: ['drug-categories', facilityId],
@@ -389,7 +406,12 @@ export default function DrugCategoriesPage() {
 
       {/* Add Category Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showAddModalDialogRef}
+        >
           <div className="bg-white rounded-lg w-full max-w-lg m-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-4 border-b sticky top-0 bg-white">
               <h2 className="text-lg font-semibold">Add New Category</h2>
@@ -403,8 +425,8 @@ export default function DrugCategoriesPage() {
               )}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Code</label>
-                  <input
+                  <label htmlFor={`${fid}-code`} className="block text-sm font-medium text-gray-700 mb-1">Code</label>
+                  <input id={`${fid}-code`}
                     type="text"
                     value={formData.code}
                     onChange={(e) => setFormData({ ...formData, code: e.target.value.toUpperCase() })}
@@ -414,8 +436,8 @@ export default function DrugCategoriesPage() {
                   <p className="text-xs text-gray-400 mt-1">Leave blank to auto-generate from name</p>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
-                  <input
+                  <label htmlFor={`${fid}-name`} className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+                  <input id={`${fid}-name`}
                     type="text"
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
@@ -425,8 +447,8 @@ export default function DrugCategoriesPage() {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                <textarea
+                <label htmlFor={`${fid}-description`} className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                <textarea id={`${fid}-description`}
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   placeholder="Optional description"
@@ -436,8 +458,8 @@ export default function DrugCategoriesPage() {
               </div>
               <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Retail Markup %</label>
-                  <input
+                  <label htmlFor={`${fid}-retail-markup`} className="block text-sm font-medium text-gray-700 mb-1">Retail Markup %</label>
+                  <input id={`${fid}-retail-markup`}
                     type="number"
                     min="0"
                     max="500"
@@ -448,8 +470,8 @@ export default function DrugCategoriesPage() {
                   <p className="text-xs text-gray-400 mt-1">Applied at GRN receipt</p>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Wholesale Markup %</label>
-                  <input
+                  <label htmlFor={`${fid}-wholesale-markup`} className="block text-sm font-medium text-gray-700 mb-1">Wholesale Markup %</label>
+                  <input id={`${fid}-wholesale-markup`}
                     type="number"
                     min="0"
                     max="500"
@@ -460,8 +482,8 @@ export default function DrugCategoriesPage() {
                   <p className="text-xs text-gray-400 mt-1">Applied at GRN receipt</p>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Sort Order</label>
-                  <input
+                  <label htmlFor={`${fid}-sort-order`} className="block text-sm font-medium text-gray-700 mb-1">Sort Order</label>
+                  <input id={`${fid}-sort-order`}
                     type="number"
                     value={formData.sortOrder}
                     onChange={(e) => setFormData({ ...formData, sortOrder: parseInt(e.target.value) || 0 })}
@@ -525,7 +547,12 @@ export default function DrugCategoriesPage() {
 
       {/* Edit Category Modal */}
       {showEditModal && editingCategory && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showEditModalDialogRef}
+        >
           <div className="bg-white rounded-lg w-full max-w-lg m-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-4 border-b sticky top-0 bg-white">
               <h2 className="text-lg font-semibold">Edit Category</h2>
@@ -539,8 +566,8 @@ export default function DrugCategoriesPage() {
               )}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Code</label>
-                  <input
+                  <label htmlFor={`${fid}-code-2`} className="block text-sm font-medium text-gray-700 mb-1">Code</label>
+                  <input id={`${fid}-code-2`}
                     type="text"
                     value={formData.code}
                     disabled
@@ -548,8 +575,8 @@ export default function DrugCategoriesPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
-                  <input
+                  <label htmlFor={`${fid}-name-2`} className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+                  <input id={`${fid}-name-2`}
                     type="text"
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
@@ -558,8 +585,8 @@ export default function DrugCategoriesPage() {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                <textarea
+                <label htmlFor={`${fid}-description-2`} className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                <textarea id={`${fid}-description-2`}
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   placeholder="Optional description"
@@ -569,8 +596,8 @@ export default function DrugCategoriesPage() {
               </div>
               <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Retail Markup %</label>
-                  <input
+                  <label htmlFor={`${fid}-retail-markup-2`} className="block text-sm font-medium text-gray-700 mb-1">Retail Markup %</label>
+                  <input id={`${fid}-retail-markup-2`}
                     type="number"
                     min="0"
                     max="500"
@@ -581,8 +608,8 @@ export default function DrugCategoriesPage() {
                   <p className="text-xs text-gray-400 mt-1">Applied at GRN receipt</p>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Wholesale Markup %</label>
-                  <input
+                  <label htmlFor={`${fid}-wholesale-markup-2`} className="block text-sm font-medium text-gray-700 mb-1">Wholesale Markup %</label>
+                  <input id={`${fid}-wholesale-markup-2`}
                     type="number"
                     min="0"
                     max="500"
@@ -593,8 +620,8 @@ export default function DrugCategoriesPage() {
                   <p className="text-xs text-gray-400 mt-1">Applied at GRN receipt</p>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Sort Order</label>
-                  <input
+                  <label htmlFor={`${fid}-sort-order-2`} className="block text-sm font-medium text-gray-700 mb-1">Sort Order</label>
+                  <input id={`${fid}-sort-order-2`}
                     type="number"
                     value={formData.sortOrder}
                     onChange={(e) => setFormData({ ...formData, sortOrder: parseInt(e.target.value) || 0 })}
@@ -668,7 +695,12 @@ export default function DrugCategoriesPage() {
 
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showDeleteConfirmDialogRef}
+        >
           <div className="bg-white rounded-lg w-full max-w-sm m-4">
             <div className="p-4 border-b">
               <h2 className="text-lg font-semibold">Delete Category</h2>

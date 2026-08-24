@@ -179,7 +179,7 @@ export class ProcurementGLIntegrationService {
     if (!po) throw new NotFoundException(`PO ${poId} not found`);
 
     const totalAmount = Number(po.totalAmount || 0);
-    await this.budgetService.reserveBudget(po.facilityId, po.id, 'PO', totalAmount);
+    await this.budgetService.reserveBudget(po.facilityId, po.id, 'PO', totalAmount, tid);
 
     this.logger.log(
       `Reserved budget for PO ${poId}. Department: ${departmentId}, Amount: ${totalAmount}`,
@@ -209,7 +209,7 @@ export class ProcurementGLIntegrationService {
     if (!po) throw new BadRequestException(`GRN ${grnId} has no purchase order`);
     const totalAmount = Number(grn.totalValue || 0);
 
-    await this.budgetService.markReservationSpent(po.id);
+    await this.budgetService.markReservationSpent(po.id, tid);
 
     this.logger.log(
       `Marked budget as spent for GRN ${grnId}. PO: ${po.orderNumber}, Amount: ${totalAmount}`,
@@ -241,17 +241,76 @@ export class ProcurementGLIntegrationService {
       (sum, item) => sum + Number(item.quantityOrdered) * Number(item.unitPrice),
       0,
     );
+
+    // What the hospital actually takes on is the accepted quantity, not
+    // everything the driver unloaded. Comparing quantityReceived meant a
+    // delivery with 20 of 100 rejected still matched at 100, and the
+    // supplier was paid for goods that were sent back.
+    const acceptedOf = (item: GoodsReceiptItem) =>
+      Number(item.quantityAccepted ?? item.quantityReceived) || 0;
+
     const grnTotal = grn.items.reduce(
-      (sum, item) => sum + Number(item.quantityReceived) * Number(item.unitCost),
+      (sum, item) => sum + acceptedOf(item) * Number(item.unitCost),
       0,
     );
 
-    const quantitiesMatch =
-      po.items.length === grn.items.length &&
-      po.items.every(
-        (poItem, idx) => Number(poItem.quantityOrdered) === Number(grn.items[idx].quantityReceived),
-      );
+    // Match line to line by item, not by array position.
+    //
+    // This used to pair po.items[i] with grn.items[i]. Neither relation is
+    // loaded with an ORDER BY, so the pairing was whatever order Postgres
+    // returned — comparing one item's ordered quantity against another
+    // item's received quantity. It could flag a clean delivery as a variance
+    // and, worse, pass a bad one whenever the mismatched pairs happened to
+    // carry equal numbers.
+    const receivedByItem = new Map<string, number>();
+    for (const grnItem of grn.items) {
+      receivedByItem.set(grnItem.itemId, (receivedByItem.get(grnItem.itemId) || 0) + acceptedOf(grnItem));
+    }
+
+    const lineDiscrepancies: {
+      itemId: string;
+      itemName: string;
+      quantityOrdered: number;
+      quantityAccepted: number;
+    }[] = [];
+
+    for (const poItem of po.items) {
+      const accepted = receivedByItem.get(poItem.itemId) || 0;
+      if (accepted !== Number(poItem.quantityOrdered)) {
+        lineDiscrepancies.push({
+          itemId: poItem.itemId,
+          itemName: poItem.itemName,
+          quantityOrdered: Number(poItem.quantityOrdered),
+          quantityAccepted: accepted,
+        });
+      }
+    }
+
+    // Anything delivered that was never ordered is a discrepancy too, and
+    // the length check this replaces could not see it.
+    for (const [itemId, accepted] of receivedByItem) {
+      if (!po.items.some((i) => i.itemId === itemId)) {
+        const grnItem = grn.items.find((i) => i.itemId === itemId);
+        lineDiscrepancies.push({
+          itemId,
+          itemName: grnItem?.itemName || itemId,
+          quantityOrdered: 0,
+          quantityAccepted: accepted,
+        });
+      }
+    }
+
+    // The third leg. invoiceId was accepted and echoed straight back without
+    // the invoice ever being loaded or compared, which made this a two-way
+    // match wearing a three-way name — the document you are about to pay was
+    // the one document nobody checked. The supplier's invoice is captured on
+    // the GRN, so that is what it is checked against.
+    const invoiceAmount = grn.invoiceAmount != null ? Number(grn.invoiceAmount) : null;
+    const invoiceMatches = invoiceAmount == null ? null : Math.abs(invoiceAmount - grnTotal) < 0.01;
+
+    const quantitiesMatch = lineDiscrepancies.length === 0;
     const amountsMatch = Math.abs(poTotal - grnTotal) < 0.01;
+    const isMatched = quantitiesMatch && amountsMatch && invoiceMatches !== false;
 
     return {
       poId,
@@ -259,11 +318,14 @@ export class ProcurementGLIntegrationService {
       invoiceId,
       poAmount: poTotal,
       grnAmount: grnTotal,
+      invoiceAmount,
+      invoiceMatches,
+      lineDiscrepancies,
       variance: poTotal - grnTotal,
       quantitiesMatch,
       amountsMatch,
-      isMatched: quantitiesMatch && amountsMatch,
-      matchStatus: quantitiesMatch && amountsMatch ? MatchStatus.MATCHED : MatchStatus.VARIANCE,
+      isMatched,
+      matchStatus: isMatched ? MatchStatus.MATCHED : MatchStatus.VARIANCE,
     };
   }
 

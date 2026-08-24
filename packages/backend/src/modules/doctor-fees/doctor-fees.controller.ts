@@ -8,15 +8,19 @@ import {
   Put,
   Query,
   Request,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 import { DoctorFeesService } from './doctor-fees.service';
 import { UpsertDoctorFeeProfileDto } from './doctor-fees.dto';
+import { FacilityId } from '../../common/decorators/facility-id.decorator';
 
 @ApiTags('Doctor Fees')
 @RequireModule('finance')
+@UseGuards(ModuleGuard)
 @Controller('doctor-fees')
 export class DoctorFeesController {
   constructor(private readonly service: DoctorFeesService) {}
@@ -61,7 +65,7 @@ export class DoctorFeesController {
   preview(
     @Query('doctorId') doctorId: string | undefined,
     @Query('departmentId') departmentId: string | undefined,
-    @Query('facilityId') facilityId: string,
+    @FacilityId() facilityId: string,
     @Query('patientId') patientId: string | undefined,
     @Request() req: any,
   ) {

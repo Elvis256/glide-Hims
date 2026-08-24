@@ -1,11 +1,11 @@
 import { NestFactory, Reflector } from '@nestjs/core';
 import {
-  ValidationPipe,
   BadRequestException,
   Logger,
-  ClassSerializerInterceptor,
 } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
+import { SafeClassSerializerInterceptor } from './common/interceptors/safe-class-serializer.interceptor';
+import { AbsentAwareValidationPipe } from './common/pipes/absent-aware-validation.pipe';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import { readFileSync, existsSync } from 'fs';
@@ -115,12 +115,14 @@ async function bootstrap() {
   // Global response transform interceptor - standardizes API response envelopes
   app.useGlobalInterceptors(new ResponseTransformInterceptor(reflector));
 
-  // ClassSerializerInterceptor - Strips @Exclude() fields (passwordHash, mfaSecret, etc.) from responses
-  app.useGlobalInterceptors(new ClassSerializerInterceptor(reflector));
+  // Strips @Exclude() fields (passwordHash, mfaSecret, the EFRIS API key) from
+  // responses. The Safe subclass declines to serialise a reply that a @Res()
+  // handler has already written — doing so wedged the whole API.
+  app.useGlobalInterceptors(new SafeClassSerializerInterceptor(reflector));
 
   // Global validation pipe
   app.useGlobalPipes(
-    new ValidationPipe({
+    new AbsentAwareValidationPipe({
       whitelist: true,
       forbidNonWhitelisted: true,
       transform: true,

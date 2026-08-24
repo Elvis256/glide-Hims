@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, getApiErrorMessage } from '../../../services/api';
 import {
@@ -691,6 +692,8 @@ function PolicyEditor({
   onSave,
   saving,
 }: any) {
+  // Mounted only while the editor is open.
+  const dialogRef = useDialogA11y<HTMLDivElement>({ open: true, onClose });
   const update = (patch: any) => onChange({ ...policy, ...patch });
   const addStep = () =>
     update({
@@ -710,7 +713,12 @@ function PolicyEditor({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+    <div
+      className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
+      role="dialog"
+      aria-modal="true"
+      ref={dialogRef}
+    >
       <div className="bg-white rounded-lg max-w-3xl w-full max-h-[90vh] overflow-y-auto">
         <div className="px-5 py-3 border-b flex items-center justify-between">
           <h3 className="font-semibold">{policy.id ? 'Edit Policy' : 'New Policy'}</h3>
@@ -951,6 +959,11 @@ function GroupsTab() {
   });
   const [editing, setEditing] = useState<any | null>(null);
 
+  const groupEditorDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!editing,
+    onClose: () => setEditing(null),
+  });
+
   const open = async (id?: string) => {
     if (id) {
       const r = await api.get(`/org-admin/groups/${id}`);
@@ -1024,7 +1037,12 @@ function GroupsTab() {
       </div>
 
       {editing && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={groupEditorDialogRef}
+        >
           <div className="bg-white rounded-lg max-w-xl w-full">
             <div className="px-5 py-3 border-b flex items-center justify-between">
               <h3 className="font-semibold">{editing.id ? 'Edit Group' : 'New Group'}</h3>
@@ -1119,6 +1137,11 @@ function DelegationsTab() {
   });
   const [editing, setEditing] = useState<any | null>(null);
 
+  const delegationEditorDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!editing,
+    onClose: () => setEditing(null),
+  });
+
   const save = useMutation({
     mutationFn: (d: any) =>
       d.id ? api.put(`/org-admin/delegations/${d.id}`, d) : api.post('/org-admin/delegations', d),
@@ -1203,7 +1226,12 @@ function DelegationsTab() {
       </div>
 
       {editing && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={delegationEditorDialogRef}
+        >
           <div className="bg-white rounded-lg max-w-xl w-full">
             <div className="px-5 py-3 border-b flex items-center justify-between">
               <h3 className="font-semibold">

@@ -15,6 +15,7 @@ import { LabTest } from '../../database/entities/lab-test.entity';
 import { LabSample } from '../../database/entities/lab-sample.entity';
 import { LabResult, ResultStatus } from '../../database/entities/lab-result.entity';
 import { CreateOrderDto, UpdateOrderStatusDto } from './dto/orders.dto';
+import { StateMachine } from '../../common/fsm/state-machine';
 import { BillingService } from '../billing/billing.service';
 import {
   ImagingOrder,
@@ -26,6 +27,7 @@ import { InAppNotificationsService } from '../in-app-notifications/in-app-notifi
 import { QueueManagementService } from '../queue-management/queue-management.service';
 import { AuditLogService } from '../../common/interceptors/audit-log.service';
 import { requireTenantId } from '../../common/utils/tenant.util';
+import { localDateString, localDayStart } from '../../common/utils/timezone.util';
 
 @Injectable()
 export class OrdersService {
@@ -70,8 +72,12 @@ export class OrdersService {
           : orderType === OrderType.PHARMACY
             ? 'PHM'
             : 'PRC';
-    const date = new Date();
-    const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
+    // The hospital's date, not the server's: on UTC+3 an order raised at
+    // 01:00 was stamped with yesterday's date, so the number on the request
+    // form disagreed with the day it was actually taken. The lock key and the
+    // sequence lookup both derive from this same string, so they stay
+    // consistent with each other either way.
+    const dateStr = localDateString(new Date()).replace(/-/g, '');
 
     // Serialize per tenant/type/day: count-based numbering against a UNIQUE
     // column raced under concurrent ordering (and counted without a tenant
@@ -178,7 +184,14 @@ export class OrdersService {
               unitPrice,
               chargeType,
               referenceType: 'order',
-              referenceId: savedOrder.id,
+              // invoice_items has a UNIQUE index on (reference_type,
+              // reference_id) and addBillableItem treats a repeat as a
+              // duplicate to skip. Every test on the order carried the bare
+              // order id, so a panel billed its first test and silently
+              // dropped the rest. The code makes each line distinct while
+              // still pointing back at the order, and keeps the value stable
+              // so a re-run is still recognised as the same line.
+              referenceId: `${savedOrder.id}#${testCode.code}`,
               serviceId: service?.id,
               labTestId,
             },
@@ -399,6 +412,15 @@ export class OrdersService {
     });
   }
 
+  // Order status FSM. COMPLETED and CANCELLED are terminal: an order that has
+  // been finished or called off is not put back into a queue, it is reordered.
+  private static readonly statusFsm = new StateMachine<OrderStatus>({
+    [OrderStatus.PENDING]: [OrderStatus.IN_PROGRESS, OrderStatus.COMPLETED, OrderStatus.CANCELLED],
+    [OrderStatus.IN_PROGRESS]: [OrderStatus.COMPLETED, OrderStatus.CANCELLED],
+    [OrderStatus.COMPLETED]: [],
+    [OrderStatus.CANCELLED]: [],
+  });
+
   async updateStatus(
     id: string,
     dto: UpdateOrderStatusDto,
@@ -411,9 +433,20 @@ export class OrdersService {
     const updateData: Partial<Order> = {};
 
     if (dto.status) {
+      // This path used to accept any status at all, while completeOrder and
+      // cancelOrder each enforced their own rules — so it was the way round
+      // all of them: a cancelled order could be marked completed, a completed
+      // one pushed back to pending, and an order whose samples were already in
+      // the lab cancelled without the check that forbids exactly that.
+      OrdersService.statusFsm.validate(order.status as OrderStatus, dto.status);
+
       // Guard: lab orders cannot be completed without released results
       if (dto.status === OrderStatus.COMPLETED && order.orderType === OrderType.LAB) {
         await this.assertLabResultsReleased(id, tenantId);
+      }
+
+      if (dto.status === OrderStatus.CANCELLED) {
+        await this.assertNoSamplesCollected(id, tenantId);
       }
 
       updateData.status = dto.status;
@@ -464,6 +497,21 @@ export class OrdersService {
     return this.orderRepository.save(order);
   }
 
+  /**
+   * Once a sample is in the lab, cancelling the order leaves the specimen with
+   * nothing to belong to. The lab has to dispose of it and say so.
+   */
+  private async assertNoSamplesCollected(orderId: string, tenantId?: string): Promise<void> {
+    const collectedSamples = await this.labSampleRepository.count({
+      where: { orderId, tenantId: requireTenantId(tenantId) },
+    });
+    if (collectedSamples > 0) {
+      throw new BadRequestException(
+        'Cannot cancel order: samples have already been collected. Request lab to handle.',
+      );
+    }
+  }
+
   async completeOrder(
     id: string,
     resultData: any,
@@ -475,6 +523,10 @@ export class OrdersService {
     if (order.status === OrderStatus.COMPLETED) {
       throw new BadRequestException('Order is already completed');
     }
+    // A cancelled order was refused here only by accident: a cancelled LAB
+    // order has no samples, so the results check below rejected it. Radiology
+    // and procedure orders skip that check and were completed after cancelling.
+    OrdersService.statusFsm.validate(order.status as OrderStatus, OrderStatus.COMPLETED);
 
     // Guard: lab orders cannot be completed without released results
     if (order.orderType === OrderType.LAB) {
@@ -526,16 +578,11 @@ export class OrdersService {
     if (order.status === OrderStatus.COMPLETED) {
       throw new BadRequestException('Cannot cancel completed order');
     }
+    OrdersService.statusFsm.validate(order.status as OrderStatus, OrderStatus.CANCELLED);
 
-    // Prevent cancellation if samples have been collected
-    const collectedSamples = await this.labSampleRepository.count({
-      where: { orderId: id },
-    });
-    if (collectedSamples > 0) {
-      throw new BadRequestException(
-        'Cannot cancel order: samples have already been collected. Request lab to handle.',
-      );
-    }
+    // Prevent cancellation if samples have been collected. The count was not
+    // scoped to the tenant here, leaving it to row-level security alone.
+    await this.assertNoSamplesCollected(id, tenantId);
 
     const oldStatus = order.status;
     order.status = OrderStatus.CANCELLED;
@@ -598,7 +645,14 @@ export class OrdersService {
 
   async getOrderStats(facilityId: string, orderType?: OrderType, tenantId?: string) {
     const tid = requireTenantId(tenantId);
-    const today = new Date().toISOString().slice(0, 10);
+
+    // "Today" is the hospital's day, not the server's. toISOString() gives the
+    // UTC date and DATE(completed_at) truncates in the session zone, which is
+    // also UTC — so with the hospital on UTC+3 every order completed before
+    // 03:00 local was counted against yesterday, and the count reset itself
+    // three hours into the working day.
+    const dayStart = localDayStart(0);
+    const nextDayStart = localDayStart(1);
 
     const baseQuery = this.orderRepository
       .createQueryBuilder('order')
@@ -623,7 +677,10 @@ export class OrdersService {
     const completedToday = await baseQuery
       .clone()
       .andWhere('order.status = :status', { status: OrderStatus.COMPLETED })
-      .andWhere('DATE(order.completedAt) = :today', { today })
+      .andWhere('order.completedAt >= :dayStart AND order.completedAt < :nextDayStart', {
+        dayStart,
+        nextDayStart,
+      })
       .getCount();
 
     const urgent = await baseQuery

@@ -1,5 +1,6 @@
 import React from 'react';
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
+import { useState, useMemo, useEffect, useCallback, useId } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -161,6 +162,7 @@ const quickActions = [
 ];
 
 export default function IntakeOutputPage() {
+  const fid = useId();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { hasPermission } = usePermissions();
@@ -180,6 +182,17 @@ export default function IntakeOutputPage() {
   const [showQuickActions, setShowQuickActions] = useState(false);
   const [quickActionAmount, setQuickActionAmount] = useState<number>(0);
   const [selectedQuickAction, setSelectedQuickAction] = useState<typeof quickActions[0] | null>(null);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showTargetModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showTargetModal,
+    onClose: () => setShowTargetModal(false),
+  });
+  const selectedQuickActionDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!selectedQuickAction,
+    onClose: () => setSelectedQuickAction(null),
+  });
   
   // Fluid targets
   const [fluidTarget, setFluidTarget] = useState<FluidTarget>({
@@ -980,8 +993,8 @@ export default function IntakeOutputPage() {
 
                         <div className="grid grid-cols-6 gap-3 mb-4">
                           <div>
-                            <label className="text-xs text-gray-500 block mb-1">Time</label>
-                            <input
+                            <label htmlFor={`${fid}-time`} className="text-xs text-gray-500 block mb-1">Time</label>
+                            <input id={`${fid}-time`}
                               type="time"
                               value={newEntry.time}
                               onChange={(e) => setNewEntry({ ...newEntry, time: e.target.value })}
@@ -989,8 +1002,8 @@ export default function IntakeOutputPage() {
                             />
                           </div>
                           <div>
-                            <label className="text-xs text-gray-500 block mb-1">Type</label>
-                            <select
+                            <label htmlFor={`${fid}-type`} className="text-xs text-gray-500 block mb-1">Type</label>
+                            <select id={`${fid}-type`}
                               value={newEntry.category}
                               onChange={(e) => setNewEntry({ ...newEntry, category: e.target.value, subCategory: '' })}
                               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
@@ -1004,8 +1017,8 @@ export default function IntakeOutputPage() {
                             </select>
                           </div>
                           <div>
-                            <label className="text-xs text-gray-500 block mb-1">Sub-type</label>
-                            <select
+                            <label htmlFor={`${fid}-sub-type`} className="text-xs text-gray-500 block mb-1">Sub-type</label>
+                            <select id={`${fid}-sub-type`}
                               value={newEntry.subCategory}
                               onChange={(e) => setNewEntry({ ...newEntry, subCategory: e.target.value })}
                               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
@@ -1019,8 +1032,8 @@ export default function IntakeOutputPage() {
                             </select>
                           </div>
                           <div>
-                            <label className="text-xs text-gray-500 block mb-1">Amount (ml)</label>
-                            <input
+                            <label htmlFor={`${fid}-amount-ml`} className="text-xs text-gray-500 block mb-1">Amount (ml)</label>
+                            <input id={`${fid}-amount-ml`}
                               type="number"
                               value={newEntry.amount}
                               onChange={(e) => setNewEntry({ ...newEntry, amount: e.target.value })}
@@ -1029,8 +1042,8 @@ export default function IntakeOutputPage() {
                             />
                           </div>
                           <div className="col-span-2">
-                            <label className="text-xs text-gray-500 block mb-1">Notes</label>
-                            <input
+                            <label htmlFor={`${fid}-notes`} className="text-xs text-gray-500 block mb-1">Notes</label>
+                            <input id={`${fid}-notes`}
                               type="text"
                               value={newEntry.notes}
                               onChange={(e) => setNewEntry({ ...newEntry, notes: e.target.value })}
@@ -1068,8 +1081,8 @@ export default function IntakeOutputPage() {
                               {newEntry.category === 'Urine' && (
                                 <>
                                   <div>
-                                    <label className="text-xs text-gray-500 block mb-1">Color</label>
-                                    <select
+                                    <label htmlFor={`${fid}-color`} className="text-xs text-gray-500 block mb-1">Color</label>
+                                    <select id={`${fid}-color`}
                                       value={newEntry.characteristics.color}
                                       onChange={(e) => setNewEntry({
                                         ...newEntry,
@@ -1082,8 +1095,8 @@ export default function IntakeOutputPage() {
                                     </select>
                                   </div>
                                   <div>
-                                    <label className="text-xs text-gray-500 block mb-1">Clarity</label>
-                                    <select
+                                    <label htmlFor={`${fid}-clarity`} className="text-xs text-gray-500 block mb-1">Clarity</label>
+                                    <select id={`${fid}-clarity`}
                                       value={newEntry.characteristics.clarity}
                                       onChange={(e) => setNewEntry({
                                         ...newEntry,
@@ -1099,8 +1112,8 @@ export default function IntakeOutputPage() {
                               )}
                               {newEntry.category === 'Stool' && (
                                 <div>
-                                  <label className="text-xs text-gray-500 block mb-1">Consistency</label>
-                                  <select
+                                  <label htmlFor={`${fid}-consistency`} className="text-xs text-gray-500 block mb-1">Consistency</label>
+                                  <select id={`${fid}-consistency`}
                                     value={newEntry.characteristics.consistency}
                                     onChange={(e) => setNewEntry({
                                       ...newEntry,
@@ -1394,7 +1407,12 @@ export default function IntakeOutputPage() {
 
       {/* Target Modal */}
       {showTargetModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showTargetModalDialogRef}
+        >
           <div className="bg-white rounded-xl p-6 w-full max-w-md">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900">Set Fluid Targets</h3>
@@ -1405,8 +1423,8 @@ export default function IntakeOutputPage() {
             
             <div className="space-y-4">
               <div>
-                <label className="text-sm text-gray-600 block mb-1">Daily Intake Target (ml)</label>
-                <input
+                <label htmlFor={`${fid}-daily-intake-target-ml`} className="text-sm text-gray-600 block mb-1">Daily Intake Target (ml)</label>
+                <input id={`${fid}-daily-intake-target-ml`}
                   type="number"
                   value={fluidTarget.dailyIntake}
                   onChange={(e) => setFluidTarget({ ...fluidTarget, dailyIntake: parseInt(e.target.value) || 0 })}
@@ -1414,8 +1432,8 @@ export default function IntakeOutputPage() {
                 />
               </div>
               <div>
-                <label className="text-sm text-gray-600 block mb-1">Daily Output Target (ml)</label>
-                <input
+                <label htmlFor={`${fid}-daily-output-target-ml`} className="text-sm text-gray-600 block mb-1">Daily Output Target (ml)</label>
+                <input id={`${fid}-daily-output-target-ml`}
                   type="number"
                   value={fluidTarget.dailyOutput}
                   onChange={(e) => setFluidTarget({ ...fluidTarget, dailyOutput: parseInt(e.target.value) || 0 })}
@@ -1423,8 +1441,8 @@ export default function IntakeOutputPage() {
                 />
               </div>
               <div>
-                <label className="text-sm text-gray-600 block mb-1">Min Urine Output Alert (ml/kg/hr)</label>
-                <input
+                <label htmlFor={`${fid}-min-urine-output-alert-ml-kg-hr`} className="text-sm text-gray-600 block mb-1">Min Urine Output Alert (ml/kg/hr)</label>
+                <input id={`${fid}-min-urine-output-alert-ml-kg-hr`}
                   type="number"
                   step="0.1"
                   value={fluidTarget.minUrineOutput}
@@ -1458,7 +1476,12 @@ export default function IntakeOutputPage() {
 
       {/* Quick Action Amount Modal */}
       {selectedQuickAction && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={selectedQuickActionDialogRef}
+        >
           <div className="bg-white rounded-xl p-6 w-full max-w-sm">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">{selectedQuickAction.label}</h3>
             <p className="text-sm text-gray-600 mb-4">Enter the amount:</p>

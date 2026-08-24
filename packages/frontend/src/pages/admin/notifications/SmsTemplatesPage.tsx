@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   FileText,
@@ -98,6 +99,13 @@ export default function SmsTemplatesPage() {
   const queryClient = useQueryClient();
   const [editingTemplate, setEditingTemplate] = useState<SmsTemplate | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const editingTemplateDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!editingTemplate,
+    onClose: () => setEditingTemplate(null),
+  });
 
   const { data: templates = [], isLoading } = useQuery<SmsTemplate[]>({
     queryKey: ['sms-templates', facilityId],
@@ -296,7 +304,12 @@ export default function SmsTemplatesPage() {
 
       {/* Edit Modal */}
       {editingTemplate && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={editingTemplateDialogRef}
+        >
           <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between">
               <h2 className="text-lg font-semibold">
