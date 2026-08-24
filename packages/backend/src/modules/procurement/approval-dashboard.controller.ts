@@ -3,6 +3,7 @@ import { ApprovalDashboardService } from './approval-dashboard.service';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { RequireModule } from '../auth/decorators/module.decorator';
 import { ModuleGuard } from '../auth/guards/module.guard';
+import { FacilityId } from '../../common/decorators/facility-id.decorator';
 
 @UseGuards(ModuleGuard)
 @RequireModule('stores')
@@ -17,7 +18,7 @@ export class ApprovalDashboardController {
   @Get('pending')
   @AuthWithPermissions('procurement.read')
   async getPendingApprovals(
-    @Query('facilityId') facilityId: string,
+    @FacilityId() facilityId: string,
     @Query('role') role?: string,
     @Request() req?: any,
   ) {
@@ -49,7 +50,7 @@ export class ApprovalDashboardController {
    */
   @Get('bottlenecks')
   @AuthWithPermissions('procurement.read')
-  async getBottlenecks(@Query('facilityId') facilityId: string, @Request() req?: any) {
+  async getBottlenecks(@FacilityId() facilityId: string, @Request() req?: any) {
     return this.dashboardService.getApprovalBottlenecks(facilityId, req?.user?.tenantId);
   }
 
@@ -59,7 +60,7 @@ export class ApprovalDashboardController {
   @Get('escalations')
   @AuthWithPermissions('procurement.read')
   async getEscalations(
-    @Query('facilityId') facilityId: string,
+    @FacilityId() facilityId: string,
     @Query('days') days: number = 5,
     @Request() req?: any,
   ) {
@@ -72,7 +73,7 @@ export class ApprovalDashboardController {
    */
   @Get('summary')
   @AuthWithPermissions('procurement.read')
-  async getDashboardSummary(@Query('facilityId') facilityId: string, @Request() req?: any) {
+  async getDashboardSummary(@FacilityId() facilityId: string, @Request() req?: any) {
     try {
       const summary = await this.dashboardService.getDashboardSummary(
         facilityId,
@@ -105,7 +106,7 @@ export class ApprovalDashboardController {
    */
   @Get('supplier-risks')
   @AuthWithPermissions('procurement.read')
-  async getSupplierRisks(@Query('facilityId') _facilityId: string) {
+  async getSupplierRisks(@FacilityId() _facilityId: string) {
     return { data: [] };
   }
 }

@@ -456,7 +456,12 @@ export class DischargeService {
           AND ds.deleted_at IS NULL
           AND EXISTS (
             SELECT 1 FROM admissions a
-             WHERE a.patient_id = ds.patient_id
+             -- admissions is camelCase for patientId and admissionDate but
+             -- snake_case for tenant_id; discharge_summaries is snake_case
+             -- throughout. This query used a.patient_id, which does not exist,
+             -- so /discharge/stats answered 500 on every call, with or without
+             -- dates. Quote the camelCase ones; never assume one convention.
+             WHERE a."patientId" = ds.patient_id
                AND a.tenant_id = ds.tenant_id
                AND a."admissionDate" > ds.discharge_date
                AND a."admissionDate" <= ds.discharge_date + INTERVAL '30 days'
