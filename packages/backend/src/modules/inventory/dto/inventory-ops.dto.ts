@@ -1,4 +1,14 @@
-import { IsOptional, IsString, IsUUID, IsDateString, IsNotEmpty, MaxLength } from 'class-validator';
+import {
+  IsDateString,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+  Min,
+} from 'class-validator';
+import { Type } from 'class-transformer';
 
 /**
  * Both of these handlers took `@Body() dto: any`, so the ValidationPipe had no
@@ -55,5 +65,29 @@ export class InitiateRecallDto {
   @IsOptional()
   @IsString()
   @MaxLength(2000)
+  notes?: string;
+}
+
+export class RecordCountDto {
+  @IsUUID()
+  itemId: string;
+
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  @Min(0)
+  @Type(() => Number)
+  countedQuantity: number;
+}
+
+export class InvestigateVarianceDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(4000)
+  notes: string;
+}
+
+export class CompleteRecallDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000)
   notes?: string;
 }

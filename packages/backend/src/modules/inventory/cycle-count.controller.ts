@@ -4,6 +4,7 @@ import { RequireModule } from '../auth/decorators/module.decorator';
 import { ModuleGuard } from '../auth/guards/module.guard';
 import { CycleCountService } from './cycle-count.service';
 import { CreateCycleCountDto } from './dto/inventory-ops.dto';
+import { RecordCountDto, InvestigateVarianceDto } from './dto/inventory-ops.dto';
 
 @UseGuards(ModuleGuard)
 @RequireModule('stores')
@@ -47,7 +48,7 @@ export class CycleCountController {
   @AuthWithPermissions('inventory.create')
   async recordCount(
     @Param('id') cycleCountId: string,
-    @Body() dto: { itemId: string; countedQuantity: number },
+    @Body() dto: RecordCountDto,
     @Request() req: any,
   ) {
     return this.cycleCountService.recordCount(
@@ -64,7 +65,7 @@ export class CycleCountController {
   async investigateVariance(
     @Param('id') cycleCountId: string,
     @Param('itemId') itemId: string,
-    @Body() dto: { notes: string },
+    @Body() dto: InvestigateVarianceDto,
     @Request() req: any,
   ) {
     return this.cycleCountService.investigateVariance(

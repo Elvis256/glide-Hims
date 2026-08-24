@@ -20,6 +20,7 @@ import { UpdateClientService } from './update-client.service';
 import { Auth } from '../auth/decorators/auth.decorator';
 import { Public } from '../auth/decorators/public.decorator';
 import { withSystemContext } from '../../common/context/tenant-context';
+import { ValidateLicenseDto } from './dto/validate-license.dto';
 
 @ApiTags('Licensing')
 @Controller('license')
@@ -43,7 +44,7 @@ export class LicenseController {
   @Public()
   @Throttle({ default: { ttl: 60000, limit: 5 } })
   @ApiOperation({ summary: 'Validate a license key' })
-  async validateLicense(@Body() body: { licenseKey: string }) {
+  async validateLicense(@Body() body: ValidateLicenseDto) {
     // Key-based validation is a trusted server flow (HMAC-signed key): must
     // see the license row regardless of tenant GUC, so runs as system.
     const result = await withSystemContext(() =>

@@ -17,6 +17,7 @@ import { Auth } from '../auth/decorators/auth.decorator';
 import { Public } from '../auth/decorators/public.decorator';
 import * as fs from 'fs';
 import * as path from 'path';
+import { CreateVersionDto } from './dto/updates.dto';
 
 @ApiTags('Updates')
 @Controller('updates')
@@ -80,18 +81,7 @@ export class UpdatesController {
   @Auth('Administrator')
   @ApiOperation({ summary: 'Create new version' })
   async createVersion(
-    @Body()
-    body: {
-      version: string;
-      versionCode: string;
-      releaseNotes?: string;
-      minUpgradeFrom?: string;
-      isMandatory?: boolean;
-      isLatest?: boolean;
-      downloadUrl?: string;
-      checksum?: string;
-      fileSize?: number;
-    },
+    @Body() body: CreateVersionDto,
     @Request() req: any,
   ) {
     this.requireSystemAdmin(req);

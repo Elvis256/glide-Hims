@@ -13,6 +13,7 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Public } from '../auth/decorators/public.decorator';
 import { LeadsService } from './leads.service';
 import { CreateLeadDto, UpdateLeadStatusDto } from './lead.dto';
+import { AddLeadActivityDto, AssignLeadDto, SetLeadFollowUpDto } from './dto/lead-ops.dto';
 
 @ApiTags('Leads')
 @Controller('leads')
@@ -77,7 +78,7 @@ export class LeadsController {
   async addActivity(
     @Req() req: any,
     @Param('id') id: string,
-    @Body() body: { type: string; content?: string },
+    @Body() body: AddLeadActivityDto,
   ) {
     if (!req.user?.isSystemAdmin) throw new ForbiddenException('System admin only');
     return this.service.addActivity(id, {
@@ -92,7 +93,7 @@ export class LeadsController {
   async assignLead(
     @Req() req: any,
     @Param('id') id: string,
-    @Body() body: { assignedTo: string | null },
+    @Body() body: AssignLeadDto,
   ) {
     if (!req.user?.isSystemAdmin) throw new ForbiddenException('System admin only');
     return this.service.assignLead(id, body.assignedTo);
@@ -103,7 +104,7 @@ export class LeadsController {
   async setFollowUp(
     @Req() req: any,
     @Param('id') id: string,
-    @Body() body: { nextFollowUpAt: string | null },
+    @Body() body: SetLeadFollowUpDto,
   ) {
     if (!req.user?.isSystemAdmin) throw new ForbiddenException('System admin only');
     return this.service.setFollowUp(id, body.nextFollowUpAt);

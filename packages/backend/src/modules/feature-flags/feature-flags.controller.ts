@@ -13,6 +13,7 @@ import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { FeatureFlagsService } from './feature-flags.service';
 import { Auth } from '../auth/decorators/auth.decorator';
 import { CheckFeaturesDto, UpsertSystemFeatureDto } from './feature-flags.dto';
+import { SetFeatureFlagDto } from './set-flag.dto';
 
 @ApiTags('Feature Flags')
 @Controller('features')
@@ -78,12 +79,7 @@ export class FeatureFlagsController {
   @ApiOperation({ summary: 'Set a feature flag' })
   async setFlag(
     @Param('featureKey') featureKey: string,
-    @Body()
-    body: {
-      enabled: boolean;
-      value?: any;
-      metadata?: Record<string, any>;
-    },
+    @Body() body: SetFeatureFlagDto,
     @Request() req: any,
   ) {
     const tid = req.user?.tenantId ?? null;

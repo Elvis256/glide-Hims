@@ -8,6 +8,7 @@ import { RequireModule } from '../auth/decorators/module.decorator';
 import { ModuleGuard } from '../auth/guards/module.guard';
 import { withSystemContext } from '../../common/context/tenant-context';
 import { InitiatePaymentRequest } from './payment-gateway.types';
+import { PaymentWebhookDto } from './dto/webhook.dto';
 
 @ApiTags('payment-gateway')
 @RequireModule('billing')
@@ -55,7 +56,7 @@ export class PaymentGatewayController {
   async webhook(
     @Param('provider') provider: string,
     @Headers() headers: Record<string, string>,
-    @Body() body: any,
+    @Body() body: PaymentWebhookDto,
   ) {
     // Signature-verified provider callback; must read/write payment rows
     // across whichever tenant owns the transaction, so runs as system.

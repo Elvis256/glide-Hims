@@ -31,6 +31,7 @@ import { SaleStatus } from '../../database/entities/pharmacy-sale.entity';
 import { RequireModule } from '../auth/decorators/module.decorator';
 import { ModuleGuard } from '../auth/guards/module.guard';
 import { RequireFacilityAccess } from '../auth/decorators/facility-access.decorator';
+import { CancelSaleDto } from './dto/cancel-sale.dto';
 
 @ApiTags('Pharmacy POS')
 @ApiBearerAuth()
@@ -106,7 +107,7 @@ export class PharmacyController {
   @ApiOperation({ summary: 'Cancel pending sale' })
   cancelSale(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: { reason?: string },
+    @Body() dto: CancelSaleDto,
     @Request() req: any,
   ) {
     return this.service.cancelSale(id, req.user?.id, dto?.reason, req.user?.tenantId);
