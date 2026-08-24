@@ -39,6 +39,7 @@ import {
   EmploymentType as JobEmploymentType,
 } from '../../database/entities/job-posting.entity';
 import { JobApplication, ApplicationStatus } from '../../database/entities/job-application.entity';
+import { localDateString } from '../../common/utils/timezone.util';
 import {
   PerformanceAppraisal,
   AppraisalStatus,
@@ -2345,14 +2346,62 @@ export class HrService {
     return posting;
   }
 
+  /**
+   * Record an application against a posting.
+   *
+   * `opts.publicSubmission` is set by the careers site. The public listing and
+   * the public detail endpoint both refuse anything that is not OPEN, but this
+   * path went through `getJobPostingById`, which filters by tenant and not by
+   * status — so a stranger could apply to a draft, on-hold, filled or closed
+   * posting they could not see, and `applications_count` climbed on a job that
+   * had already been filled. Verified: an application was accepted onto a
+   * CLOSED "Chief Medical Officer" posting that the public list correctly hid.
+   * Staff keep the looser rule on purpose — a recruiter logging a paper CV
+   * after the closing date is a real thing.
+   */
   async createJobApplication(
     dto: CreateJobApplicationDto,
     tenantId?: string,
+    opts: { publicSubmission?: boolean } = {},
   ): Promise<JobApplication> {
-    const posting = await this.getJobPostingById(dto.jobPostingId, tenantId);
+    const jobPostingId = dto.jobPostingId;
+    if (!jobPostingId) {
+      throw new BadRequestException('jobPostingId is required');
+    }
+    const posting = await this.getJobPostingById(jobPostingId, tenantId);
+
+    if (opts.publicSubmission) {
+      if (posting.status !== JobStatus.OPEN) {
+        throw new BadRequestException('This job posting is no longer accepting applications.');
+      }
+      // A closing date that has passed is the same answer, and the ward's
+      // calendar decides it rather than the server's.
+      if (posting.closingDate && localDateString(new Date()) > String(posting.closingDate)) {
+        throw new BadRequestException(
+          'The closing date for this job posting has passed.',
+        );
+      }
+      // The endpoint is unauthenticated, so the same person re-submitting is
+      // the cheapest way to fill the recruiter's inbox. A withdrawn or
+      // rejected application may be replaced; a live one may not be doubled.
+      const existing = await this.jobApplicationRepo.findOne({
+        where: {
+          jobPostingId,
+          email: dto.email,
+          tenantId: requireTenantId(tenantId),
+        },
+      });
+      if (
+        existing &&
+        existing.status !== ApplicationStatus.REJECTED &&
+        existing.status !== ApplicationStatus.WITHDRAWN
+      ) {
+        throw new ConflictException('You have already applied for this position.');
+      }
+    }
 
     const application = this.jobApplicationRepo.create({
-      jobPostingId: dto.jobPostingId,
+      jobPostingId,
       firstName: dto.firstName,
       lastName: dto.lastName,
       email: dto.email,
