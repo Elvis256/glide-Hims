@@ -100,7 +100,11 @@ export class CreateVitalDto {
   @Type(() => Number)
   @IsNumber({ allowNaN: false, allowInfinity: false })
   @IsOptional()
-  @Min(10)
+  // 0.5, not 10. The maximum is a mg/dL number, but the floor was one too: in
+  // mmol/L — what a Ugandan ward writes — EVERY hypoglycaemic value is below
+  // 10, so a glucose of 2.1 mmol/L, the reading that most needs charting, was
+  // rejected as invalid. The alerting reads the unit from the magnitude.
+  @Min(0.5)
   @Max(1500)
   bloodGlucose?: number;
 
@@ -197,7 +201,11 @@ export class UpdateVitalDto {
   @Type(() => Number)
   @IsNumber({ allowNaN: false, allowInfinity: false })
   @IsOptional()
-  @Min(10)
+  // 0.5, not 10. The maximum is a mg/dL number, but the floor was one too: in
+  // mmol/L — what a Ugandan ward writes — EVERY hypoglycaemic value is below
+  // 10, so a glucose of 2.1 mmol/L, the reading that most needs charting, was
+  // rejected as invalid. The alerting reads the unit from the magnitude.
+  @Min(0.5)
   @Max(1500)
   bloodGlucose?: number;
 

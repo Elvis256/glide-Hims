@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { IntakeOutputEntry } from '../../database/entities/intake-output-entry.entity';
 import { requireTenantId } from '../../common/utils/tenant.util';
+import { dayBoundsUtc } from '../../common/utils/timezone.util';
 import { CreateIntakeOutputDto, QueryIntakeOutputDto } from './dto/intake-output.dto';
 
 @Injectable()
@@ -45,8 +46,11 @@ export class IntakeOutputService {
 
   async getDailySummary(admissionId: string, tenantId?: string): Promise<{ intake: number; output: number; balance: number }> {
     const tid = requireTenantId(tenantId);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // The ward's day, not the server's. setHours runs in the server zone (UTC),
+    // so the fluid balance day began at 03:00 local: everything charted on the
+    // night shift before then counted against the day before, and for the first
+    // three hours of every morning the running balance was missing it.
+    const { start: today } = dayBoundsUtc(new Date());
 
     const result = await this.repo
       .createQueryBuilder('io')
