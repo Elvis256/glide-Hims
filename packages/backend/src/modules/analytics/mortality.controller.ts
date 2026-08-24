@@ -1,12 +1,14 @@
-import { Controller, Get, Query, Request } from '@nestjs/common';
+import { Controller, Get, Query, Request, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { AnalyticsService } from './analytics.service';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
 @ApiTags('Mortality')
 @ApiBearerAuth()
 @RequireModule('reports')
+@UseGuards(ModuleGuard)
 @Controller('mortality')
 export class MortalityController {
   constructor(private readonly analyticsService: AnalyticsService) {}

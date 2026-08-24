@@ -6,6 +6,7 @@ import {
   Param,
   ParseUUIDPipe,
   Req,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import {
@@ -18,6 +19,7 @@ import {
 } from 'class-validator';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 import { PatientConsentService } from './patient-consent.service';
 import { ConsentType } from '../../database/entities/patient-consent.entity';
 
@@ -47,6 +49,7 @@ export class WithdrawConsentDto {
 
 @ApiTags('Patient Consents')
 @RequireModule('registration')
+@UseGuards(ModuleGuard)
 @Controller('patients/:patientId/consents')
 export class PatientConsentController {
   constructor(private readonly consentService: PatientConsentService) {}

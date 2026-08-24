@@ -11,12 +11,14 @@ import {
   Query,
   Headers,
   Request,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { RequireFacilityAccess } from '../auth/decorators/facility-access.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 import { AppointmentsService } from './appointments.service';
 import {
   CreateAppointmentDto,
@@ -30,6 +32,7 @@ import { AppointmentStatus } from './entities/appointment.entity';
 @ApiBearerAuth()
 @RequireModule('registration')
 @RequireFacilityAccess()
+@UseGuards(ModuleGuard)
 @Controller('appointments')
 export class AppointmentsController {
   constructor(private readonly appointmentsService: AppointmentsService) {}

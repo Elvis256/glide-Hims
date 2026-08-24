@@ -26,10 +26,11 @@ import {
 } from './dto/queue.dto';
 import { RequireFacilityAccess } from '../auth/decorators/facility-access.decorator';
 import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
 @RequireModule('registration')
 @Controller('queue')
-@UseGuards(AuthGuard('jwt'))
+@UseGuards(AuthGuard('jwt'), ModuleGuard)
 @RequireFacilityAccess()
 export class QueueManagementController {
   constructor(private readonly queueService: QueueManagementService) {}

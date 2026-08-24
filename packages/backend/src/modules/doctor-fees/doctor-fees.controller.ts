@@ -8,15 +8,18 @@ import {
   Put,
   Query,
   Request,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 import { DoctorFeesService } from './doctor-fees.service';
 import { UpsertDoctorFeeProfileDto } from './doctor-fees.dto';
 
 @ApiTags('Doctor Fees')
 @RequireModule('finance')
+@UseGuards(ModuleGuard)
 @Controller('doctor-fees')
 export class DoctorFeesController {
   constructor(private readonly service: DoctorFeesService) {}

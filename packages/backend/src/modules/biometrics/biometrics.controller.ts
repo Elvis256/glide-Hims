@@ -8,6 +8,7 @@ import {
   HttpCode,
   HttpStatus,
   Request,
+  UseGuards,
 } from '@nestjs/common';
 import { BiometricsService } from './biometrics.service';
 import {
@@ -19,8 +20,10 @@ import {
 } from './dto/biometric.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
 @RequireModule('registration')
+@UseGuards(ModuleGuard)
 @Controller('biometrics')
 export class BiometricsController {
   constructor(private readonly biometricsService: BiometricsService) {}
