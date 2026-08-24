@@ -23,6 +23,7 @@ import { encountersService } from '../../../services/encounters';
 import { ordersService, type CreateOrderDto, type OrderPriority } from '../../../services/orders';
 import { labService, type LabTest } from '../../../services/lab';
 import api from '../../../services/api';
+import { labTestTurnaround } from '../../../services/lab';
 
 interface LabPanel {
   id: string;
@@ -531,10 +532,10 @@ export default function LabOrdersPage() {
                       <span className="text-xs px-2 py-0.5 bg-gray-100 rounded text-gray-600">{test.code}</span>
                     </div>
                     <div className="flex items-center gap-4 mt-1 text-sm text-gray-500">
-                      {test.turnaroundTime && (
+                      {labTestTurnaround(test) !== '—' && (
                         <span className="flex items-center gap-1">
                           <Clock className="w-3 h-3" />
-                          {test.turnaroundTime}
+                          {labTestTurnaround(test)}
                         </span>
                       )}
                       <span className="flex items-center gap-1">

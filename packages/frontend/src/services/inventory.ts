@@ -31,10 +31,7 @@ export interface InventoryItem {
   status: string;
   facilityId?: string;
   itemCategory?: { id: string; name: string };
-  itemSubcategory?: { id: string; name: string };
   itemUnit?: { id: string; name: string; abbreviation?: string };
-  itemFormulation?: { id: string; name: string };
-  itemBrand?: { id: string; name: string };
   createdAt: string;
   updatedAt: string;
 }

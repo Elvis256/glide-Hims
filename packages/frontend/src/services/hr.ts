@@ -23,7 +23,6 @@ export interface Employee {
   otherNames?: string;
   fullName: string;
   dateOfBirth?: string;
-  dateOfJoining?: string;
   gender?: 'male' | 'female' | 'other';
   maritalStatus?: string;
   nationalId?: string;

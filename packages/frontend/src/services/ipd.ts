@@ -7,8 +7,6 @@ export interface Ward {
   type: 'general' | 'pediatric' | 'maternity' | 'icu' | 'surgical' | 'private';
   totalBeds?: number;
   occupiedBeds?: number;
-  /** Only present on GET /ipd/wards/occupancy, which computes it. */
-  availableBeds?: number;
   description?: string;
   // The wards payload carries `floor` and `status`; floorNumber and isActive
   // were never sent, and this service has no normaliser to map them.
