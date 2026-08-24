@@ -26,7 +26,7 @@ import {
   Sun,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { radiologyService, type RadiologyOrder } from '../../services';
+import { radiologyService, imagingStaffName, type RadiologyOrder } from '../../services';
 import { getApiErrorMessage } from '../../services/api';
 import { useFacilityId } from '../../lib/facility';
 
@@ -165,14 +165,14 @@ export default function RadiologyResultsPage() {
       modality: getModalityString(order.modality),
       studyDate: order.orderedAt?.split('T')[0] || new Date().toISOString().split('T')[0],
       acquisitionTime: order.scheduledAt ? new Date(order.scheduledAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : 'N/A',
-      referringPhysician: order.doctor?.fullName || 'Dr. Unknown',
+      referringPhysician: imagingStaffName(order.doctor) || imagingStaffName(order.orderedBy) || 'Unknown',
       status: (order.status === 'completed' || order.status === 'reported' ? 'Completed' : 
                order.status === 'in_progress' ? 'In Progress' : 'Pending') as ReportStatus,
       priority: order.priority?.toUpperCase() === 'STAT' ? 'STAT' : 
                 order.priority === 'urgent' ? 'Urgent' : 'Routine',
       criticalFinding: order.priority === 'stat',
       images: 1,
-      assignedRadiologist: order.assignedTo,
+      assignedRadiologist: imagingStaffName(order.performedBy) || order.assignedTo,
     }));
   }, [apiOrders]);
 

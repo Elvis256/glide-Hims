@@ -15,7 +15,7 @@ export { pharmacyService } from './pharmacy';
 export { prescriptionsService } from './prescriptions';
 export { labService } from './lab';
 export { labSuppliesService } from './lab-supplies';
-export { radiologyService } from './radiology';
+export { radiologyService, imagingStaffName } from './radiology';
 export { storesService } from './stores';
 export { financeService } from './finance';
 export { membershipService } from './membership';
