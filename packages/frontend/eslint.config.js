@@ -7,7 +7,14 @@ import jsxA11y from 'eslint-plugin-jsx-a11y'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  // `dist` is the build output; `.vite` is Vite's dependency pre-bundle cache,
+  // which appears the moment anyone runs the dev server. Linting it reported
+  // two ERRORS — rules the bundled react-router-dom source references but this
+  // config does not define — so `pnpm run lint` exited 1 on any machine that
+  // had ever started the dev server, while a clean checkout passed. That is
+  // exactly the kind of failure CI exists to catch and could not, because no
+  // Actions job on this repository has ever reached a runner.
+  globalIgnores(['dist', '.vite', 'coverage', 'node_modules']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [

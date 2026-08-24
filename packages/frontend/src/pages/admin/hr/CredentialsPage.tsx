@@ -316,7 +316,12 @@ export default function CredentialsPage() {
   const handleDownload = async (credential: Credential) => {
     try {
       const response = await api.get(`/hr/documents/${credential.id}/download`, { responseType: 'blob' });
-      const blob = new Blob([response.data], { type: response.headers['content-type'] || 'application/pdf' });
+      // axios types a header value as string | number | boolean | string[] |
+      // AxiosHeaders, so it cannot go straight into Blob's `type`. Narrow it.
+      const contentType = response.headers['content-type'];
+      const blob = new Blob([response.data], {
+        type: typeof contentType === 'string' ? contentType : 'application/pdf',
+      });
       const url = window.URL.createObjectURL(blob);
       setPreviewName(credential.credentialName || 'Document');
       setPreviewUrl(url);
