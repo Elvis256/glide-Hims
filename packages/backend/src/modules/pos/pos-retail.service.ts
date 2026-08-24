@@ -740,7 +740,12 @@ export class PosRetailService {
       .leftJoinAndSelect('s.store', 'store')
       .where('s.tenant_id = :tenantId', { tenantId })
       .andWhere('s.status = :status', { status: SaleStatus.COMPLETED })
-      .orderBy('s.created_at', 'DESC')
+      // Property name, not column: take() alongside leftJoinAndSelect sends
+      // TypeORM through its DISTINCT-subquery path, where an unresolvable
+      // orderBy throws "Cannot read properties of undefined (reading
+      // 'databaseName')" — the same fault that made
+      // /clinical-notes/patient/:id/history 500 for every patient.
+      .orderBy('s.createdAt', 'DESC')
       .take(200);
 
     if (query.from) qb.andWhere('s.created_at >= :from', { from: new Date(query.from) });

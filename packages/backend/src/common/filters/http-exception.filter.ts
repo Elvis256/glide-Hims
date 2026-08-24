@@ -33,6 +33,20 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         message = exceptionResponse;
         error = HttpStatus[status] || 'Error';
       }
+    } else if (this.isEntityNotFound(exception)) {
+      // TypeORM's findOneOrFail throws EntityNotFoundError when the row is
+      // simply absent. That is a 404 — the caller asked for something that is
+      // not there — and it was surfacing as 500 "An unexpected error occurred",
+      // which reads like the server broke. Found on
+      // GET /suppliers/:id/scorecard while sweeping every parameterised GET
+      // with an id that does not exist.
+      status = HttpStatus.NOT_FOUND;
+      message = 'The requested record was not found';
+      error = 'NOT_FOUND';
+      this.logger.warn(
+        `Entity not found: ${(exception as Error).message.split('\n')[0]}`,
+        `${request.method} ${request.url}`,
+      );
     } else if (this.isInvalidInputSyntax(exception)) {
       // Postgres 22P02 — "invalid input syntax for type uuid/integer/date".
       // The client sent something the column type cannot hold, which is a bad
@@ -126,6 +140,12 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     if (!(exception instanceof Error)) return false;
     const status = (exception as any).status || (exception as any).statusCode;
     return typeof status === 'number' && status >= 400 && status < 500;
+  }
+
+  /** TypeORM's EntityNotFoundError — findOneOrFail against a row that is not there. */
+  private isEntityNotFound(exception: unknown): boolean {
+    if (!(exception instanceof Error)) return false;
+    return exception.name === 'EntityNotFoundError';
   }
 
   /**
