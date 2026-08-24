@@ -13,6 +13,7 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Response } from 'express';
 import { ContractService } from './contract.service';
+import { CreateContractDto, UpdateContractDto } from './dto/saas-ops.dto';
 
 @ApiTags('SaaS Contracts')
 @Controller('saas-revenue/contracts')
@@ -32,7 +33,7 @@ export class ContractController {
 
   @Post()
   @ApiOperation({ summary: 'Create a contract' })
-  async create(@Req() req: any, @Body() dto: any) {
+  async create(@Req() req: any, @Body() dto: CreateContractDto) {
     this.assertAdmin(req);
     return this.service.createContract(dto, req.user?.id);
   }
@@ -46,7 +47,7 @@ export class ContractController {
 
   @Put(':id')
   @ApiOperation({ summary: 'Update a contract' })
-  async update(@Req() req: any, @Param('id') id: string, @Body() dto: any) {
+  async update(@Req() req: any, @Param('id') id: string, @Body() dto: UpdateContractDto) {
     this.assertAdmin(req);
     return this.service.updateContract(id, dto);
   }

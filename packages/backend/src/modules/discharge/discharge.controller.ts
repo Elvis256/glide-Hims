@@ -17,6 +17,7 @@ import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { RequireModule } from '../auth/decorators/module.decorator';
 import { ModuleGuard } from '../auth/guards/module.guard';
 import { RequireFacilityAccess } from '../auth/decorators/facility-access.decorator';
+import { FinalizeDischargeDto } from './dto/finalize.dto';
 
 @UseGuards(ModuleGuard)
 @RequireModule('ipd')
@@ -100,7 +101,7 @@ export class DischargeController {
   @AuthWithPermissions('discharge.update')
   async finalizeSummary(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() body: { override?: boolean; overrideReason?: string },
+    @Body() body: FinalizeDischargeDto,
     @Request() req: any,
   ) {
     return this.dischargeService.finalizeSummary(id, req.user?.id, req.user?.tenantId, {

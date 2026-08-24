@@ -10,6 +10,7 @@ import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { RequireModule } from '../auth/decorators/module.decorator';
 import { ModuleGuard } from '../auth/guards/module.guard';
 import { FacilityId } from '../../common/decorators/facility-id.decorator';
+import { TerminateAgreementDto } from './dto/terminate.dto';
 
 @UseGuards(ModuleGuard)
 @RequireModule('stores')
@@ -96,7 +97,11 @@ export class PriceAgreementsController {
 
   @AuthWithPermissions('procurement.update')
   @Post(':id/terminate')
-  terminate(@Param('id') id: string, @Body() body: { reason: string }, @Request() req: any) {
+  terminate(
+    @Param('id') id: string,
+    @Body() body: TerminateAgreementDto,
+    @Request() req: any,
+  ) {
     return this.service.terminate(id, body.reason, req.user?.tenantId);
   }
 }
