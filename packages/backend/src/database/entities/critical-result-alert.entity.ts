@@ -113,4 +113,17 @@ export class CriticalResultAlert extends BaseEntity {
 
   @Column({ name: 'last_notified_at', type: 'timestamptz', nullable: true })
   lastNotifiedAt?: Date | null;
+
+  @Column({ name: 'cancelled_by_id', type: 'uuid', nullable: true })
+  cancelledById?: string | null;
+
+  @ManyToOne(() => User, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'cancelled_by_id' })
+  cancelledBy?: User | null;
+
+  @Column({ name: 'cancelled_at', type: 'timestamptz', nullable: true })
+  cancelledAt?: Date | null;
+
+  @Column({ name: 'cancellation_reason', type: 'text', nullable: true })
+  cancellationReason?: string | null;
 }

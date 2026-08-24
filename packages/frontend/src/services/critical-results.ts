@@ -36,7 +36,13 @@ export interface CriticalResultAlert {
   actionTaken?: string | null;
   followUpOrderId?: string | null;
   escalatedAt?: string | null;
+  escalatedToId?: string | null;
+  escalatedTo?: { id: string; fullName?: string; firstName?: string; lastName?: string } | null;
   escalationLevel: number;
+  cancelledAt?: string | null;
+  cancelledById?: string | null;
+  cancelledBy?: { id: string; fullName?: string; firstName?: string; lastName?: string } | null;
+  cancellationReason?: string | null;
   patient?: { id: string; fullName?: string; mrn?: string };
 }
 
@@ -98,8 +104,13 @@ export const criticalResultsService = {
     return data;
   },
 
-  async cancel(id: string): Promise<CriticalResultAlert> {
-    const { data } = await api.post(`${base}/${id}/cancel`);
+  /**
+   * Cancelling closes an alert about a life-threatening value without anyone
+   * acknowledging the patient was reviewed, so the API now requires a reason
+   * (10 characters minimum) and records who gave it.
+   */
+  async cancel(id: string, reason: string): Promise<CriticalResultAlert> {
+    const { data } = await api.post(`${base}/${id}/cancel`, { reason });
     return data;
   },
 };

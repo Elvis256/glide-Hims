@@ -3,7 +3,11 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Request } from 'express';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { RequireModule } from '../auth/decorators/module.decorator';
-import { AcknowledgeCriticalResultDto, CriticalResultsService } from './critical-results.service';
+import {
+  AcknowledgeCriticalResultDto,
+  CancelCriticalResultDto,
+  CriticalResultsService,
+} from './critical-results.service';
 
 interface AuthenticatedRequest extends Request {
   user?: { id: string; tenantId?: string; facilityId?: string; roles?: string[]; permissions?: string[]; isSystemAdmin?: boolean; };
@@ -94,8 +98,12 @@ export class CriticalResultsController {
   @Post(':id/cancel')
   @AuthWithPermissions('critical-results.acknowledge')
   @ApiOperation({ summary: 'Cancel a critical-result alert (e.g., result amended away)' })
-  cancel(@Param('id', ParseUUIDPipe) id: string, @Req() req: AuthenticatedRequest) {
+  cancel(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: CancelCriticalResultDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
     const user = req.user!;
-    return this.svc.cancel(id, user.tenantId);
+    return this.svc.cancel(id, user.id, body, user.tenantId);
   }
 }

@@ -498,6 +498,7 @@ export class RadiologyService {
             ),
           flaggedById: userId,
           assignedToId: order.orderedById,
+          facilityId: order.facilityId ?? null,
           tenantId,
         });
         if (isCrit) {

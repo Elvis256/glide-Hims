@@ -917,19 +917,12 @@ export class LabService {
               refRange.criticalHigh !== undefined ? Number(refRange.criticalHigh) : undefined;
           }
         }
-        abnormalFlag = this.calculateAbnormalFlag(
-          dto.numericValue,
-          refMin,
-          refMax,
-          critLow,
-          critHigh,
+        abnormalFlag = this.reconcileAbnormalFlag(
+          this.calculateAbnormalFlag(dto.numericValue, refMin, refMax, critLow, critHigh),
+          dto.abnormalFlag,
+          rangeResolved,
+          `enterResult: sample ${sample.sampleNumber}, parameter=${dto.parameter}`,
         );
-        if (!rangeResolved && abnormalFlag === AbnormalFlag.NORMAL) {
-          this.logger.warn(
-            `enterResult: reference ranges not resolved for sample ${sample.sampleNumber}, parameter=${dto.parameter}. Flagging ABNORMAL fail-closed.`,
-          );
-          abnormalFlag = AbnormalFlag.ABNORMAL;
-        }
       }
 
       const result = this.resultRepo.create({
@@ -1060,6 +1053,7 @@ export class LabService {
           summary: `${savedResult.parameter || 'Lab result'}: ${savedResult.value ?? ''}${savedResult.unit ? ' ' + savedResult.unit : ''} (${savedResult.abnormalFlag})`,
           flaggedById: userId,
           assignedToId: sample.order.orderedById,
+          facilityId: sample.order.encounter?.facilityId ?? sample.facilityId ?? null,
           tenantId,
         });
       }
@@ -1303,19 +1297,22 @@ export class LabService {
               refRange.criticalHigh !== undefined ? Number(refRange.criticalHigh) : undefined;
           }
         }
-        result.abnormalFlag = this.calculateAbnormalFlag(
-          dto.numericValue,
-          result.referenceMin,
-          result.referenceMax,
-          critLow,
-          critHigh,
+        result.abnormalFlag = this.reconcileAbnormalFlag(
+          this.calculateAbnormalFlag(
+            dto.numericValue,
+            result.referenceMin,
+            result.referenceMax,
+            critLow,
+            critHigh,
+          ),
+          // An amendment carries no flag of its own — AmendResultDto is a new
+          // value and a reason. Deliberately not carrying the OLD flag forward
+          // as a floor: correcting a wrongly-critical result is exactly what
+          // amendment is for, and a floor would make that impossible.
+          undefined,
+          rangeResolved,
+          `amendResult: result ${result.id}, parameter=${result.parameter}`,
         );
-        if (!rangeResolved && result.abnormalFlag === AbnormalFlag.NORMAL) {
-          this.logger.warn(
-            `amendResult: reference ranges not resolved for result ${result.id}, parameter=${result.parameter}. Flagging ABNORMAL fail-closed.`,
-          );
-          result.abnormalFlag = AbnormalFlag.ABNORMAL;
-        }
       }
 
       result.amendmentReason = dto.amendmentReason;
@@ -1374,6 +1371,7 @@ export class LabService {
             summary: `[AMENDED] ${amended.parameter || 'Lab result'}: ${amended.value ?? ''}${amended.unit ? ' ' + amended.unit : ''} (${amended.abnormalFlag})`,
             flaggedById: userId,
             assignedToId: sample.order.orderedById,
+            facilityId: sample.order.encounter?.facilityId ?? sample.facilityId ?? null,
             tenantId,
           });
         }
@@ -1520,6 +1518,65 @@ export class LabService {
     if (value < min) return AbnormalFlag.LOW;
     if (value > max) return AbnormalFlag.HIGH;
     return AbnormalFlag.NORMAL;
+  }
+
+  /**
+   * How loudly a flag speaks. Only ABNORMAL and the two CRITICALs reach
+   * CriticalResultsService (see toCriticalSeverity), so LOW/HIGH rank below
+   * ABNORMAL here even though clinically they read as "out of range" — this
+   * ranking is about who gets told, not about how ill the patient is.
+   */
+  private flagRank(f?: AbnormalFlag): number {
+    switch (f) {
+      case AbnormalFlag.CRITICAL_LOW:
+      case AbnormalFlag.CRITICAL_HIGH:
+        return 3;
+      case AbnormalFlag.ABNORMAL:
+        return 2;
+      case AbnormalFlag.LOW:
+      case AbnormalFlag.HIGH:
+        return 1;
+      default:
+        return 0;
+    }
+  }
+
+  /**
+   * Reconcile the flag the bench entered with the one the reference ranges
+   * compute, and never let the quieter of the two win.
+   *
+   * Two ways a critical result used to go silent:
+   *
+   * 1. The computed flag OVERWROTE an explicit one. A technician looking at a
+   *    sodium of 105 mmol/L and marking it critical_low was overruled, because
+   *    the panel has no configured threshold for Sodium, and stored as `low`.
+   *    `low` maps to no critical severity at all, so nobody was told.
+   * 2. The fail-closed guard only rescued NORMAL. A value OUTSIDE the caller's
+   *    reference range with no critical threshold configured came out LOW or
+   *    HIGH and fell straight through it — which is the dangerous case, not the
+   *    safe one. Proven live: on one U&E sample, potassium 1.9 raised an alert
+   *    and sodium 105 raised nothing, the only difference being that somebody
+   *    had configured a threshold for potassium.
+   *
+   * Configuring thresholds for every parameter is the real fix, and a hospital
+   * will never finish doing it. Until then an unresolved range means "we do not
+   * know", and not knowing must be at least ABNORMAL, which does alert.
+   */
+  private reconcileAbnormalFlag(
+    computed: AbnormalFlag,
+    declared: AbnormalFlag | undefined,
+    rangeResolved: boolean,
+    context: string,
+  ): AbnormalFlag {
+    let flag = this.flagRank(declared) > this.flagRank(computed) ? declared! : computed;
+
+    if (!rangeResolved && this.flagRank(flag) < this.flagRank(AbnormalFlag.ABNORMAL)) {
+      this.logger.warn(
+        `${context}: reference ranges not resolved; raising ${flag} to ABNORMAL fail-closed.`,
+      );
+      flag = AbnormalFlag.ABNORMAL;
+    }
+    return flag;
   }
 
   async getCriticalResults(
