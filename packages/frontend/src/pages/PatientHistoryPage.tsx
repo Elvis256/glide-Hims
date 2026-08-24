@@ -53,6 +53,7 @@ import { usePermissions } from '../components/PermissionGate';
 import { printService } from '../lib/print';
 import { useInstitutionInfo } from '../lib/useInstitutionInfo';
 import { asList } from '../utils/unwrapResponse';
+import { patientPaymentType, patientInsuranceProvider, patientMembershipType } from '../services/patients';
 
 // Types
 interface VisitData {
@@ -500,11 +501,11 @@ export default function PatientHistoryPage() {
 
   // Helper to get payment type display
   const getPaymentTypeDisplay = (patient: Patient) => {
-    const type = patient.paymentType || 'cash';
+    const type = patientPaymentType(patient);
     const icons: Record<string, { icon: typeof CreditCard; color: string; label: string }> = {
       cash: { icon: DollarSign, color: 'text-green-600', label: 'Cash' },
-      insurance: { icon: Shield, color: 'text-blue-600', label: patient.insuranceProvider || 'Insurance' },
-      membership: { icon: Users, color: 'text-purple-600', label: patient.membershipType || 'Membership' },
+      insurance: { icon: Shield, color: 'text-blue-600', label: patientInsuranceProvider(patient) || 'Insurance' },
+      membership: { icon: Users, color: 'text-purple-600', label: patientMembershipType(patient) || 'Membership' },
       corporate: { icon: Building2, color: 'text-orange-600', label: 'Corporate' },
     };
     return icons[type] || icons.cash;

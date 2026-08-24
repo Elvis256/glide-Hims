@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { patientsService, type Patient } from '../services/patients';
+import { patientsService, type Patient, patientPaymentType, patientMembershipType } from '../services/patients';
 import { encountersService } from '../services/encounters';
 import { usePatientStore, type PatientRecord } from '../store/patients';
 import { useAuthStore } from '../store/auth';
@@ -71,8 +71,8 @@ const toPatient = (p: PatientRecord): Patient => ({
   // PatientRecord carries the full PaymentMethod union; only the payer
   // categories Patient models are carried across.
   paymentType:
-    p.paymentType === 'insurance' || p.paymentType === 'membership' || p.paymentType === 'cash'
-      ? p.paymentType
+    patientPaymentType(p) === 'insurance' || patientPaymentType(p) === 'membership' || patientPaymentType(p) === 'cash'
+      ? patientPaymentType(p)
       : undefined,
   insuranceProvider: p.insurance?.provider,
   insurancePolicyNumber: p.insurance?.policyNumber,
@@ -361,14 +361,14 @@ export default function PatientSearchPage() {
   // Get patient badge
   const getPatientBadges = (patient: Patient) => {
     const badges = [];
-    if (patient.paymentType === 'insurance') {
+    if (patientPaymentType(patient) === 'insurance') {
       badges.push({ label: 'Insurance', color: 'bg-blue-100 text-blue-700', icon: Shield });
     }
-    if (patient.paymentType === 'corporate') {
+    if (patientPaymentType(patient) === 'corporate') {
       badges.push({ label: 'Corporate', color: 'bg-purple-100 text-purple-700', icon: Building2 });
     }
-    if (patient.paymentType === 'membership' || patient.membershipType) {
-      badges.push({ label: patient.membershipType || 'VIP', color: 'bg-amber-100 text-amber-700', icon: Crown });
+    if (patientPaymentType(patient) === 'membership' || patientMembershipType(patient)) {
+      badges.push({ label: patientMembershipType(patient) || 'VIP', color: 'bg-amber-100 text-amber-700', icon: Crown });
     }
     return badges;
   };

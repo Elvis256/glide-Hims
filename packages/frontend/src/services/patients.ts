@@ -1,5 +1,19 @@
 import api from './api';
 
+export type PatientPaymentType = 'cash' | 'insurance' | 'membership' | 'corporate';
+
+/** Where registration actually stores the billing details. */
+export interface PatientBillingMetadata {
+  paymentType?: PatientPaymentType;
+  insuranceProvider?: string;
+  insuranceId?: string;
+  insurancePolicyNumber?: string;
+  membershipType?: string;
+  corporateName?: string;
+  weight?: number;
+  height?: number;
+}
+
 export interface Patient {
   id: string;
   mrn: string;
@@ -12,9 +26,20 @@ export interface Patient {
   address?: string;
   bloodGroup?: string;
   allergies?: string[];
+  /**
+   * These six are NOT columns and no endpoint has ever sent them. The patients
+   * table has no weight, height, payment_type, insurance_provider,
+   * insurance_policy_number or membership_type — registration puts them in
+   * `metadata`, which is where OPDTokenPage and WaitingPatientsPage correctly
+   * read them from. Kept optional so that a payload which somehow carries them
+   * still type-checks, but read them through the helpers below: the pages that
+   * used `patient.paymentType` directly were counting a field that is always
+   * undefined, so the Patients dashboard reported 0 insurance and 0 corporate
+   * patients for every hospital while the data sat in metadata all along.
+   */
   weight?: number;
   height?: number;
-  paymentType?: 'cash' | 'insurance' | 'membership' | 'corporate';
+  paymentType?: PatientPaymentType;
   insuranceProvider?: string;
   insurancePolicyNumber?: string;
   membershipType?: string;
@@ -35,6 +60,44 @@ export interface Patient {
   status?: string;
   createdAt: string;
   updatedAt?: string;
+}
+
+/**
+ * Read a billing detail from wherever it actually is: `metadata` first, since
+ * that is what registration writes and what the API returns, then the
+ * top-level field for any endpoint that flattens it.
+ */
+/**
+ * Structural, not `Partial<Patient>`: several pages carry their own narrower
+ * patient record (PatientSearchPage's PatientRecord types `allergies` as a
+ * string), and these helpers only ever need the billing bits.
+ */
+type PatientLike = {
+  metadata?: unknown;
+  paymentType?: string;
+  insuranceProvider?: string;
+  membershipType?: string;
+  weight?: number;
+};
+
+function billing(p?: PatientLike | null): PatientBillingMetadata {
+  return ((p?.metadata as PatientBillingMetadata | undefined) ?? {}) as PatientBillingMetadata;
+}
+
+export function patientPaymentType(p?: PatientLike | null): PatientPaymentType {
+  return (billing(p).paymentType ?? p?.paymentType ?? 'cash') as PatientPaymentType;
+}
+
+export function patientInsuranceProvider(p?: PatientLike | null): string | undefined {
+  return billing(p).insuranceProvider ?? p?.insuranceProvider;
+}
+
+export function patientMembershipType(p?: PatientLike | null): string | undefined {
+  return billing(p).membershipType ?? p?.membershipType;
+}
+
+export function patientWeight(p?: PatientLike | null): number | undefined {
+  return billing(p).weight ?? p?.weight;
 }
 
 export interface CreatePatientDto {
