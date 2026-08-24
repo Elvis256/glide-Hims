@@ -143,6 +143,14 @@ export class ClinicalNotesService {
 
     qb.andWhere('note.tenant_id = :tenantId', { tenantId: tid });
 
-    return qb.orderBy('note.created_at', 'DESC').take(limit).getMany();
+    // `note.createdAt`, the PROPERTY, not `note.created_at`, the column.
+    // TypeORM only resolves the orderBy to a column when take() is combined
+    // with a join — it then builds a DISTINCT subquery through
+    // createOrderByCombinedWithSelectExpression, fails to find a property
+    // called created_at and dereferences undefined: "Cannot read properties of
+    // undefined (reading 'databaseName')". This endpoint answered 500 for every
+    // patient. Elsewhere the snake_case form is harmless because there is no
+    // take() alongside the join, which is why only this one broke.
+    return qb.orderBy('note.createdAt', 'DESC').take(limit).getMany();
   }
 }

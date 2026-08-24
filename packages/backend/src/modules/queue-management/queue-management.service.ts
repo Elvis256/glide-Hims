@@ -1990,7 +1990,8 @@ export class QueueManagementService {
       });
     displayQb.andWhere('queue.tenant_id = :tenantId', { tenantId: tid });
     return displayQb
-      .orderBy('queue.called_at', 'DESC')
+      // Property name, not column — see the note in pos-retail listReceiptHistory.
+      .orderBy('queue.calledAt', 'DESC')
       .take(display.displaySettings?.maxDisplay || 10)
       .getMany();
   }
