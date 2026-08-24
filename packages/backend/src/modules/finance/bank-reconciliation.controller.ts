@@ -20,6 +20,7 @@ import {
 } from './dto/bank-reconciliation.dto';
 import { RequireModule } from '../auth/decorators/module.decorator';
 import { ModuleGuard } from '../auth/guards/module.guard';
+import { FacilityId } from '../../common/decorators/facility-id.decorator';
 
 @ApiTags('Bank Reconciliation')
 @ApiBearerAuth()
@@ -40,7 +41,7 @@ export class BankReconciliationController {
   @AuthWithPermissions('finance.read')
   @ApiOperation({ summary: 'List bank reconciliations' })
   @ApiQuery({ name: 'facilityId', required: false })
-  async findAll(@Query('facilityId') facilityId: string, @Request() req: any) {
+  async findAll(@FacilityId() facilityId: string, @Request() req: any) {
     return this.bankReconService.findAll(facilityId, req.user?.tenantId);
   }
 

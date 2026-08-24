@@ -41,6 +41,7 @@ import { FollowUpsService } from '../follow-ups/follow-ups.service';
 import { FollowUpType } from '../../database/entities/follow-up.entity';
 import { StateMachine } from '../../common/fsm/state-machine';
 import { requireTenantId } from '../../common/utils/tenant.util';
+import { localDateString, localDayStart } from '../../common/utils/timezone.util';
 
 @Injectable()
 export class EncountersService {
@@ -74,8 +75,10 @@ export class EncountersService {
   ) {}
 
   private async generateVisitNumber(manager: EntityManager, tenantId?: string): Promise<string> {
-    const today = new Date();
-    const datePrefix = today.toISOString().slice(0, 10).replace(/-/g, '');
+    // Hospital-local date: a visit registered at 01:00 was numbered under
+    // yesterday. Lock key and sequence lookup derive from the same string, so
+    // they stay consistent; nothing else uses this key.
+    const datePrefix = localDateString(new Date()).replace(/-/g, '');
     const lockKey = `visit_num_${datePrefix}_${tenantId || 'global'}`;
 
     // Use advisory lock to prevent concurrent generation collisions
@@ -106,8 +109,10 @@ export class EncountersService {
     departmentId?: string,
     tenantId?: string,
   ): Promise<number> {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // The hospital's day, not the server's: with server-midnight the daily
+    // queue sequence did not reset until 03:00, so tokens issued in the small
+    // hours continued yesterday's numbering.
+    const today = localDayStart(0);
 
     const query = manager
       .getRepository(Encounter)
@@ -298,7 +303,10 @@ export class EncountersService {
       }
     }
 
-    return this.dataSource.transaction(async (manager) => {
+    // Resolved inside the transaction, charged after it commits.
+    let consultCharge: any = null;
+
+    const registered = await this.dataSource.transaction(async (manager) => {
       // Active-encounter check INSIDE the transaction with pessimistic lock so
       // two concurrent registration submits for the same patient cannot both
       // pass the check. Without this, double-clicking the Register button (or
@@ -373,27 +381,29 @@ export class EncountersService {
           const consultService = await consultServiceQb.getOne();
           const unitPrice = consultService?.basePrice ? Number(consultService.basePrice) : 0;
 
-          await this.billingService.addBillableItem(
-            {
-              encounterId: saved.id,
-              patientId: dto.patientId,
-              serviceCode: consultService?.code || consultConfig.fallbackCode,
-              description: consultService?.name || consultConfig.fallbackName,
-              quantity: 1,
-              unitPrice,
-              chargeType: 'consultation',
-              referenceType: 'encounter',
-              referenceId: saved.id,
-              insurancePolicyId: dto.insurancePolicyId,
-              paymentType: dto.payerType,
-              serviceId: consultService?.id,
-            },
-            userId,
-            tid,
-          );
+          // Resolved here, charged after the commit. addBillableItem goes
+          // through BillingService on its own connection, so the consultation
+          // fee committed while this transaction was still open — and this
+          // transaction can still fail, on the unique visit-number index or
+          // the queue-number allocation below it. That left a patient invoiced
+          // for a visit that was never registered.
+          consultCharge = {
+            encounterId: saved.id,
+            patientId: dto.patientId,
+            serviceCode: consultService?.code || consultConfig.fallbackCode,
+            description: consultService?.name || consultConfig.fallbackName,
+            quantity: 1,
+            unitPrice,
+            chargeType: 'consultation',
+            referenceType: 'encounter',
+            referenceId: saved.id,
+            insurancePolicyId: dto.insurancePolicyId,
+            paymentType: dto.payerType,
+            serviceId: consultService?.id,
+          };
         } catch (err) {
           this.logger.warn(
-            `Failed to auto-bill consultation fee for encounter ${saved.id}: ${err.message}`,
+            `Failed to resolve consultation fee for encounter ${saved.id}: ${err.message}`,
           );
         }
       } else {
@@ -404,6 +414,18 @@ export class EncountersService {
 
       return saved;
     });
+
+    if (consultCharge) {
+      try {
+        await this.billingService.addBillableItem(consultCharge, userId, tid);
+      } catch (err: any) {
+        this.logger.warn(
+          `Failed to auto-bill consultation fee for encounter ${registered.id}: ${err?.message || err}`,
+        );
+      }
+    }
+
+    return registered;
   }
 
   async findAll(
@@ -718,6 +740,7 @@ export class EncountersService {
       await this.identityGuard.assertAssignableProvider(attendingProviderId, tid);
     }
 
+    let auditOldStatus: string | undefined;
     const saved = await this.dataSource.transaction(async (manager) => {
       // Lock row first without relations (FOR UPDATE can't apply to outer joins)
       const encounter = await manager.findOne(Encounter, {
@@ -833,24 +856,28 @@ export class EncountersService {
 
       const result = await manager.save(Encounter, encounter);
 
-      this.auditLogService
-        .log({
-          userId: actorUserId || 'system',
-          action: 'STATUS_CHANGE',
-          entityType: 'encounter',
-          entityId: id,
-          oldValue: { status: oldStatus },
-          newValue: {
-            status,
-            reason,
-            attendingProviderId: encounter.attendingProviderId,
-            patientId: encounter.patientId,
-          },
-        })
-        .catch((err) => this.logger.warn(`Audit log failed: ${err.message}`));
-
+      auditOldStatus = oldStatus;
       return result;
     });
+
+    // Audit after the commit. AuditLogService writes on its own connection,
+    // so from inside the transaction the log row committed independently of
+    // the status change it recorded. Still best-effort.
+    this.auditLogService
+      .log({
+        userId: actorUserId || 'system',
+        action: 'STATUS_CHANGE',
+        entityType: 'encounter',
+        entityId: id,
+        oldValue: { status: auditOldStatus },
+        newValue: {
+          status,
+          reason,
+          attendingProviderId: saved.attendingProviderId,
+          patientId: saved.patientId,
+        },
+      })
+      .catch((err) => this.logger.warn(`Audit log failed: ${err.message}`));
 
     // Auto-generate insurance claim when encounter completes/discharges (non-blocking)
     if (
@@ -1448,8 +1475,8 @@ export class EncountersService {
     /** @deprecated Use inConsultation */
     inProgress: number;
   }> {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // Hospital's day — the front-desk summary used to roll over at 03:00.
+    const today = localDayStart(0);
 
     const tenantFilter = tenantId ? 'encounter.tenant_id = :tenantId' : '1=1';
 
@@ -1574,7 +1601,7 @@ export class EncountersService {
     }
 
     const tid = requireTenantId(tenantId);
-    await this.dataSource.transaction(async (manager) => {
+    const deleteAudit = await this.dataSource.transaction(async (manager) => {
       // Re-fetch with lock inside the transaction
       const locked = await manager.findOne(Encounter, {
         where: { id, tenantId: tid },
@@ -1634,7 +1661,23 @@ export class EncountersService {
 
       await manager.softRemove(Encounter, locked);
 
-      // Audit log (inside transaction so it reflects the final state)
+      return {
+        status: locked.status,
+        patientId: locked.patientId,
+        visitNumber: locked.visitNumber,
+        cancelledInvoiceIds: unpaidInvoices.map((inv) => inv.id),
+      };
+    });
+
+    // Audit after the commit.
+    //
+    // It was placed inside the transaction "so it reflects the final state",
+    // but AuditLogService writes through its own connection: it could not see
+    // this transaction's uncommitted rows, so it never reflected that state —
+    // it only recorded the in-memory values, and did so whether or not the
+    // deletion committed. Out here the values are the same and the row is
+    // only written if the encounter really was deleted. Still best-effort.
+    if (deleteAudit) {
       this.auditLogService
         .log({
           userId,
@@ -1642,17 +1685,17 @@ export class EncountersService {
           entityType: 'encounter',
           entityId: id,
           oldValue: {
-            status: locked.status,
-            patientId: locked.patientId,
-            visitNumber: locked.visitNumber,
+            status: deleteAudit.status,
+            patientId: deleteAudit.patientId,
+            visitNumber: deleteAudit.visitNumber,
           },
           newValue: {
-            cancelledInvoices: unpaidInvoices.length,
-            cancelledInvoiceIds: unpaidInvoices.map((inv) => inv.id),
+            cancelledInvoices: deleteAudit.cancelledInvoiceIds.length,
+            cancelledInvoiceIds: deleteAudit.cancelledInvoiceIds,
           },
         })
         .catch((err) => this.logger.warn(`Audit log failed: ${err.message}`));
-    });
+    }
   }
 
   /**

@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -86,6 +87,17 @@ export default function DisposalLogPage() {
   const [dateRange, setDateRange] = useState({ from: '', to: '' });
   const [showRecordModal, setShowRecordModal] = useState(false);
   const [detailRecord, setDetailRecord] = useState<DisposalRecord | null>(null);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showRecordModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showRecordModal,
+    onClose: () => setShowRecordModal(false),
+  });
+  const detailRecordDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!detailRecord,
+    onClose: () => setDetailRecord(null),
+  });
   const [formData, setFormData] = useState({
     itemId: '',
     batchNumber: '',
@@ -464,7 +476,12 @@ export default function DisposalLogPage() {
 
       {/* Record Disposal Modal */}
       {showRecordModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showRecordModalDialogRef}
+        >
           <div className="bg-white rounded-xl w-full max-w-lg p-6 shadow-xl">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold text-gray-900">Record Disposal</h2>
@@ -553,7 +570,12 @@ export default function DisposalLogPage() {
 
       {/* Detail View Modal */}
       {detailRecord && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={detailRecordDialogRef}
+        >
           <div className="bg-white rounded-xl w-full max-w-md p-6 shadow-xl">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold text-gray-900">Disposal Details</h2>

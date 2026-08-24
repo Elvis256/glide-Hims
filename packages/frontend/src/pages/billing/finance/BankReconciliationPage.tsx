@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { formatCurrency } from '../../../lib/currency';
@@ -64,6 +65,17 @@ export default function BankReconciliationPage() {
   const [showItemModal, setShowItemModal] = useState(false);
   const [activeRecId, setActiveRecId] = useState<string | null>(null);
   const [detailView, setDetailView] = useState<string | null>(null);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showItemModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showItemModal,
+    onClose: () => setShowItemModal(false),
+  });
+  const showCreateModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showCreateModal,
+    onClose: () => setShowCreateModal(false),
+  });
 
   const { data: reconciliations = [], isLoading } = useQuery<Reconciliation[]>({
     queryKey: ['bank-reconciliations', facilityId],
@@ -296,7 +308,12 @@ export default function BankReconciliationPage() {
 
         {/* Add Statement Item Modal */}
         {showItemModal && activeRecId && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+            role="dialog"
+            aria-modal="true"
+            ref={showItemModalDialogRef}
+          >
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
               <div className="flex items-center justify-between px-6 py-4 border-b">
                 <h2 className="text-lg font-bold text-gray-900">Add Statement Item</h2>
@@ -458,7 +475,12 @@ export default function BankReconciliationPage() {
 
       {/* Create Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showCreateModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <h2 className="text-lg font-bold text-gray-900">New Reconciliation</h2>

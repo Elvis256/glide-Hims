@@ -1,4 +1,7 @@
 import React, { useState, useMemo } from 'react';
+import { getApiErrorMessage } from '../../../services/api';
+import { toast } from 'sonner';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ClipboardCheck,
@@ -84,6 +87,13 @@ export default function ApproveQuotationsPage() {
   const [showActionModal, setShowActionModal] = useState<'approve' | 'reject' | null>(null);
   const [comments, setComments] = useState('');
 
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showActionModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showActionModal,
+    onClose: () => setShowActionModal(null),
+  });
+
   // Fetch pending approvals
   const { data: pendingApprovals = [], isLoading } = useQuery({
     queryKey: ['pending-approvals', facilityId, levelFilter],
@@ -96,10 +106,16 @@ export default function ApproveQuotationsPage() {
     mutationFn: ({ id, comments }: { id: string; comments?: string }) => rfqService.approvals.approve(id, comments),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['pending-approvals'] });
+      toast.success('Quotation approved');
       setShowActionModal(null);
       setSelectedApproval(null);
       setComments('');
     },
+    // Quotation approval refuses when the approver is not next in the chain,
+    // or has already acted. Without this the modal just closed as though it
+    // had worked.
+    onError: (err: any) =>
+      toast.error(getApiErrorMessage(err, 'Failed to approve quotation')),
   });
 
   // Reject mutation
@@ -107,10 +123,13 @@ export default function ApproveQuotationsPage() {
     mutationFn: ({ id, comments }: { id: string; comments: string }) => rfqService.approvals.reject(id, comments),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['pending-approvals'] });
+      toast.success('Quotation rejected');
       setShowActionModal(null);
       setSelectedApproval(null);
       setComments('');
     },
+    onError: (err: any) =>
+      toast.error(getApiErrorMessage(err, 'Failed to reject quotation')),
   });
 
   const filteredApprovals = useMemo(() => {
@@ -397,7 +416,12 @@ export default function ApproveQuotationsPage() {
 
       {/* Action Modal */}
       {showActionModal && selectedApproval && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showActionModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
             <div className="px-6 py-4 border-b">
               <h2 className="text-lg font-semibold">

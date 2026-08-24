@@ -158,8 +158,17 @@ export const supplierFinanceService = {
     approve: async (id: string): Promise<void> => {
       await api.post(`/supplier-finance/payments/${id}/approve`);
     },
-    process: async (id: string): Promise<void> => {
-      await api.post(`/supplier-finance/payments/${id}/process`);
+    /**
+     * The endpoint has always accepted a cheque number and bank reference and
+     * the page never sent either, so a cheque payment could not be reconciled
+     * against the bank statement — while the voucher detail view happily
+     * displayed a bankReference that nothing could populate.
+     */
+    process: async (
+      id: string,
+      bankDetails?: { chequeNumber?: string; bankReference?: string },
+    ): Promise<void> => {
+      await api.post(`/supplier-finance/payments/${id}/process`, bankDetails ?? {});
     },
     cancel: async (id: string): Promise<void> => {
       await api.post(`/supplier-finance/payments/${id}/cancel`);

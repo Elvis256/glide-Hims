@@ -203,6 +203,105 @@ describe('SurgeryService', () => {
   });
 
   // ================================================================
+  // 1b. recordConsumable — the browser does not set the price
+  // ================================================================
+  describe('recordConsumable – pricing', () => {
+    it('prices from the item and ignores the unitCost the client sent', async () => {
+      mockSurgeryCaseRepo.findOne.mockResolvedValue({
+        id: 'case-1',
+        caseNumber: 'SUR-1',
+        facilityId: 'facility-1',
+        tenantId: 'tenant-1',
+      });
+      mockItemRepo.findOne.mockResolvedValue({
+        id: 'item-1',
+        code: 'AMOX',
+        name: 'Amoxicillin 500mg',
+        unit: 'capsule',
+        sellingPrice: 700,
+      });
+      mockConsumableRepo.create.mockImplementation((d: any) => ({ id: 'cons-1', ...d }));
+      mockConsumableRepo.save.mockImplementation((e: any) => Promise.resolve(e));
+
+      const saved = await service.recordConsumable(
+        {
+          surgeryCaseId: 'case-1',
+          itemId: 'item-1',
+          quantityUsed: 2,
+          unitCost: 1, // what a tampered or stale client would send
+          usagePhase: 'intra_op',
+        } as any,
+        'user-1',
+        'tenant-1',
+      );
+
+      expect(saved.unitCost).toBe(700);
+      expect(saved.totalCost).toBe(1400);
+    });
+
+    it('refuses to bill an item that has no selling price', async () => {
+      mockSurgeryCaseRepo.findOne.mockResolvedValue({
+        id: 'case-1',
+        caseNumber: 'SUR-1',
+        facilityId: 'facility-1',
+        tenantId: 'tenant-1',
+      });
+      mockItemRepo.findOne.mockResolvedValue({
+        id: 'item-2',
+        code: 'DRAPE',
+        name: 'Sterile surgical drape',
+        sellingPrice: 0,
+      });
+
+      await expect(
+        service.recordConsumable(
+          {
+            surgeryCaseId: 'case-1',
+            itemId: 'item-2',
+            quantityUsed: 3,
+            usagePhase: 'intra_op',
+          } as any,
+          'user-1',
+          'tenant-1',
+        ),
+      ).rejects.toThrow(/no selling price/);
+    });
+
+    it('still records the item, with a warning, when stock cannot be deducted', async () => {
+      mockSurgeryCaseRepo.findOne.mockResolvedValue({
+        id: 'case-1',
+        caseNumber: 'SUR-1',
+        facilityId: 'facility-1',
+        tenantId: 'tenant-1',
+      });
+      mockItemRepo.findOne.mockResolvedValue({
+        id: 'item-1',
+        code: 'AMOX',
+        name: 'Amoxicillin 500mg',
+        sellingPrice: 700,
+      });
+      mockConsumableRepo.create.mockImplementation((d: any) => ({ id: 'cons-1', ...d }));
+      mockConsumableRepo.save.mockImplementation((e: any) => Promise.resolve(e));
+      mockInventoryService.deductStock.mockRejectedValueOnce(new Error('Insufficient stock'));
+
+      const saved: any = await service.recordConsumable(
+        {
+          surgeryCaseId: 'case-1',
+          itemId: 'item-1',
+          quantityUsed: 5,
+          usagePhase: 'intra_op',
+          deductFromStock: true,
+        } as any,
+        'user-1',
+        'tenant-1',
+      );
+
+      expect(saved.isDeductedFromStock).toBe(false);
+      expect(saved.stockWarning).toMatch(/stock was not deducted/);
+    });
+  });
+
+  // ================================================================
   // 2. scheduleSurgery — theatre conflict
   // ================================================================
   describe('scheduleSurgery – theatre conflict', () => {
@@ -235,6 +334,136 @@ describe('SurgeryService', () => {
       await expect(service.scheduleSurgery(dto, 'user-1', 'tenant-1')).rejects.toThrow(
         /conflicting surgery/,
       );
+    });
+
+    // A theatre can only run one case at a time and that was enforced; a
+    // surgeon cannot be in two theatres at once and that was not. The two
+    // manager.find calls are told apart by `where.theatreId` — the theatre
+    // check is scoped to a theatre, the staff check is not.
+    it('should refuse a lead surgeon already operating in another theatre', async () => {
+      const dto = buildScheduleDto({
+        theatreId: 'theatre-1',
+        scheduledTime: '09:00',
+        estimatedDurationMinutes: 120,
+        leadSurgeonId: 'surgeon-1',
+      });
+
+      const qb = {
+        setLock: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue({ id: 'theatre-1' }),
+        getCount: jest.fn().mockResolvedValue(0),
+      };
+      mockManager.createQueryBuilder.mockReturnValue(qb);
+
+      mockManager.find.mockImplementation((_entity: any, opts: any) =>
+        Promise.resolve(
+          opts?.where?.theatreId
+            ? [] // theatre-1 itself is free
+            : [
+                {
+                  id: 'other-theatre-case',
+                  caseNumber: 'SUR20260821-0002',
+                  theatreId: 'theatre-2',
+                  leadSurgeonId: 'surgeon-1',
+                  scheduledTime: '09:30',
+                  estimatedDurationMinutes: 60,
+                  status: SurgeryStatus.SCHEDULED,
+                },
+              ],
+        ),
+      );
+
+      await expect(service.scheduleSurgery(dto, 'user-1', 'tenant-1')).rejects.toThrow(
+        /lead surgeon is already booked on SUR20260821-0002/,
+      );
+    });
+
+    it('should catch a clash across roles — leading one case, anaesthetising another', async () => {
+      const dto = buildScheduleDto({
+        theatreId: 'theatre-1',
+        scheduledTime: '09:00',
+        estimatedDurationMinutes: 120,
+        leadSurgeonId: 'surgeon-9',
+        anesthesiologistId: 'surgeon-1',
+      });
+
+      const qb = {
+        setLock: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue({ id: 'theatre-1' }),
+        getCount: jest.fn().mockResolvedValue(0),
+      };
+      mockManager.createQueryBuilder.mockReturnValue(qb);
+
+      mockManager.find.mockImplementation((_entity: any, opts: any) =>
+        Promise.resolve(
+          opts?.where?.theatreId
+            ? []
+            : [
+                {
+                  id: 'other',
+                  caseNumber: 'SUR20260821-0003',
+                  theatreId: 'theatre-2',
+                  leadSurgeonId: 'surgeon-1',
+                  scheduledTime: '09:30',
+                  estimatedDurationMinutes: 60,
+                  status: SurgeryStatus.SCHEDULED,
+                },
+              ],
+        ),
+      );
+
+      await expect(service.scheduleSurgery(dto, 'user-1', 'tenant-1')).rejects.toThrow(
+        /anaesthetist is already booked/,
+      );
+    });
+
+    it('should allow the same slot in another theatre for a different surgeon', async () => {
+      const dto = buildScheduleDto({
+        theatreId: 'theatre-1',
+        scheduledTime: '09:00',
+        estimatedDurationMinutes: 120,
+        leadSurgeonId: 'surgeon-2',
+      });
+
+      const qb = {
+        setLock: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        // First getOne: the locked theatre; second: case-number MAX lookup
+        getOne: jest
+          .fn()
+          .mockResolvedValueOnce({ id: 'theatre-1' })
+          .mockResolvedValue(null),
+        getCount: jest.fn().mockResolvedValue(0),
+      };
+      mockManager.createQueryBuilder.mockReturnValue(qb);
+
+      mockManager.find.mockImplementation((_entity: any, opts: any) =>
+        Promise.resolve(
+          opts?.where?.theatreId
+            ? []
+            : [
+                {
+                  id: 'other',
+                  caseNumber: 'SUR20260821-0004',
+                  theatreId: 'theatre-2',
+                  leadSurgeonId: 'surgeon-1',
+                  scheduledTime: '09:30',
+                  estimatedDurationMinutes: 60,
+                  status: SurgeryStatus.SCHEDULED,
+                },
+              ],
+        ),
+      );
+
+      await expect(service.scheduleSurgery(dto, 'user-1', 'tenant-1')).resolves.toBeDefined();
     });
 
     it('should throw NotFoundException when theatre does not exist', async () => {

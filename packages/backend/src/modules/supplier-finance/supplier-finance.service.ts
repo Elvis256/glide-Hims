@@ -8,7 +8,7 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, LessThanOrEqual, LessThan, DataSource } from 'typeorm';
+import { Repository, Between, LessThanOrEqual, LessThan, DataSource, IsNull } from 'typeorm';
 import { requireTenantId } from '../../common/utils/tenant.util';
 import {
   SupplierPayment,
@@ -19,6 +19,7 @@ import {
 import {
   SupplierCreditNote,
   SupplierCreditNoteItem,
+  SupplierCreditNoteApplication,
   CreditNoteStatus,
   CreditNoteType,
   CreditNoteReason,
@@ -155,6 +156,10 @@ export class SupplierFinanceService {
             invoiceDate: item.invoiceDate,
             amount: item.amount,
             grnId: item.grnId,
+            // Without this the insert violates the RLS WITH CHECK on
+            // supplier_payment_items — the voucher header saved and the
+            // items 500'd, rolling the whole creation back.
+            tenantId: requireTenantId(tenantId),
           }),
         );
         await paymentItemRepo.save(items);
@@ -333,7 +338,7 @@ export class SupplierFinanceService {
     },
     tenantId?: string,
   ): Promise<SupplierPayment> {
-    return this.dataSource.transaction(async (manager) => {
+    const saved = await this.dataSource.transaction(async (manager) => {
       const payRepoTx = manager.getRepository(SupplierPayment);
       const payment = await payRepoTx.findOne({
         where: { id, tenantId: requireTenantId(tenantId) },
@@ -366,43 +371,50 @@ export class SupplierFinanceService {
       payment.status = PaymentVoucherStatus.PAID;
       payment.paidBy = userId;
       payment.paidAt = new Date();
-      const saved = await payRepoTx.save(payment);
-
-      this.auditLogService
-        .log({
-          action: 'PAYMENT_PROCESSED',
-          entityType: 'SupplierPayment',
-          entityId: saved.id,
-          userId,
-          tenantId,
-          newValue: {
-            voucherNumber: saved.voucherNumber,
-            amount: Number(saved.netAmount ?? saved.grossAmount),
-          },
-        })
-        .catch(() => {});
-
-      // Auto-post journal entry best-effort (failure should not roll back the
-      // payment). tenantId was previously omitted, so requireTenantId inside
-      // the journal path threw and every supplier payment silently skipped GL.
-      this.financeService
-        .autoPostPaymentJournal(
-          {
-            facilityId: payment.facilityId,
-            paymentReference: payment.voucherNumber,
-            amount: Number(payment.netAmount ?? payment.grossAmount) || 0,
-            userId,
-          },
-          tenantId,
-        )
-        .catch((err) =>
-          this.logger.warn(
-            `GL auto-post failed for supplier payment ${payment.voucherNumber}: ${err.message}`,
-          ),
-        );
-
-      return saved;
+      return payRepoTx.save(payment);
     });
+
+    // Audit and GL both run after the commit.
+    //
+    // They went through their own services, on their own connections, fired
+    // from inside the transaction without an await — so both committed
+    // independently of the payment they described. Roll the payment back and
+    // the audit trail still said it was processed and the ledger still said
+    // the money had left. Best-effort as before: a failure here does not undo
+    // a payment that really was made.
+    this.auditLogService
+      .log({
+        action: 'PAYMENT_PROCESSED',
+        entityType: 'SupplierPayment',
+        entityId: saved.id,
+        userId,
+        tenantId,
+        newValue: {
+          voucherNumber: saved.voucherNumber,
+          amount: Number(saved.netAmount ?? saved.grossAmount),
+        },
+      })
+      .catch(() => {});
+
+    // tenantId was previously omitted, so requireTenantId inside the journal
+    // path threw and every supplier payment silently skipped GL.
+    this.financeService
+      .autoPostPaymentJournal(
+        {
+          facilityId: saved.facilityId,
+          paymentReference: saved.voucherNumber,
+          amount: Number(saved.netAmount ?? saved.grossAmount) || 0,
+          userId,
+        },
+        tenantId,
+      )
+      .catch((err) =>
+        this.logger.warn(
+          `GL auto-post failed for supplier payment ${saved.voucherNumber}: ${err.message}`,
+        ),
+      );
+
+    return saved;
   }
 
   async cancelPaymentVoucher(
@@ -410,32 +422,87 @@ export class SupplierFinanceService {
     userId: string,
     tenantId?: string,
   ): Promise<SupplierPayment> {
-    return this.dataSource.transaction(async (manager) => {
+    const tid = requireTenantId(tenantId);
+    const result = await this.dataSource.transaction(async (manager) => {
       const payRepoTx = manager.getRepository(SupplierPayment);
       const payment = await payRepoTx.findOne({
-        where: { id, tenantId: requireTenantId(tenantId) },
+        where: { id, tenantId: tid },
         lock: { mode: 'pessimistic_write' },
       });
       if (!payment) throw new NotFoundException('Payment voucher not found');
       if (payment.status === PaymentVoucherStatus.PAID) {
         throw new BadRequestException('Cannot cancel a paid voucher');
       }
+
+      // Hand back any credit notes applied to this voucher.
+      //
+      // Cancelling used to flip the status and nothing else, so a credit note
+      // applied here stayed spent against a voucher that no longer existed —
+      // the supplier still owed the money and the hospital had no record it
+      // was ever owed. Applications are marked reversed rather than deleted,
+      // so the history of what was applied and returned survives.
+      const appRepoTx = manager.getRepository(SupplierCreditNoteApplication);
+      const cnRepoTx = manager.getRepository(SupplierCreditNote);
+      const applications = await appRepoTx.find({
+        where: { paymentVoucherId: payment.id, tenantId: tid, reversedAt: IsNull() },
+      });
+
+      let returnedToNotes = 0;
+      for (const application of applications) {
+        const note = await cnRepoTx.findOne({
+          where: { id: application.creditNoteId, tenantId: tid },
+          lock: { mode: 'pessimistic_write' },
+        });
+        if (note) {
+          const back = Number(application.amount) || 0;
+          note.appliedAmount = Math.max(0, Number(note.appliedAmount) - back);
+          note.balanceAmount = Number(note.balanceAmount) + back;
+          // It has spendable balance again, so it is no longer fully applied.
+          if (note.status === CreditNoteStatus.APPLIED && Number(note.balanceAmount) > 0) {
+            note.status = CreditNoteStatus.APPROVED;
+          }
+          await cnRepoTx.save(note);
+          returnedToNotes += back;
+        }
+
+        application.reversedAt = new Date();
+        application.reversedBy = userId;
+        await appRepoTx.save(application);
+      }
+
+      if (returnedToNotes > 0) {
+        payment.otherDeductions = Math.max(
+          0,
+          (Number(payment.otherDeductions) || 0) - returnedToNotes,
+        );
+        payment.netAmount =
+          (Number(payment.grossAmount) || 0) -
+          (Number(payment.withholdingTax) || 0) -
+          (Number(payment.otherDeductions) || 0);
+      }
+
       payment.status = PaymentVoucherStatus.CANCELLED;
       const saved = await payRepoTx.save(payment);
 
-      this.auditLogService
-        .log({
-          action: 'PAYMENT_VOUCHER_CANCELLED',
-          entityType: 'SupplierPayment',
-          entityId: saved.id,
-          userId,
-          tenantId,
-          newValue: { voucherNumber: saved.voucherNumber },
-        })
-        .catch(() => {});
-
-      return saved;
+      return { saved, returnedToNotes, reversedCount: applications.length };
     });
+
+    this.auditLogService
+      .log({
+        action: 'PAYMENT_VOUCHER_CANCELLED',
+        entityType: 'SupplierPayment',
+        entityId: result.saved.id,
+        userId,
+        tenantId,
+        newValue: {
+          voucherNumber: result.saved.voucherNumber,
+          creditNotesReturned: result.reversedCount,
+          amountReturnedToNotes: result.returnedToNotes,
+        },
+      })
+      .catch(() => {});
+
+    return result.saved;
   }
 
   // ==================== CREDIT/DEBIT NOTES ====================
@@ -554,6 +621,8 @@ export class SupplierFinanceService {
           taxAmount: item.taxAmount,
           totalAmount: item.totalAmount,
           batchNumber: item.batchNumber,
+          // Same RLS WITH CHECK as payment items — see above.
+          tenantId: requireTenantId(tenantId),
         }),
       );
       await noteItemRepo.save(items);
@@ -672,10 +741,18 @@ export class SupplierFinanceService {
     userId: string,
     tenantId?: string,
   ): Promise<SupplierCreditNote> {
-    return this.dataSource.transaction(async (manager) => {
+    const tid = requireTenantId(tenantId);
+
+    if (!(amount > 0)) {
+      throw new BadRequestException('Applied amount must be greater than zero');
+    }
+
+    const { saved, voucherNumber } = await this.dataSource.transaction(async (manager) => {
       const cnRepoTx = manager.getRepository(SupplierCreditNote);
+      const payRepoTx = manager.getRepository(SupplierPayment);
+
       const note = await cnRepoTx.findOne({
-        where: { id: creditNoteId, tenantId: requireTenantId(tenantId) },
+        where: { id: creditNoteId, tenantId: tid },
         lock: { mode: 'pessimistic_write' },
       });
       if (!note) throw new NotFoundException('Credit/Debit note not found');
@@ -686,6 +763,62 @@ export class SupplierFinanceService {
         throw new BadRequestException('Amount exceeds available balance');
       }
 
+      // Actually deduct the credit from the voucher.
+      //
+      // This method took a paymentVoucherId, consumed the note's balance, and
+      // then recorded the voucher id in an audit line and nothing else. The
+      // voucher was never loaded, so its netAmount was untouched: the credit
+      // — a refund owed for goods returned or rejected — was written off and
+      // the supplier was still paid in full. The two numbers are now moved
+      // together or not at all.
+      const voucher = await payRepoTx.findOne({
+        where: { id: paymentVoucherId, tenantId: tid },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!voucher) throw new NotFoundException('Payment voucher not found');
+      if (voucher.supplierId !== note.supplierId) {
+        throw new BadRequestException(
+          "Cannot apply a note to another supplier's payment voucher",
+        );
+      }
+      if (
+        voucher.status === PaymentVoucherStatus.PAID ||
+        voucher.status === PaymentVoucherStatus.CANCELLED
+      ) {
+        throw new BadRequestException(
+          `Cannot apply a note to a ${voucher.status} voucher — the payment has already been settled`,
+        );
+      }
+
+      const gross = Number(voucher.grossAmount) || 0;
+      const withholding = Number(voucher.withholdingTax) || 0;
+      const deductions = Number(voucher.otherDeductions) || 0;
+      const remaining = gross - withholding - deductions;
+      if (amount > remaining) {
+        throw new BadRequestException(
+          `Cannot apply ${amount} to voucher ${voucher.voucherNumber}: only ${remaining} remains payable on it`,
+        );
+      }
+
+      voucher.otherDeductions = deductions + amount;
+      voucher.netAmount = gross - withholding - voucher.otherDeductions;
+      await payRepoTx.save(voucher);
+
+      // Record which voucher took the credit, so cancelling that voucher can
+      // hand it back. Before this the association existed only in an audit
+      // line, which nothing queries.
+      const appRepoTx = manager.getRepository(SupplierCreditNoteApplication);
+      await appRepoTx.save(
+        appRepoTx.create({
+          tenantId: tid,
+          creditNoteId: note.id,
+          paymentVoucherId: voucher.id,
+          amount,
+          appliedBy: userId,
+          appliedAt: new Date(),
+        }),
+      );
+
       note.appliedAmount = Number(note.appliedAmount) + amount;
       note.balanceAmount = Number(note.balanceAmount) - amount;
 
@@ -693,21 +826,26 @@ export class SupplierFinanceService {
         note.status = CreditNoteStatus.APPLIED;
       }
 
-      const saved = await cnRepoTx.save(note);
-
-      this.auditLogService
-        .log({
-          action: 'CREDIT_NOTE_APPLIED',
-          entityType: 'SupplierCreditNote',
-          entityId: saved.id,
-          userId,
-          tenantId,
-          newValue: { noteNumber: saved.noteNumber, appliedAmount: amount, paymentVoucherId },
-        })
-        .catch(() => {});
-
-      return saved;
+      return { saved: await cnRepoTx.save(note), voucherNumber: voucher.voucherNumber };
     });
+
+    this.auditLogService
+      .log({
+        action: 'CREDIT_NOTE_APPLIED',
+        entityType: 'SupplierCreditNote',
+        entityId: saved.id,
+        userId,
+        tenantId,
+        newValue: {
+          noteNumber: saved.noteNumber,
+          appliedAmount: amount,
+          paymentVoucherId,
+          voucherNumber,
+        },
+      })
+      .catch(() => {});
+
+    return saved;
   }
 
   async cancelCreditNote(
@@ -1109,7 +1247,11 @@ export class SupplierFinanceService {
   }> {
     const grn = await this.grnRepo.findOne({
       where: { id: grnId, tenantId: requireTenantId(tenantId) },
-      relations: ['items', 'items.item', 'supplier', 'purchaseOrder'],
+      // GoodsReceiptItem has NO `item` relation — it denormalises itemName,
+      // itemUnit and unitCost onto the row. Asking for 'items.item' made
+      // TypeORM throw EntityPropertyNotFoundError, so the debit-note preview
+      // (and with it the whole rejected-goods recovery flow) had never worked.
+      relations: ['items', 'supplier', 'purchaseOrder'],
     });
     if (!grn) throw new NotFoundException('GRN not found');
 

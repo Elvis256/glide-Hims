@@ -1,4 +1,5 @@
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, useId } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -219,6 +220,7 @@ const auditTrail: AuditEntry[] = [];
 type ViewMode = 'dashboard' | 'new' | 'view' | 'edit';
 
 export default function IncidentReportPage() {
+  const fid = useId();
   const inst = useInstitutionInfo();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -346,6 +348,13 @@ export default function IncidentReportPage() {
   };
 
   const [formData, setFormData] = useState<IncidentFormData>(initialFormData);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showConfirmDialogDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showConfirmDialog,
+    onClose: () => setShowConfirmDialog(false),
+  });
 
   // Dashboard stats
   const dashboardStats = useMemo(() => {
@@ -912,7 +921,12 @@ export default function IncidentReportPage() {
     <div id="incident-report-content" className="h-[calc(100vh-120px)] flex flex-col">
       {/* Confirmation Dialog */}
       {showConfirmDialog && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showConfirmDialogDialogRef}
+        >
           <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
             <div className="flex items-center gap-3 mb-4">
               <div className="p-2 bg-yellow-100 rounded-lg">
@@ -987,11 +1001,11 @@ export default function IncidentReportPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
             {/* Incident Type */}
             <div>
-              <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+              <label htmlFor={`${fid}-incident-type`} className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
                 <ShieldAlert className="w-4 h-4" />
                 Incident Type <span className="text-red-500">*</span>
               </label>
-              <select
+              <select id={`${fid}-incident-type`}
                 value={formData.incidentType}
                 onChange={(e) => setFormData({ ...formData, incidentType: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
@@ -1005,11 +1019,11 @@ export default function IncidentReportPage() {
 
             {/* Date */}
             <div>
-              <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+              <label htmlFor={`${fid}-date-of-incident`} className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
                 <Calendar className="w-4 h-4" />
                 Date of Incident <span className="text-red-500">*</span>
               </label>
-              <input
+              <input id={`${fid}-date-of-incident`}
                 type="date"
                 value={formData.date}
                 onChange={(e) => setFormData({ ...formData, date: e.target.value })}
@@ -1019,11 +1033,11 @@ export default function IncidentReportPage() {
 
             {/* Time */}
             <div>
-              <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+              <label htmlFor={`${fid}-time-of-incident`} className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
                 <Clock className="w-4 h-4" />
                 Time of Incident <span className="text-red-500">*</span>
               </label>
-              <input
+              <input id={`${fid}-time-of-incident`}
                 type="time"
                 value={formData.time}
                 onChange={(e) => setFormData({ ...formData, time: e.target.value })}
@@ -1033,11 +1047,11 @@ export default function IncidentReportPage() {
 
             {/* Department */}
             <div>
-              <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+              <label htmlFor={`${fid}-department`} className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
                 <MapPin className="w-4 h-4" />
                 Department <span className="text-red-500">*</span>
               </label>
-              <select
+              <select id={`${fid}-department`}
                 value={formData.department}
                 onChange={(e) => setFormData({ ...formData, department: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
@@ -1051,8 +1065,8 @@ export default function IncidentReportPage() {
 
             {/* Room */}
             <div>
-              <label className="text-sm font-medium text-gray-700 mb-2 block">Room/Bed</label>
-              <input
+              <label htmlFor={`${fid}-room-bed`} className="text-sm font-medium text-gray-700 mb-2 block">Room/Bed</label>
+              <input id={`${fid}-room-bed`}
                 type="text"
                 value={formData.room}
                 onChange={(e) => setFormData({ ...formData, room: e.target.value })}
@@ -1104,10 +1118,10 @@ export default function IncidentReportPage() {
               <div className="border-t p-4 space-y-4">
                 {/* Description */}
                 <div>
-                  <label className="text-sm font-medium text-gray-700 mb-2 block">
+                  <label htmlFor={`${fid}-description-of-what-happened`} className="text-sm font-medium text-gray-700 mb-2 block">
                     Description of What Happened <span className="text-red-500">*</span>
                   </label>
-                  <textarea
+                  <textarea id={`${fid}-description-of-what-happened`}
                     rows={4}
                     value={formData.description}
                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
@@ -1136,8 +1150,8 @@ export default function IncidentReportPage() {
 
                 {/* Immediate Actions */}
                 <div>
-                  <label className="text-sm font-medium text-gray-700 mb-2 block">Immediate Actions Taken</label>
-                  <textarea
+                  <label htmlFor={`${fid}-immediate-actions-taken`} className="text-sm font-medium text-gray-700 mb-2 block">Immediate Actions Taken</label>
+                  <textarea id={`${fid}-immediate-actions-taken`}
                     rows={3}
                     value={formData.immediateActions}
                     onChange={(e) => setFormData({ ...formData, immediateActions: e.target.value })}
@@ -1430,8 +1444,8 @@ export default function IncidentReportPage() {
 
                       {/* Medical Intervention */}
                       <div>
-                        <label className="text-sm font-medium text-gray-700 mb-2 block">Medical Intervention Required</label>
-                        <textarea
+                        <label htmlFor={`${fid}-medical-intervention-required`} className="text-sm font-medium text-gray-700 mb-2 block">Medical Intervention Required</label>
+                        <textarea id={`${fid}-medical-intervention-required`}
                           rows={2}
                           value={formData.medicalIntervention}
                           onChange={(e) => setFormData({ ...formData, medicalIntervention: e.target.value })}
@@ -1467,8 +1481,8 @@ export default function IncidentReportPage() {
 
                       {/* Patient Condition After */}
                       <div>
-                        <label className="text-sm font-medium text-gray-700 mb-2 block">Patient Condition After Incident</label>
-                        <textarea
+                        <label htmlFor={`${fid}-patient-condition-after-incident`} className="text-sm font-medium text-gray-700 mb-2 block">Patient Condition After Incident</label>
+                        <textarea id={`${fid}-patient-condition-after-incident`}
                           rows={2}
                           value={formData.patientConditionAfter}
                           onChange={(e) => setFormData({ ...formData, patientConditionAfter: e.target.value })}
@@ -1500,8 +1514,8 @@ export default function IncidentReportPage() {
               <div className="border-t p-4 space-y-4">
                 {/* Root Cause Analysis */}
                 <div>
-                  <label className="text-sm font-medium text-gray-700 mb-2 block">Root Cause Analysis Notes</label>
-                  <textarea
+                  <label htmlFor={`${fid}-root-cause-analysis-notes`} className="text-sm font-medium text-gray-700 mb-2 block">Root Cause Analysis Notes</label>
+                  <textarea id={`${fid}-root-cause-analysis-notes`}
                     rows={3}
                     value={formData.rootCauseAnalysis}
                     onChange={(e) => setFormData({ ...formData, rootCauseAnalysis: e.target.value })}
@@ -1512,8 +1526,8 @@ export default function IncidentReportPage() {
 
                 {/* Corrective Actions */}
                 <div>
-                  <label className="text-sm font-medium text-gray-700 mb-2 block">Corrective Actions Planned</label>
-                  <textarea
+                  <label htmlFor={`${fid}-corrective-actions-planned`} className="text-sm font-medium text-gray-700 mb-2 block">Corrective Actions Planned</label>
+                  <textarea id={`${fid}-corrective-actions-planned`}
                     rows={3}
                     value={formData.correctiveActions}
                     onChange={(e) => setFormData({ ...formData, correctiveActions: e.target.value })}
@@ -1524,8 +1538,8 @@ export default function IncidentReportPage() {
 
                 {/* Preventive Measures */}
                 <div>
-                  <label className="text-sm font-medium text-gray-700 mb-2 block">Preventive Measures</label>
-                  <textarea
+                  <label htmlFor={`${fid}-preventive-measures`} className="text-sm font-medium text-gray-700 mb-2 block">Preventive Measures</label>
+                  <textarea id={`${fid}-preventive-measures`}
                     rows={3}
                     value={formData.preventiveMeasures}
                     onChange={(e) => setFormData({ ...formData, preventiveMeasures: e.target.value })}
@@ -1537,8 +1551,8 @@ export default function IncidentReportPage() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {/* Responsible Person */}
                   <div>
-                    <label className="text-sm font-medium text-gray-700 mb-2 block">Responsible Person</label>
-                    <input
+                    <label htmlFor={`${fid}-responsible-person`} className="text-sm font-medium text-gray-700 mb-2 block">Responsible Person</label>
+                    <input id={`${fid}-responsible-person`}
                       type="text"
                       value={formData.responsiblePerson}
                       onChange={(e) => setFormData({ ...formData, responsiblePerson: e.target.value })}
@@ -1549,8 +1563,8 @@ export default function IncidentReportPage() {
 
                   {/* Due Date */}
                   <div>
-                    <label className="text-sm font-medium text-gray-700 mb-2 block">Due Date for Resolution</label>
-                    <input
+                    <label htmlFor={`${fid}-due-date-for-resolution`} className="text-sm font-medium text-gray-700 mb-2 block">Due Date for Resolution</label>
+                    <input id={`${fid}-due-date-for-resolution`}
                       type="date"
                       value={formData.dueDate}
                       onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
@@ -1560,8 +1574,8 @@ export default function IncidentReportPage() {
 
                   {/* Status */}
                   <div>
-                    <label className="text-sm font-medium text-gray-700 mb-2 block">Status</label>
-                    <select
+                    <label htmlFor={`${fid}-status`} className="text-sm font-medium text-gray-700 mb-2 block">Status</label>
+                    <select id={`${fid}-status`}
                       value={formData.status}
                       onChange={(e) => setFormData({ ...formData, status: e.target.value })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
@@ -1653,8 +1667,8 @@ export default function IncidentReportPage() {
           {!formData.anonymous && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
               <div>
-                <label className="text-sm font-medium text-gray-700 mb-2 block">Reporter Name</label>
-                <input
+                <label htmlFor={`${fid}-reporter-name`} className="text-sm font-medium text-gray-700 mb-2 block">Reporter Name</label>
+                <input id={`${fid}-reporter-name`}
                   type="text"
                   value={formData.reporterName}
                   onChange={(e) => setFormData({ ...formData, reporterName: e.target.value })}
@@ -1663,8 +1677,8 @@ export default function IncidentReportPage() {
                 />
               </div>
               <div>
-                <label className="text-sm font-medium text-gray-700 mb-2 block">Reporter Role</label>
-                <input
+                <label htmlFor={`${fid}-reporter-role`} className="text-sm font-medium text-gray-700 mb-2 block">Reporter Role</label>
+                <input id={`${fid}-reporter-role`}
                   type="text"
                   value={formData.reporterRole}
                   onChange={(e) => setFormData({ ...formData, reporterRole: e.target.value })}

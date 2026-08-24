@@ -1,4 +1,5 @@
 import { usePermissions } from '../../../components/PermissionGate';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -86,6 +87,13 @@ export default function CriticalValuesPage() {
   const [calledAt, setCalledAt] = useState('');
   const [isAcknowledging, setIsAcknowledging] = useState(false);
   const [acknowledgedValues, setAcknowledgedValues] = useState<Set<string>>(new Set());
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const acknowledgeModalOpenDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!acknowledgeModalOpen,
+    onClose: () => setAcknowledgeModalOpen(false),
+  });
   const prevCriticalIdsRef = useRef<Set<string>>(new Set());
   const notifiedEscalationsRef = useRef<Set<string>>(new Set());
 
@@ -437,7 +445,12 @@ export default function CriticalValuesPage() {
 
       {/* Acknowledge Modal */}
       {acknowledgeModalOpen && selectedValue && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={acknowledgeModalOpenDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
             {/* Modal Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b bg-red-50">

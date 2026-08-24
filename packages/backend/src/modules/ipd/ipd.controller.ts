@@ -222,7 +222,9 @@ export class IpdController {
 
   @Get('discharge-planning')
   @AuthWithPermissions('ipd.read')
-  @ApiOperation({ summary: 'Discharge-planning board: overdue / today / upcoming planned discharges' })
+  @ApiOperation({
+    summary: 'Discharge-planning board: overdue / today / upcoming planned discharges',
+  })
   getDischargePlanning(@Query('facilityId') facilityId: string, @Request() req: any) {
     validateUuid(facilityId, 'facilityId');
     return this.ipdService.getDischargePlanning(facilityId, req.user?.tenantId);
@@ -278,6 +280,30 @@ export class IpdController {
   transferBed(@Param('id') id: string, @Body() dto: TransferBedDto, @Request() req: any) {
     validateUuid(id);
     return this.ipdService.transferBed(id, dto, req.user.id, req.user?.tenantId);
+  }
+
+  @Get('unbilled-discharges')
+  @AuthWithPermissions('ipd.read')
+  @ApiOperation({
+    summary: 'Discharged admissions whose bed-day invoice was never raised',
+  })
+  getUnbilledDischarges(@Request() req: any) {
+    return this.ipdService.getUnbilledDischarges(req.user?.tenantId);
+  }
+
+  @Post('admissions/:id/generate-invoice')
+  @AuthWithPermissions('ipd.discharge')
+  @ApiOperation({
+    summary: 'Raise the bed-day invoice for a discharged admission (idempotent)',
+  })
+  async generateDischargeInvoice(@Param('id') id: string, @Request() req: any) {
+    validateUuid(id);
+    const invoiceId = await this.ipdService.generateDischargeInvoice(
+      id,
+      req.user.id,
+      req.user?.tenantId,
+    );
+    return { invoiceId: invoiceId ?? null };
   }
 
   // ========== NURSING NOTES ==========

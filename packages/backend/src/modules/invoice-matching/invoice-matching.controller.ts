@@ -11,6 +11,7 @@ import { InvoiceMatchStatus } from '../../database/entities/invoice-match.entity
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { RequireModule } from '../auth/decorators/module.decorator';
 import { ModuleGuard } from '../auth/guards/module.guard';
+import { FacilityId } from '../../common/decorators/facility-id.decorator';
 
 @UseGuards(ModuleGuard)
 @RequireModule('finance')
@@ -27,7 +28,7 @@ export class InvoiceMatchingController {
   @AuthWithPermissions('procurement.read')
   @Get()
   findAll(
-    @Query('facilityId') facilityId: string,
+    @FacilityId() facilityId: string,
     @Query('status') status?: InvoiceMatchStatus,
     @Request() req?: any,
   ) {
@@ -36,7 +37,7 @@ export class InvoiceMatchingController {
 
   @AuthWithPermissions('procurement.read')
   @Get('stats')
-  getStats(@Query('facilityId') facilityId: string, @Request() req: any) {
+  getStats(@FacilityId() facilityId: string, @Request() req: any) {
     return this.service.getStats(facilityId, req.user?.tenantId);
   }
 

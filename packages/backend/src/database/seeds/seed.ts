@@ -1045,14 +1045,31 @@ export async function seed(dataSource: DataSource) {
     ],
   };
 
+  // Resolve the role mappings against EVERY permission in the database, not
+  // just the ones this file defines. Migrations add codes too — billing.refund,
+  // insurance.verify, dashboard.read — and looking them up in the local
+  // `permissions` array silently skipped them, so Cashier never received
+  // billing.refund even though the mapping below asks for it. Combined with the
+  // segregation-of-duties rule (the invoice's creator may not refund it), that
+  // left Super Admin as the only role able to refund at all.
+  const permissionByCode = new Map<string, Permission>();
+  for (const p of await permissionRepo.find()) permissionByCode.set(p.code, p);
+
+  const unknownCodes = new Set<string>();
+
   for (const [roleName, permissionCodes] of Object.entries(rolePermissionMappings)) {
     const role = roles[roleName];
     if (!role) continue;
 
     let assignedCount = 0;
+    let grantedCount = 0;
     for (const code of permissionCodes) {
-      const permission = permissions.find((p) => p.code === code);
-      if (!permission) continue;
+      const permission = permissionByCode.get(code);
+      if (!permission) {
+        unknownCodes.add(code);
+        continue;
+      }
+      grantedCount++;
 
       const exists = await rolePermissionRepo.findOne({
         where: { roleId: role.id, permissionId: permission.id },
@@ -1067,7 +1084,21 @@ export async function seed(dataSource: DataSource) {
         assignedCount++;
       }
     }
-    console.log(`  ✓ ${roleName} has ${permissionCodes.length} permissions (${assignedCount} new)`);
+    // Report what the role actually holds. This used to print
+    // permissionCodes.length — what was asked for, not what was granted — which
+    // is why the silently skipped codes went unnoticed for so long.
+    const skipped = permissionCodes.length - grantedCount;
+    console.log(
+      `  ✓ ${roleName} has ${grantedCount} permissions (${assignedCount} new)` +
+        (skipped > 0 ? ` — ${skipped} unknown code(s) skipped` : ''),
+    );
+  }
+
+  if (unknownCodes.size > 0) {
+    console.warn(
+      `\n  ⚠ ${unknownCodes.size} permission code(s) in the role mappings do not exist: ` +
+        `${[...unknownCodes].sort().join(', ')}`,
+    );
   }
 
   console.log('\n✅ Database seed completed successfully!\n');

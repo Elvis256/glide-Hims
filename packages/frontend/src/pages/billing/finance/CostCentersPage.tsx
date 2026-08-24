@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useFacilityId } from '../../../lib/facility';
@@ -42,6 +43,13 @@ export default function CostCentersPage() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
   const [showModal, setShowModal] = useState(false);
   const [editingItem, setEditingItem] = useState<CostCenter | null>(null);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: showModal,
+    onClose: () => closeModal(),
+  });
 
   const { data: costCenters = [], isLoading } = useQuery<CostCenter[]>({
     queryKey: ['cost-centers', facilityId],
@@ -269,7 +277,12 @@ export default function CostCentersPage() {
 
       {/* Create/Edit Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <h2 className="text-lg font-bold text-gray-900">

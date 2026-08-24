@@ -1,4 +1,5 @@
 import { usePermissions } from '../../../components/PermissionGate';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -149,6 +150,13 @@ export default function SentReferralsPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [responseModal, setResponseModal] = useState<Referral | null>(null);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const responseModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!responseModal,
+    onClose: () => setResponseModal(null),
+  });
 
   // Fetch outgoing referrals from API
   const { data: apiReferrals = [], isLoading, refetch } = useQuery({
@@ -544,7 +552,12 @@ export default function SentReferralsPage() {
 
       {/* Response Modal */}
       {responseModal && responseModal.response && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={responseModalDialogRef}
+        >
           <div className="bg-white rounded-lg w-full max-w-lg m-4">
             <div className="flex items-center justify-between p-4 border-b">
               <h2 className="text-lg font-semibold">Specialist Response</h2>

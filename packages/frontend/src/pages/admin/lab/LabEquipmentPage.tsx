@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useId } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { toast } from 'sonner';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { CURRENCY_SYMBOL, formatCurrency } from '../../../lib/currency';
@@ -157,6 +158,7 @@ const getEmptyMaintenanceForm = (): MaintenanceFormData => ({
 });
 
 export default function LabEquipmentPage() {
+  const fid = useId();
   const facilityId = useFacilityId();
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
@@ -168,6 +170,17 @@ export default function LabEquipmentPage() {
   const [editingEquipment, setEditingEquipment] = useState<Equipment | null>(null);
   const [equipmentForm, setEquipmentForm] = useState<EquipmentFormData>(getEmptyEquipmentForm());
   const [maintenanceForm, setMaintenanceForm] = useState<MaintenanceFormData>(getEmptyMaintenanceForm());
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showEquipmentModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showEquipmentModal,
+    onClose: () => setShowEquipmentModal(false),
+  });
+  const showMaintenanceModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showMaintenanceModal,
+    onClose: () => setShowMaintenanceModal(false),
+  });
 
   // Fetch equipment from API
   const { data: equipmentData, isLoading } = useQuery({
@@ -633,7 +646,12 @@ export default function LabEquipmentPage() {
 
       {/* Equipment Modal */}
       {showEquipmentModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showEquipmentModalDialogRef}
+        >
           <div className="bg-white rounded-lg w-full max-w-2xl max-h-[90vh] overflow-auto">
             <div className="flex items-center justify-between p-4 border-b">
               <h2 className="text-lg font-semibold">
@@ -648,8 +666,8 @@ export default function LabEquipmentPage() {
             </div>
             <div className="p-4 grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
-                <input
+                <label htmlFor={`${fid}-name`} className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+                <input id={`${fid}-name`}
                   type="text"
                   value={equipmentForm.name}
                   onChange={(e) => setEquipmentForm(prev => ({ ...prev, name: e.target.value }))}
@@ -657,8 +675,8 @@ export default function LabEquipmentPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Asset Code *</label>
-                <input
+                <label htmlFor={`${fid}-asset-code`} className="block text-sm font-medium text-gray-700 mb-1">Asset Code *</label>
+                <input id={`${fid}-asset-code`}
                   type="text"
                   value={equipmentForm.assetCode}
                   onChange={(e) => setEquipmentForm(prev => ({ ...prev, assetCode: e.target.value }))}
@@ -666,8 +684,8 @@ export default function LabEquipmentPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Serial Number</label>
-                <input
+                <label htmlFor={`${fid}-serial-number`} className="block text-sm font-medium text-gray-700 mb-1">Serial Number</label>
+                <input id={`${fid}-serial-number`}
                   type="text"
                   value={equipmentForm.serialNumber}
                   onChange={(e) => setEquipmentForm(prev => ({ ...prev, serialNumber: e.target.value }))}
@@ -675,8 +693,8 @@ export default function LabEquipmentPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Model</label>
-                <input
+                <label htmlFor={`${fid}-model`} className="block text-sm font-medium text-gray-700 mb-1">Model</label>
+                <input id={`${fid}-model`}
                   type="text"
                   value={equipmentForm.model}
                   onChange={(e) => setEquipmentForm(prev => ({ ...prev, model: e.target.value }))}
@@ -684,8 +702,8 @@ export default function LabEquipmentPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Manufacturer</label>
-                <input
+                <label htmlFor={`${fid}-manufacturer`} className="block text-sm font-medium text-gray-700 mb-1">Manufacturer</label>
+                <input id={`${fid}-manufacturer`}
                   type="text"
                   value={equipmentForm.manufacturer}
                   onChange={(e) => setEquipmentForm(prev => ({ ...prev, manufacturer: e.target.value }))}
@@ -693,8 +711,8 @@ export default function LabEquipmentPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
-                <select
+                <label htmlFor={`${fid}-category`} className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                <select id={`${fid}-category`}
                   value={equipmentForm.category}
                   onChange={(e) => setEquipmentForm(prev => ({ ...prev, category: e.target.value }))}
                   className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -705,8 +723,8 @@ export default function LabEquipmentPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
-                <input
+                <label htmlFor={`${fid}-location`} className="block text-sm font-medium text-gray-700 mb-1">Location</label>
+                <input id={`${fid}-location`}
                   type="text"
                   value={equipmentForm.location}
                   onChange={(e) => setEquipmentForm(prev => ({ ...prev, location: e.target.value }))}
@@ -714,8 +732,8 @@ export default function LabEquipmentPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Installation Date</label>
-                <input
+                <label htmlFor={`${fid}-installation-date`} className="block text-sm font-medium text-gray-700 mb-1">Installation Date</label>
+                <input id={`${fid}-installation-date`}
                   type="date"
                   value={equipmentForm.installationDate}
                   onChange={(e) => setEquipmentForm(prev => ({ ...prev, installationDate: e.target.value }))}
@@ -723,8 +741,8 @@ export default function LabEquipmentPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                <select
+                <label htmlFor={`${fid}-status`} className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                <select id={`${fid}-status`}
                   value={equipmentForm.status}
                   onChange={(e) => setEquipmentForm(prev => ({ ...prev, status: e.target.value as Equipment['status'] }))}
                   className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -737,8 +755,8 @@ export default function LabEquipmentPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Calibration Frequency (days)</label>
-                <input
+                <label htmlFor={`${fid}-calibration-frequency-days`} className="block text-sm font-medium text-gray-700 mb-1">Calibration Frequency (days)</label>
+                <input id={`${fid}-calibration-frequency-days`}
                   type="number"
                   value={equipmentForm.calibrationFrequencyDays}
                   onChange={(e) => setEquipmentForm(prev => ({ ...prev, calibrationFrequencyDays: Number(e.target.value) }))}
@@ -746,8 +764,8 @@ export default function LabEquipmentPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Last Calibration</label>
-                <input
+                <label htmlFor={`${fid}-last-calibration`} className="block text-sm font-medium text-gray-700 mb-1">Last Calibration</label>
+                <input id={`${fid}-last-calibration`}
                   type="date"
                   value={equipmentForm.lastCalibrationDate}
                   onChange={(e) => setEquipmentForm(prev => ({ ...prev, lastCalibrationDate: e.target.value }))}
@@ -755,8 +773,8 @@ export default function LabEquipmentPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Next Calibration</label>
-                <input
+                <label htmlFor={`${fid}-next-calibration`} className="block text-sm font-medium text-gray-700 mb-1">Next Calibration</label>
+                <input id={`${fid}-next-calibration`}
                   type="date"
                   value={equipmentForm.nextCalibrationDate}
                   onChange={(e) => setEquipmentForm(prev => ({ ...prev, nextCalibrationDate: e.target.value }))}
@@ -764,8 +782,8 @@ export default function LabEquipmentPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Maintenance Frequency (days)</label>
-                <input
+                <label htmlFor={`${fid}-maintenance-frequency-days`} className="block text-sm font-medium text-gray-700 mb-1">Maintenance Frequency (days)</label>
+                <input id={`${fid}-maintenance-frequency-days`}
                   type="number"
                   value={equipmentForm.maintenanceFrequencyDays}
                   onChange={(e) => setEquipmentForm(prev => ({ ...prev, maintenanceFrequencyDays: Number(e.target.value) }))}
@@ -773,8 +791,8 @@ export default function LabEquipmentPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Last Maintenance</label>
-                <input
+                <label htmlFor={`${fid}-last-maintenance`} className="block text-sm font-medium text-gray-700 mb-1">Last Maintenance</label>
+                <input id={`${fid}-last-maintenance`}
                   type="date"
                   value={equipmentForm.lastMaintenanceDate}
                   onChange={(e) => setEquipmentForm(prev => ({ ...prev, lastMaintenanceDate: e.target.value }))}
@@ -782,8 +800,8 @@ export default function LabEquipmentPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Next Maintenance</label>
-                <input
+                <label htmlFor={`${fid}-next-maintenance`} className="block text-sm font-medium text-gray-700 mb-1">Next Maintenance</label>
+                <input id={`${fid}-next-maintenance`}
                   type="date"
                   value={equipmentForm.nextMaintenanceDate}
                   onChange={(e) => setEquipmentForm(prev => ({ ...prev, nextMaintenanceDate: e.target.value }))}
@@ -811,7 +829,12 @@ export default function LabEquipmentPage() {
 
       {/* Maintenance Modal */}
       {showMaintenanceModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showMaintenanceModalDialogRef}
+        >
           <div className="bg-white rounded-lg w-full max-w-md">
             <div className="flex items-center justify-between p-4 border-b">
               <h2 className="text-lg font-semibold">Add Maintenance Record</h2>
@@ -824,8 +847,8 @@ export default function LabEquipmentPage() {
             </div>
             <div className="p-4 space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
-                <input
+                <label htmlFor={`${fid}-date`} className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+                <input id={`${fid}-date`}
                   type="date"
                   value={maintenanceForm.date}
                   onChange={(e) => setMaintenanceForm(prev => ({ ...prev, date: e.target.value }))}
@@ -833,8 +856,8 @@ export default function LabEquipmentPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
-                <select
+                <label htmlFor={`${fid}-type`} className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+                <select id={`${fid}-type`}
                   value={maintenanceForm.type}
                   onChange={(e) => setMaintenanceForm(prev => ({ ...prev, type: e.target.value as MaintenanceFormData['type'] }))}
                   className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -845,8 +868,8 @@ export default function LabEquipmentPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Description *</label>
-                <textarea
+                <label htmlFor={`${fid}-description`} className="block text-sm font-medium text-gray-700 mb-1">Description *</label>
+                <textarea id={`${fid}-description`}
                   value={maintenanceForm.description}
                   onChange={(e) => setMaintenanceForm(prev => ({ ...prev, description: e.target.value }))}
                   className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -854,8 +877,8 @@ export default function LabEquipmentPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Performed By *</label>
-                <input
+                <label htmlFor={`${fid}-performed-by`} className="block text-sm font-medium text-gray-700 mb-1">Performed By *</label>
+                <input id={`${fid}-performed-by`}
                   type="text"
                   value={maintenanceForm.performedBy}
                   onChange={(e) => setMaintenanceForm(prev => ({ ...prev, performedBy: e.target.value }))}

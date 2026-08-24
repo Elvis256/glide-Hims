@@ -286,12 +286,24 @@ export class RlsPhase21782900000063 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     // Two HR tables were created with varchar tenant_id (both empty in every
     // known deployment) — normalize to uuid so the policy comparison works.
-    await queryRunner.query(
-      `ALTER TABLE "disciplinary_actions" ALTER COLUMN "tenant_id" TYPE uuid USING tenant_id::uuid`,
-    );
-    await queryRunner.query(
-      `ALTER TABLE "salary_history" ALTER COLUMN "tenant_id" TYPE uuid USING tenant_id::uuid`,
-    );
+    //
+    // Only when the column is not already uuid: on a database built from
+    // BaselineSchema1690000000000 these arrive as uuid, and Postgres refuses
+    // ALTER COLUMN ... TYPE outright once a policy references the column —
+    // even when the type is unchanged.
+    for (const table of ['disciplinary_actions', 'salary_history']) {
+      await queryRunner.query(`
+        DO $$ BEGIN
+          IF EXISTS (
+            SELECT 1 FROM information_schema.columns
+             WHERE table_schema = 'public' AND table_name = '${table}'
+               AND column_name = 'tenant_id' AND udt_name <> 'uuid'
+          ) THEN
+            EXECUTE 'ALTER TABLE "${table}" ALTER COLUMN "tenant_id" TYPE uuid USING tenant_id::uuid';
+          END IF;
+        END $$;
+      `);
+    }
 
     const tenantMatch = `
       current_setting('app.tenant', true) = 'system'

@@ -13,6 +13,7 @@ import {
   Res,
   Req,
   BadRequestException,
+  UseGuards,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiQuery, ApiConsumes, ApiBody } from '@nestjs/swagger';
@@ -29,6 +30,7 @@ import {
 } from './dto/patient.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 import { DocumentCategory } from '../../database/entities/patient-document.entity';
 import { validateFileContent } from '../../common/file-validation';
 
@@ -53,6 +55,7 @@ interface AuthenticatedRequest extends Request {
 
 @ApiTags('patients')
 @RequireModule('registration')
+@UseGuards(ModuleGuard)
 @Controller('patients')
 export class PatientsController {
   constructor(private readonly patientsService: PatientsService) {}

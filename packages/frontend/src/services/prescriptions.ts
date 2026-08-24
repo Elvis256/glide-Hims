@@ -4,16 +4,35 @@ export interface Prescription {
   id: string;
   prescriptionNumber: string;
   encounterId: string;
-  patientId: string;
+  /**
+   * Not every prescription endpoint returns the same shape.
+   * /prescriptions/queue flattens patient/patientId/doctor/doctorId onto the
+   * row; /prescriptions and /prescriptions/patient/:id do not, and carry the
+   * prescriber as prescribedBy and the patient through the encounter. These
+   * are all optional so a consumer has to decide which it has rather than
+   * being told it always has the flattened ones — reading doctor on the
+   * history endpoints labelled every prescription "Unknown Doctor".
+   */
+  patientId?: string;
   patient?: {
     id: string;
     mrn: string;
     fullName: string;
   };
-  doctorId: string;
+  doctorId?: string;
   doctor?: {
     id: string;
     fullName: string;
+  };
+  prescribedById?: string;
+  prescribedBy?: {
+    id: string;
+    fullName?: string;
+  };
+  encounter?: {
+    id: string;
+    patientId?: string;
+    patient?: { id: string; mrn?: string; fullName?: string };
   };
   items: PrescriptionItem[];
   /** Mirrors backend PrescriptionStatus (prescription.entity.ts). The member is

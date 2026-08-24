@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -143,6 +144,13 @@ export default function DrugClassificationsPage() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [showScheduleDropdown, setShowScheduleDropdown] = useState(false);
   const [showClassDropdown, setShowClassDropdown] = useState(false);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showModal,
+    onClose: () => setShowModal(false),
+  });
 
   const { data: classifications, isLoading, isError, error } = useQuery({
     queryKey: ['drug-classifications'],
@@ -542,7 +550,12 @@ export default function DrugClassificationsPage() {
 
       {/* Add/Edit Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={showModalDialogRef}
+        >
           <div className="bg-white rounded-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-bold text-gray-900">

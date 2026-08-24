@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback } from 'react';
+import { useDialogA11y } from '../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { X, Shield, Search, Plus, Trash2, Loader2, Check, AlertCircle, Key } from 'lucide-react';
 import { usersService, type User, type UserPermission } from '../services/users';
@@ -12,6 +13,12 @@ interface UserPermissionsModalProps {
 }
 
 export default function UserPermissionsModal({ user, onClose }: UserPermissionsModalProps) {
+  // This component is mounted only while the modal is showing.
+  const dialogRef = useDialogA11y<HTMLDivElement>({
+    open: true,
+    onClose,
+  });
+
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedModule, setSelectedModule] = useState<string>('all');
@@ -96,7 +103,12 @@ export default function UserPermissionsModal({ user, onClose }: UserPermissionsM
   });
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+      role="dialog"
+      aria-modal="true"
+      ref={dialogRef}
+    >
       <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl mx-4 max-h-[90vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b">

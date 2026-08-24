@@ -273,7 +273,9 @@ export class PhoneHomeService {
       .addSelect('r.app_version', 'version')
       .groupBy('r.license_id')
       .addGroupBy('r.app_version')
-      .orderBy('lastSeen', 'DESC')
+      // Same trap as the insurance provider report: an unquoted camelCase
+      // alias is folded to lowercase and does not resolve.
+      .orderBy('"lastSeen"', 'DESC')
       .limit(20)
       .getRawMany();
 

@@ -211,7 +211,13 @@ export class PrescriptionsService {
         notes: dto.notes,
         prescriberSignature: dto.prescriberSignature || undefined,
         prescriberSignedAt: dto.prescriberSignature ? new Date() : undefined,
-        items: dto.items.map((item) => manager.create(PrescriptionItem, item)),
+        // tenantId must be stamped on the children too: they are built from the
+        // DTO, which carries none, and cascade inserts do not go through
+        // TenantSubscriber. Without it the rows insert with tenant_id NULL and
+        // prescription_items' RLS policy rejects the whole prescription.
+        items: dto.items.map((item) =>
+          manager.create(PrescriptionItem, { ...item, tenantId: tid }),
+        ),
         tenantId: tid,
       });
 
@@ -465,6 +471,25 @@ export class PrescriptionsService {
     }));
   }
 
+  /**
+   * Dispense a single item.
+   *
+   * This is a thin wrapper over dispenseBatch rather than a second
+   * implementation. It used to be its own path and was materially weaker than
+   * the batch one: no transaction, so the dispensation record and the item's
+   * quantityDispensed were two separate writes that could diverge; no lock, so
+   * two pharmacists dispensing the same item both read the same
+   * quantityDispensed and the second overwrote the first, under-recording what
+   * left the shelf; no prescription status check, so a CANCELLED prescription
+   * could still be dispensed; and — the costly one — **no stock movement at
+   * all**. Drugs went out of the door while StockBalance and StockLedger were
+   * untouched, so on-hand quantities drifted upwards for ever and reorder
+   * levels never tripped.
+   *
+   * dispenseBatch already does all of this correctly, inside one transaction.
+   * The batch item DTO is field-for-field identical to this one, so the whole
+   * duplicate is gone in favour of delegating.
+   */
   async dispenseItem(
     dto: DispenseItemDto,
     userId: string,
@@ -473,129 +498,66 @@ export class PrescriptionsService {
     const tid = requireTenantId(tenantId);
     const item = await this.itemRepository.findOne({
       where: { id: dto.prescriptionItemId, tenantId: tid },
-      relations: ['prescription', 'prescription.encounter'],
     });
 
     if (!item) {
       throw new NotFoundException('Prescription item not found');
     }
 
-    const remainingQty = item.quantity - item.quantityDispensed;
-    if (dto.quantity > remainingQty) {
-      throw new BadRequestException(`Cannot dispense more than ${remainingQty} units`);
-    }
-
-    // ─── Medication-safety check at dispense time ───────────────────────
-    const inv = await this.inventoryRepo.findOne({
-      where: [
-        { code: item.drugCode, tenantId: tid },
-        { name: ILike(`%${item.drugName}%`), tenantId: tid },
-      ],
-    });
-    if (inv) {
-      const patientId: string | undefined = item.prescription?.encounter?.patientId;
-      const safety = await this.medicationSafety.runSafetyChecks({
-        patientId,
-        drugIds: [inv.id],
-        lines: [
+    await this.dispenseBatch(
+      {
+        prescriptionId: item.prescriptionId,
+        items: [
           {
-            drugId: inv.id,
-            drugCode: item.drugCode,
-            drugName: item.drugName,
-            dose: item.dose,
-            frequency: item.frequency,
+            prescriptionItemId: dto.prescriptionItemId,
+            quantity: dto.quantity,
+            batchNumber: dto.batchNumber,
+            expiryDate: dto.expiryDate,
+            unitPrice: dto.unitPrice,
           },
         ],
-        tenantId,
-      });
-      if (safety.blocked) {
-        const summary =
-          safety.blockingAlerts.length > 0
-            ? safety.blockingAlerts
-                .map((a) => `${a.kind.toUpperCase()} (${a.severity}): ${a.description}`)
-                .join('; ')
-            : `Safety check degraded: ${safety.degradedReasons.join('; ')}`;
-        throw new BadRequestException(
-          `MEDICATION SAFETY BLOCK: ${summary}. Cannot dispense ${item.drugName}. Override at pharmacy POS required.`,
-        );
-      }
-    }
-    // ─── End medication-safety check ────────────────────────────────────
+      } as DispenseBatchDto,
+      userId,
+      tenantId,
+    );
 
-    // Server-derived price ONLY: never trust client-supplied unitPrice.
-    let resolvedPrice = 0;
-    if (inv) {
-      resolvedPrice =
-        Number(inv.retailPrice) ||
-        Number(inv.sellingPrice) ||
-        Number(inv.unitCost) ||
-        0;
-    }
-    if (resolvedPrice <= 0) {
-      this.logger.warn(
-        `dispenseItem price fallback to 0 for ${item.drugName} — no inventory price available`,
-      );
-    }
-
-    // Create dispensation record
-    const dispensation = this.dispensationRepository.create({
-      prescriptionId: item.prescriptionId,
-      prescriptionItemId: item.id,
-      quantity: dto.quantity,
-      batchNumber: dto.batchNumber,
-      expiryDate: dto.expiryDate,
-      unitPrice: resolvedPrice,
-      totalPrice: resolvedPrice * dto.quantity,
-      dispensedById: userId,
-      tenantId: tid,
+    // The endpoint has always answered with the dispensation it created, so
+    // hand back the row the batch run just wrote for this item.
+    const dispensation = await this.dispensationRepository.findOne({
+      where: { prescriptionItemId: dto.prescriptionItemId, tenantId: tid },
+      order: { createdAt: 'DESC' },
     });
-
-    await this.dispensationRepository.save(dispensation);
-
-    // Update prescription item
-    item.quantityDispensed += dto.quantity;
-    if (item.quantityDispensed >= item.quantity) {
-      item.isDispensed = true;
+    if (!dispensation) {
+      throw new NotFoundException('Dispensation record not found after dispensing');
     }
-    await this.itemRepository.save(item);
-
-    // Activate medication for cross-encounter tracking
-    try {
-      const encounter = item.prescription?.encounter;
-      await this.activeMedService.activateFromDispensation({
-        patientId: encounter?.patientId || '',
-        encounterId: item.prescription?.encounterId || '',
-        prescriptionId: item.prescriptionId,
-        prescriptionItemId: item.id,
-        drugId: inv?.id,
-        drugCode: item.drugCode,
-        drugName: item.drugName,
-        genericName: inv?.genericName,
-        dose: item.dose,
-        frequency: item.frequency,
-        route: (item as any).route,
-        duration: item.duration,
-        facilityId: encounter?.facilityId || '',
-        tenantId,
-      });
-    } catch (err: any) {
-      this.logger.warn(`Failed to activate medication record: ${err?.message}`);
-    }
-
-    // Update prescription status
-    await this.updatePrescriptionStatus(item.prescriptionId, tenantId);
-
     return dispensation;
   }
 
-  private async updatePrescriptionStatus(prescriptionId: string, tenantId?: string): Promise<void> {
+  /**
+   * Recompute a prescription's status from its items.
+   *
+   * Takes an optional EntityManager and must be given one when called from
+   * inside a transaction. Reading through the repository instead uses a
+   * separate connection, which cannot see the item rows the open transaction
+   * has just written — so the status was computed from the state *before* the
+   * dispense that triggered it, and always lagged by one. A script dispensed
+   * in full stayed 'partially_dispensed', never reached 'dispensed', never
+   * left the pharmacy queue, and never moved its encounter to pending
+   * payment: the patient walked out with the drugs and was never sent to pay.
+   */
+  private async updatePrescriptionStatus(
+    prescriptionId: string,
+    tenantId?: string,
+    manager?: import('typeorm').EntityManager,
+  ): Promise<Prescription | null> {
     const tid = requireTenantId(tenantId);
-    const prescription = await this.prescriptionRepository.findOne({
+    const repo = manager ? manager.getRepository(Prescription) : this.prescriptionRepository;
+    const prescription = await repo.findOne({
       where: { id: prescriptionId, tenantId: tid },
       relations: ['items'],
     });
 
-    if (!prescription) return;
+    if (!prescription) return null;
 
     const allDispensed = prescription.items.every((item) => item.isDispensed);
     const someDispensed = prescription.items.some((item) => item.quantityDispensed > 0);
@@ -608,7 +570,7 @@ export class PrescriptionsService {
       if (!prescription.dispensedAt) prescription.dispensedAt = new Date();
     }
 
-    await this.prescriptionRepository.save(prescription);
+    return repo.save(prescription);
   }
 
   // Batch dispense all items in a prescription
@@ -618,7 +580,23 @@ export class PrescriptionsService {
     tenantId?: string,
   ): Promise<Prescription> {
     const tid = requireTenantId(tenantId);
-    return this.dataSource.transaction(async (manager) => {
+    // Collected inside the transaction, charged after it commits.
+    const billingIntents: {
+      encounterId: string;
+      patientId: string;
+      itemId: string;
+      serviceCode: string;
+      description: string;
+      quantity: number;
+      unitPrice: number;
+    }[] = [];
+
+    const dispenseResult = await this.dataSource.transaction(async (manager) => {
+      let dispensedNotification: {
+        patientName: string;
+        prescriptionId: string;
+        facilityId?: string;
+      } | null = null;
       const prescriptionRepo = manager.getRepository(Prescription);
       const itemRepo = manager.getRepository(PrescriptionItem);
       const dispensationRepo = manager.getRepository(Dispensation);
@@ -876,46 +854,27 @@ export class PrescriptionsService {
         }
         await itemRepo.save(item);
 
-        // Update invoice — update existing interim item or add new one
-        let billingSuccess = true;
-        let billingError: string | null = null;
-
+        // Queue the charge; it is raised after this transaction commits.
+        //
+        // Billing went through BillingService on its own connection, so the
+        // invoice line committed the moment it was written — while this
+        // transaction was still open and could still fail. It can: the
+        // controlled-substance check further down throws and rolls the whole
+        // dispensation back. That left the patient billed for drugs they were
+        // never given. Charging after the commit means the worst case is the
+        // reverse — dispensed but not yet billed — which this code already
+        // tolerated, since a billing failure here has always been logged
+        // rather than fatal.
         if (prescription.encounter) {
-          try {
-            // Try to update existing interim invoice item (created at prescription time)
-            const updated = await this.billingService.updateBillableItem({
-              referenceType: 'prescription_item',
-              referenceId: item.id,
-              description: `${item.drugName} x ${itemDto.quantity}`,
-              quantity: itemDto.quantity,
-              unitPrice: resolvedPrice,
-            });
-            if (!updated) {
-              // No existing item — add new one
-              await this.billingService.addBillableItem(
-                {
-                  encounterId: prescription.encounter.id,
-                  patientId: prescription.encounter.patientId,
-                  serviceCode: item.drugCode || `DRUG-${item.id.slice(0, 8)}`,
-                  description: `${item.drugName} x ${itemDto.quantity}`,
-                  quantity: itemDto.quantity,
-                  unitPrice: resolvedPrice,
-                  chargeType: 'pharmacy',
-                  referenceType: 'prescription_item',
-                  referenceId: item.id,
-                },
-                userId,
-                tenantId,
-              );
-            }
-          } catch (err) {
-            billingSuccess = false;
-            billingError = err.message;
-            this.logger.error(`Failed to add pharmacy item to invoice: ${err.message}`);
-          }
-        }
-        if (!billingSuccess) {
-          this.logger.warn('Dispensation billing failed');
+          billingIntents.push({
+            encounterId: prescription.encounter.id,
+            patientId: prescription.encounter.patientId,
+            itemId: item.id,
+            serviceCode: item.drugCode || `DRUG-${item.id.slice(0, 8)}`,
+            description: `${item.drugName} x ${itemDto.quantity}`,
+            quantity: itemDto.quantity,
+            unitPrice: resolvedPrice,
+          });
         }
 
         // Deduct stock — convert reservation to actual deduction
@@ -1056,33 +1015,93 @@ export class PrescriptionsService {
         }
       }
 
-      // Update prescription status
-      await this.updatePrescriptionStatus(prescription.id, tenantId);
+      // Update prescription status on this transaction's manager, and use what
+      // it returns: findOne here would read a separate connection and miss the
+      // rows this transaction has not committed yet.
+      const updatedRx = await this.updatePrescriptionStatus(prescription.id, tenantId, manager);
 
       // Check if prescription is fully dispensed, update encounter status
-      const updatedRx = await this.findOne(prescription.id, tenantId);
-      if (updatedRx.status === PrescriptionStatus.DISPENSED && prescription.encounter) {
+      if (updatedRx?.status === PrescriptionStatus.DISPENSED && prescription.encounter) {
         // Move encounter to pending payment
         await manager
           .getRepository(Encounter)
           .update({ id: prescription.encounter.id }, { status: EncounterStatus.PENDING_PAYMENT });
 
-        // Notify billing/cashier (non-critical side effect)
-        try {
-          const patientName = prescription.encounter?.patient?.fullName || 'Patient';
-          await this.inAppNotificationsService.notifyPrescriptionDispensed(
-            patientName,
-            prescription.id,
-            prescription.encounter?.facilityId,
-          );
-        } catch (err) {
-          this.logger.warn(`Dispensation notification failed: ${err?.message}`);
-        }
+        // Notify billing/cashier after the commit — see below.
+        dispensedNotification = {
+          patientName: prescription.encounter?.patient?.fullName || 'Patient',
+          prescriptionId: prescription.id,
+          facilityId: prescription.encounter?.facilityId,
+        };
       }
 
       // Return updated prescription
-      return updatedRx;
+      // updatedRx is only null if the prescription vanished mid-transaction,
+      // which the guards above have already ruled out; fall back to the row
+      // this transaction loaded rather than widening the return type.
+      return { prescription: updatedRx ?? prescription, dispensedNotification };
     });
+
+    const dispensed = dispenseResult.prescription;
+
+    // Tell billing the script is fully dispensed and the patient is due at
+    // the cashier. This ran inside the transaction, so a dispensation that
+    // rolled back had already sent the cashier a patient who was never given
+    // their drugs. Non-critical, as before.
+    if (dispenseResult.dispensedNotification) {
+      const n = dispenseResult.dispensedNotification;
+      try {
+        await this.inAppNotificationsService.notifyPrescriptionDispensed(
+          n.patientName,
+          n.prescriptionId,
+          n.facilityId,
+        );
+      } catch (err: any) {
+        this.logger.warn(`Dispensation notification failed: ${err?.message}`);
+      }
+    }
+
+    // Raise the pharmacy charges now the dispensation is real.
+    //
+    // Each goes through BillingService on its own connection: an interim
+    // invoice line was created when the prescription was written, so try to
+    // update that first and only add a new line if there is none. A failure
+    // is logged rather than fatal, exactly as it was before — the drugs are
+    // already handed over and refusing here would not take them back.
+    for (const intent of billingIntents) {
+      try {
+        const updated = await this.billingService.updateBillableItem({
+          referenceType: 'prescription_item',
+          referenceId: intent.itemId,
+          description: intent.description,
+          quantity: intent.quantity,
+          unitPrice: intent.unitPrice,
+        }, userId, tenantId);
+        if (!updated) {
+          await this.billingService.addBillableItem(
+            {
+              encounterId: intent.encounterId,
+              patientId: intent.patientId,
+              serviceCode: intent.serviceCode,
+              description: intent.description,
+              quantity: intent.quantity,
+              unitPrice: intent.unitPrice,
+              chargeType: 'pharmacy',
+              referenceType: 'prescription_item',
+              referenceId: intent.itemId,
+            },
+            userId,
+            tenantId,
+          );
+        }
+      } catch (err: any) {
+        this.logger.error(
+          `Dispensation billing failed for prescription item ${intent.itemId}: ${err?.message || err}`,
+        );
+      }
+    }
+
+    return dispensed;
   }
 
   async cancelPrescription(id: string, tenantId?: string): Promise<Prescription> {
@@ -1256,7 +1275,7 @@ export class PrescriptionsService {
         description: `${item.drugName} x ${item.quantity}`,
         quantity: item.quantity,
         unitPrice,
-      });
+      }, undefined, tenantId);
     } catch (err) {
       this.logger.warn(
         `Billing item update failed for prescription item ${item.id}: ${err?.message}`,
@@ -1314,7 +1333,15 @@ export class PrescriptionsService {
 
     // Remove from invoice
     try {
-      await this.billingService.removeBillableItem('prescription_item', item.id);
+      // tenantId was dropped, so this always threw into the catch: removing a
+      // prescription item left its charge on the patient's invoice. They
+      // stayed billed for a drug that was cancelled.
+      await this.billingService.removeBillableItem(
+        'prescription_item',
+        item.id,
+        undefined,
+        tenantId,
+      );
     } catch (err) {
       this.logger.warn(
         `Billing item removal failed for prescription item ${item.id}: ${err?.message}`,

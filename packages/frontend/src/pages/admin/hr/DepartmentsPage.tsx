@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useId } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Link } from 'react-router-dom';
@@ -41,6 +42,7 @@ interface Department {
 }
 
 export default function DepartmentsPage() {
+  const fid = useId();
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedDepts, setExpandedDepts] = useState<Set<string>>(new Set());
   const [showAddModal, setShowAddModal] = useState(false);
@@ -49,6 +51,17 @@ export default function DepartmentsPage() {
   const [parentDeptId, setParentDeptId] = useState<string | null>(null);
   const [newDept, setNewDept] = useState({ name: '', code: '', building: '', location: '', parentId: '' });
   const [error, setError] = useState('');
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showAddModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showAddModal,
+    onClose: () => setShowAddModal(false),
+  });
+  const showEditModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showEditModal,
+    onClose: () => setShowEditModal(false),
+  });
   
   const queryClient = useQueryClient();
 
@@ -174,7 +187,7 @@ export default function DepartmentsPage() {
       building: 'Main Building',
       staffCount: (d as any).staffCount || 0,
       parentId: d.parentId,
-      status: d.isActive !== false ? 'Active' as const : 'Inactive' as const,
+      status: d.status !== 'inactive' ? ('Active' as const) : ('Inactive' as const),
       subDepartments: (d.children || []).map((child: APIDept) => ({
         id: child.id,
         name: child.name,
@@ -453,7 +466,12 @@ export default function DepartmentsPage() {
 
       {/* Add Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showAddModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
             <h2 className="text-xl font-bold mb-4">
               {parentDeptId ? 'Add Sub-Department' : 'Add New Department'}
@@ -483,8 +501,8 @@ export default function DepartmentsPage() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Code *</label>
-                  <input 
+                  <label htmlFor={`${fid}-code`} className="block text-sm font-medium text-gray-700 mb-1">Code *</label>
+                  <input id={`${fid}-code`} 
                     type="text" 
                     className="w-full border rounded-lg px-3 py-2" 
                     placeholder="DEPT"
@@ -493,16 +511,16 @@ export default function DepartmentsPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Department Head</label>
-                  <select className="w-full border rounded-lg px-3 py-2">
+                  <label htmlFor={`${fid}-department-head`} className="block text-sm font-medium text-gray-700 mb-1">Department Head</label>
+                  <select id={`${fid}-department-head`} className="w-full border rounded-lg px-3 py-2">
                     <option>Select Head</option>
                   </select>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Building</label>
-                  <input 
+                  <label htmlFor={`${fid}-building`} className="block text-sm font-medium text-gray-700 mb-1">Building</label>
+                  <input id={`${fid}-building`} 
                     type="text" 
                     className="w-full border rounded-lg px-3 py-2" 
                     placeholder="Building name"
@@ -511,8 +529,8 @@ export default function DepartmentsPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
-                  <input 
+                  <label htmlFor={`${fid}-location`} className="block text-sm font-medium text-gray-700 mb-1">Location</label>
+                  <input id={`${fid}-location`} 
                     type="text" 
                     className="w-full border rounded-lg px-3 py-2" 
                     placeholder="Wing A, Floor 1"
@@ -544,7 +562,12 @@ export default function DepartmentsPage() {
 
       {/* Edit Modal */}
       {showEditModal && editingDept && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showEditModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
             <h2 className="text-xl font-bold mb-4">Edit Department</h2>
             {error && (
@@ -554,8 +577,8 @@ export default function DepartmentsPage() {
             )}
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Department Name *</label>
-                <input 
+                <label htmlFor={`${fid}-department-name`} className="block text-sm font-medium text-gray-700 mb-1">Department Name *</label>
+                <input id={`${fid}-department-name`} 
                   type="text" 
                   className="w-full border rounded-lg px-3 py-2" 
                   placeholder="Enter department name"
@@ -565,8 +588,8 @@ export default function DepartmentsPage() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Code *</label>
-                  <input 
+                  <label htmlFor={`${fid}-code-2`} className="block text-sm font-medium text-gray-700 mb-1">Code *</label>
+                  <input id={`${fid}-code-2`} 
                     type="text" 
                     className="w-full border rounded-lg px-3 py-2" 
                     placeholder="DEPT"
@@ -575,16 +598,16 @@ export default function DepartmentsPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Department Head</label>
-                  <select className="w-full border rounded-lg px-3 py-2">
+                  <label htmlFor={`${fid}-department-head-2`} className="block text-sm font-medium text-gray-700 mb-1">Department Head</label>
+                  <select id={`${fid}-department-head-2`} className="w-full border rounded-lg px-3 py-2">
                     <option>Select Head</option>
                   </select>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Building</label>
-                  <input 
+                  <label htmlFor={`${fid}-building-2`} className="block text-sm font-medium text-gray-700 mb-1">Building</label>
+                  <input id={`${fid}-building-2`} 
                     type="text" 
                     className="w-full border rounded-lg px-3 py-2" 
                     placeholder="Building name"
@@ -593,8 +616,8 @@ export default function DepartmentsPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
-                  <input 
+                  <label htmlFor={`${fid}-location-2`} className="block text-sm font-medium text-gray-700 mb-1">Location</label>
+                  <input id={`${fid}-location-2`} 
                     type="text" 
                     className="w-full border rounded-lg px-3 py-2" 
                     placeholder="Wing A, Floor 1"
@@ -605,8 +628,8 @@ export default function DepartmentsPage() {
               </div>
               {/* Parent Department Selector */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Parent Department</label>
-                <select 
+                <label htmlFor={`${fid}-parent-department`} className="block text-sm font-medium text-gray-700 mb-1">Parent Department</label>
+                <select id={`${fid}-parent-department`} 
                   className="w-full border rounded-lg px-3 py-2"
                   value={newDept.parentId}
                   onChange={(e) => setNewDept({ ...newDept, parentId: e.target.value })}

@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -66,6 +67,17 @@ export default function ControlledSubstancesRegisterPage() {
   const [witnessUserId, setWitnessUserId] = useState('');
   const [doubleCheckModal, setDoubleCheckModal] = useState<{ logId: string } | null>(null);
   const [doubleCheckUserId, setDoubleCheckUserId] = useState('');
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const witnessModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!witnessModal,
+    onClose: () => setWitnessModal(null),
+  });
+  const doubleCheckModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!doubleCheckModal,
+    onClose: () => setDoubleCheckModal(null),
+  });
 
   // Fetch controlled substance register
   const { data: registerData, isLoading } = useQuery({
@@ -381,7 +393,12 @@ export default function ControlledSubstancesRegisterPage() {
 
       {/* Witness Modal */}
       {witnessModal && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={witnessModalDialogRef}
+        >
           <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl">
             <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
               <UserCheck className="w-5 h-5 text-blue-600" />
@@ -412,7 +429,12 @@ export default function ControlledSubstancesRegisterPage() {
 
       {/* Double-Check Modal */}
       {doubleCheckModal && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={doubleCheckModalDialogRef}
+        >
           <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl">
             <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
               <Eye className="w-5 h-5 text-purple-600" />

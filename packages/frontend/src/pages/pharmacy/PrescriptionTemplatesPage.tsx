@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   FileText,
@@ -55,6 +56,13 @@ export default function PrescriptionTemplatesPage() {
   const [formDepartment, setFormDepartment] = useState('');
   const [formScope, setFormScope] = useState<'personal' | 'department' | 'facility'>('personal');
   const [formItems, setFormItems] = useState<RxTemplateItem[]>([{ ...EMPTY_ITEM }]);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showCreateFormDialogRef = useDialogA11y<HTMLDivElement>({
+    open: showCreateForm,
+    onClose: () => resetForm(),
+  });
 
   const { data: templates = [], isLoading } = useQuery({
     queryKey: ['rx-templates', scopeFilter, conditionSearch, departmentFilter],
@@ -265,7 +273,12 @@ export default function PrescriptionTemplatesPage() {
 
       {/* Create/Edit Form Modal */}
       {showCreateForm && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-start justify-center pt-10 overflow-y-auto">
+        <div
+          className="fixed inset-0 bg-black/40 z-50 flex items-start justify-center pt-10 overflow-y-auto"
+          role="dialog"
+          aria-modal="true"
+          ref={showCreateFormDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl mx-4 mb-10">
             <div className="flex items-center justify-between p-5 border-b">
               <h2 className="text-lg font-semibold">

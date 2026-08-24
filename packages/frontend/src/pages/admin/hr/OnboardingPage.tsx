@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import hrService, { type Employee } from '../../../services/hr';
 import { useAuthStore } from '../../../store/auth';
@@ -133,6 +134,17 @@ export default function OnboardingPage() {
   // Initiate modal state
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
   const [employeeSearch, setEmployeeSearch] = useState('');
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showInitiateModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showInitiateModal,
+    onClose: () => setShowInitiateModal(false),
+  });
+  const showAddTaskModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showAddTaskModal,
+    onClose: () => setShowAddTaskModal(false),
+  });
 
   // Add task form state
   const [newTask, setNewTask] = useState({
@@ -847,7 +859,12 @@ export default function OnboardingPage() {
 
       {/* ── Initiate Onboarding Modal ───────────────────────────────────── */}
       {showInitiateModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showInitiateModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
@@ -950,7 +967,12 @@ export default function OnboardingPage() {
 
       {/* ── Add Task Modal ──────────────────────────────────────────────── */}
       {showAddTaskModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showAddTaskModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">

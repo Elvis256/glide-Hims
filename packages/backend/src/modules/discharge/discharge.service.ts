@@ -1,4 +1,11 @@
-import { Injectable, NotFoundException, BadRequestException, Logger, Optional } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  Logger,
+  Optional,
+  Inject,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, DataSource } from 'typeorm';
 import {
@@ -29,7 +36,12 @@ export class DischargeService {
     private encounterRepository: Repository<Encounter>,
     private dataSource: DataSource,
     private vitalsService: VitalsService,
+    // @Inject is required next to @Optional here: a union parameter type emits
+    // `Object` as its design type, leaving Nest no token, so this silently
+    // injected undefined and discharge medication reconciliation — guarded by
+    // `if (this.medReconciliationService ...)` below — never ran once.
     @Optional()
+    @Inject(MedicationReconciliationService)
     private medReconciliationService: MedicationReconciliationService | null,
   ) {}
 
@@ -444,7 +456,12 @@ export class DischargeService {
           AND ds.deleted_at IS NULL
           AND EXISTS (
             SELECT 1 FROM admissions a
-             WHERE a.patient_id = ds.patient_id
+             -- admissions is camelCase for patientId and admissionDate but
+             -- snake_case for tenant_id; discharge_summaries is snake_case
+             -- throughout. This query used a.patient_id, which does not exist,
+             -- so /discharge/stats answered 500 on every call, with or without
+             -- dates. Quote the camelCase ones; never assume one convention.
+             WHERE a."patientId" = ds.patient_id
                AND a.tenant_id = ds.tenant_id
                AND a."admissionDate" > ds.discharge_date
                AND a."admissionDate" <= ds.discharge_date + INTERVAL '30 days'

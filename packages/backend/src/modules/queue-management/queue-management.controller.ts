@@ -26,10 +26,11 @@ import {
 } from './dto/queue.dto';
 import { RequireFacilityAccess } from '../auth/decorators/facility-access.decorator';
 import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
 @RequireModule('registration')
 @Controller('queue')
-@UseGuards(AuthGuard('jwt'))
+@UseGuards(AuthGuard('jwt'), ModuleGuard)
 @RequireFacilityAccess()
 export class QueueManagementController {
   constructor(private readonly queueService: QueueManagementService) {}
@@ -157,6 +158,17 @@ export class QueueManagementController {
     const facilityId =
       req.user.facilityId || req.headers['x-facility-id'] || req.tenantContext?.facilityId;
     return this.queueService.getPatientQueueStatus(patientId, facilityId, req.user?.tenantId);
+  }
+
+  // MUST stay above @Get(':id') — Nest matches routes in
+  // declaration order, so the parameterised route swallowed this literal path
+  // and the waiting-room display list answered "Validation failed (uuid is expected)".
+  @Get('displays')
+  @AuthWithPermissions('queue.read')
+  async getDisplays(@Request() req: any) {
+    const facilityId =
+      req.user.facilityId || req.headers['x-facility-id'] || req.tenantContext?.facilityId;
+    return this.queueService.getDisplays(facilityId, req.user?.tenantId);
   }
 
   @Get(':id')
@@ -317,13 +329,6 @@ export class QueueManagementController {
     return this.queueService.createDisplay(dto, facilityId, req.user?.tenantId);
   }
 
-  @Get('displays')
-  @AuthWithPermissions('queue.read')
-  async getDisplays(@Request() req: any) {
-    const facilityId =
-      req.user.facilityId || req.headers['x-facility-id'] || req.tenantContext?.facilityId;
-    return this.queueService.getDisplays(facilityId, req.user?.tenantId);
-  }
 
   @Get('displays/:displayCode/queue')
   @AuthWithPermissions('queue.read')

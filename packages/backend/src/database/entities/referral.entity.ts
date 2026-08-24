@@ -210,6 +210,33 @@ export class Referral extends BaseEntity {
   @JoinColumn({ name: 'accepted_by_id' })
   acceptedBy: User;
 
+  @ManyToOne(() => User, { nullable: true })
+  @JoinColumn({ name: 'rejected_by_id' })
+  rejectedBy: User;
+
+  @Column({ name: 'rejected_by_id', type: 'uuid', nullable: true })
+  rejectedById: string | null;
+
+  @Column({ name: 'rejected_at', type: 'timestamptz', nullable: true })
+  rejectedAt: Date | null;
+
+  @ManyToOne(() => User, { nullable: true })
+  @JoinColumn({ name: 'completed_by_id' })
+  completedBy: User;
+
+  @Column({ name: 'completed_by_id', type: 'uuid', nullable: true })
+  completedById: string | null;
+
+  @ManyToOne(() => User, { nullable: true })
+  @JoinColumn({ name: 'cancelled_by_id' })
+  cancelledBy: User;
+
+  @Column({ name: 'cancelled_by_id', type: 'uuid', nullable: true })
+  cancelledById: string | null;
+
+  @Column({ name: 'cancelled_at', type: 'timestamptz', nullable: true })
+  cancelledAt: Date | null;
+
   @Column({ name: 'accepted_by_id', nullable: true })
   acceptedById: string;
 

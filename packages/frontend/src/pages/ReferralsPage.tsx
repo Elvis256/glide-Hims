@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useDialogA11y } from '../hooks/useDialogA11y';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -59,6 +60,11 @@ export default function ReferralsPage() {
   const [activeTab, setActiveTab] = useState<'incoming' | 'outgoing'>('incoming');
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [selectedReferral, setSelectedReferral] = useState<Referral | null>(null);
+
+  const referralDetailDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!selectedReferral,
+    onClose: () => setSelectedReferral(null),
+  });
   const [action, setAction] = useState<{ kind: ActionKind; referral: Referral } | null>(null);
 
   const queryKey = ['referrals', activeTab, activeTab === 'incoming' ? statusFilter : ''];
@@ -265,7 +271,12 @@ export default function ReferralsPage() {
 
       {/* View Referral Modal */}
       {selectedReferral && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={referralDetailDialogRef}
+        >
           <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b">
               <div className="flex justify-between items-center">
@@ -366,6 +377,9 @@ function ReferralActionModal({
   onSubmit: (values: ActionValues) => void;
 }) {
   const [values, setValues] = useState<ActionValues>({});
+  // This component is mounted only while the action modal is showing, so it is
+  // always open; Escape uses the same onClose the Cancel button does.
+  const dialogRef = useDialogA11y<HTMLDivElement>({ open: true, onClose });
 
   const title =
     kind === 'accept' ? 'Accept Referral' : kind === 'reject' ? 'Reject Referral' : 'Complete Referral';
@@ -374,7 +388,12 @@ function ReferralActionModal({
   const canSubmit = kind === 'reject' ? !!values.reason?.trim() : true;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+      role="dialog"
+      aria-modal="true"
+      ref={dialogRef}
+    >
       <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
         <div className="p-6 border-b flex justify-between items-center">
           <h2 className="text-xl font-bold">{title}</h2>

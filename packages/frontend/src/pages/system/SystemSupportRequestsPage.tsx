@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -98,6 +99,13 @@ export default function SystemSupportRequestsPage() {
   const [selectedRequest, setSelectedRequest] = useState<SupportAccessRequest | null>(null);
   const [denyNotes, setDenyNotes] = useState('');
   const [showDenyModal, setShowDenyModal] = useState(false);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showDenyModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showDenyModal,
+    onClose: () => setShowDenyModal(false),
+  });
   const queryClient = useQueryClient();
 
   const pendingQ = useQuery({
@@ -287,7 +295,12 @@ export default function SystemSupportRequestsPage() {
 
       {/* Deny Modal */}
       {showDenyModal && selectedRequest && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div
+          className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={showDenyModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
             <h3 className="text-lg font-bold text-gray-900 mb-2">Deny Support Request</h3>
             <p className="text-sm text-gray-500 mb-4">

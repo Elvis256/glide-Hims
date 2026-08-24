@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { CURRENCY_SYMBOL, formatCurrency } from '../../../lib/currency';
 import { api } from '../../../services/api';
@@ -62,6 +63,17 @@ export default function ApprovalWorkflowPage() {
   const [showAddLevel, setShowAddLevel] = useState(false);
   const [showAddWorkflow, setShowAddWorkflow] = useState(false);
   const [newWorkflow, setNewWorkflow] = useState({ name: '', description: '' });
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showAddWorkflowDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showAddWorkflow,
+    onClose: () => setShowAddWorkflow(false),
+  });
+  const showAddLevelDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showAddLevel,
+    onClose: () => setShowAddLevel(false),
+  });
   const [newLevel, setNewLevel] = useState({
     name: '',
     minAmount: 0,
@@ -496,7 +508,12 @@ export default function ApprovalWorkflowPage() {
 
       {/* Add Workflow Modal */}
       {showAddWorkflow && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showAddWorkflowDialogRef}
+        >
           <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
             <div className="flex items-center justify-between p-4 border-b">
               <h3 className="text-lg font-semibold">Add New Workflow</h3>
@@ -547,7 +564,12 @@ export default function ApprovalWorkflowPage() {
 
       {/* Add Level Modal */}
       {showAddLevel && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showAddLevelDialogRef}
+        >
           <div className="bg-white rounded-lg shadow-xl w-full max-w-lg">
             <div className="flex items-center justify-between p-4 border-b">
               <h3 className="text-lg font-semibold">Add Approval Level</h3>

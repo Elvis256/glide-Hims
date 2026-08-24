@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useDialogA11y } from '../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../services/api';
 import {
@@ -56,6 +57,13 @@ export default function MembershipPage() {
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [editingScheme, setEditingScheme] = useState<MembershipScheme | null>(null);
   const [activeTab, setActiveTab] = useState<'schemes' | 'members'>('schemes');
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showSchemeModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showSchemeModal,
+    onClose: () => setShowSchemeModal(false),
+  });
 
   // Fetch schemes
   const { data: schemes, isLoading: loadingSchemes } = useQuery({
@@ -272,7 +280,12 @@ export default function MembershipPage() {
 
       {/* Scheme Modal */}
       {showSchemeModal && (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
+        <div
+          className="fixed inset-0 z-50 overflow-y-auto"
+          role="dialog"
+          aria-modal="true"
+          ref={showSchemeModalDialogRef}
+        >
           <div className="flex items-center justify-center min-h-screen px-4">
             <div className="fixed inset-0 bg-gray-500 bg-opacity-75" onClick={() => setShowSchemeModal(false)} />
             <div className="relative bg-white rounded-lg shadow-xl max-w-md w-full p-6">

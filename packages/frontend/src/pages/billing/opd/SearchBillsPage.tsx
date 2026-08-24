@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -191,6 +192,25 @@ export default function SearchBillsPage() {
 
   // Debounced search query for API
   const [debouncedSearch, setDebouncedSearch] = useState('');
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const selectedBillDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!selectedBill,
+    onClose: () => setSelectedBill(null),
+  });
+  const returnDoctorBillDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!returnDoctorBill,
+    onClose: () => setReturnDoctorBill(null),
+  });
+  const returnLabBillDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!returnLabBill,
+    onClose: () => setReturnLabBill(null),
+  });
+  const returnPharmacyBillDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!returnPharmacyBill,
+    onClose: () => setReturnPharmacyBill(null),
+  });
   
   // Debounce search input with useEffect
   useEffect(() => {
@@ -856,7 +876,12 @@ export default function SearchBillsPage() {
 
       {/* View Bill Modal */}
       {selectedBill && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={selectedBillDialogRef}
+        >
           <div className="bg-white rounded-xl p-6 max-w-lg w-full mx-4 max-h-[80vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold text-gray-900">Bill Details</h3>
@@ -946,7 +971,12 @@ export default function SearchBillsPage() {
 
       {/* Return to Doctor Modal */}
       {returnDoctorBill && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          role="dialog"
+          aria-modal="true"
+          ref={returnDoctorBillDialogRef}
+        >
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4">
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
@@ -993,7 +1023,12 @@ export default function SearchBillsPage() {
 
       {/* Return to Lab Modal */}
       {returnLabBill && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          role="dialog"
+          aria-modal="true"
+          ref={returnLabBillDialogRef}
+        >
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4">
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
@@ -1040,7 +1075,12 @@ export default function SearchBillsPage() {
 
       {/* Return to Pharmacy Modal */}
       {returnPharmacyBill && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          role="dialog"
+          aria-modal="true"
+          ref={returnPharmacyBillDialogRef}
+        >
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4">
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">

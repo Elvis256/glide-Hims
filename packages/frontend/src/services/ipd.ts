@@ -5,13 +5,15 @@ export interface Ward {
   name: string;
   code: string;
   type: 'general' | 'pediatric' | 'maternity' | 'icu' | 'surgical' | 'private';
-  capacity: number;    // legacy alias
-  totalBeds?: number;  // actual backend field
+  totalBeds?: number;
   occupiedBeds?: number;
+  /** Only present on GET /ipd/wards/occupancy, which computes it. */
   availableBeds?: number;
   description?: string;
-  floorNumber?: number;
-  isActive: boolean;
+  // The wards payload carries `floor` and `status`; floorNumber and isActive
+  // were never sent, and this service has no normaliser to map them.
+  floor?: string;
+  status?: 'active' | 'inactive' | 'maintenance';
 }
 
 export interface Bed {
@@ -47,7 +49,10 @@ export interface Admission {
   wardId: string;
   ward?: Ward;
   type: 'emergency' | 'elective' | 'transfer';
-  admittingDiagnosis: string;   // display alias for admissionDiagnosis
+  // The payload carries admissionDiagnosis only. admittingDiagnosis was
+  // labelled a "display alias" but nothing ever populated it, so every
+  // consumer read undefined — the nursing handover's situation line said
+  // "admitted with undefined".
   admissionDiagnosis?: string;
   admissionReason?: string;
   attendingDoctorId?: string;
@@ -57,7 +62,6 @@ export interface Admission {
     specialization?: string;
   };
   status: 'admitted' | 'discharged' | 'transferred' | 'deceased';
-  priority: 'high' | 'medium' | 'low';
   // Entity fields are admissionDate/dischargeDate — admittedAt/dischargedAt
   // never existed on the backend and rendered as "Invalid Date".
   admissionDate: string;
@@ -88,9 +92,19 @@ export interface AdmissionQueryParams {
   limit?: number;
 }
 
+/**
+ * Shape of GET /ipd/wards/occupancy.
+ *
+ * The fields were `wardId`/`wardName`; the endpoint returns `id`/`name` and
+ * always has. Nothing failed loudly — TypeScript happily accepted reads of a
+ * declared field the payload never carried, and the value arrived undefined at
+ * runtime. The workload report printed "undefined Procedures" for every ward
+ * because of it.
+ */
 export interface WardOccupancy {
-  wardId: string;
-  wardName: string;
+  id: string;
+  name: string;
+  type?: string;
   totalBeds: number;
   occupiedBeds: number;
   availableBeds: number;
@@ -98,7 +112,13 @@ export interface WardOccupancy {
 }
 
 // Nursing Note Types
-export type NursingNoteType = 'assessment' | 'intervention' | 'observation' | 'progress' | 'handoff' | 'incident';
+export type NursingNoteType =
+  | 'assessment'
+  | 'intervention'
+  | 'observation'
+  | 'progress'
+  | 'handoff'
+  | 'incident';
 
 export interface Vitals {
   temperature?: number;
@@ -146,7 +166,7 @@ export interface CreateNursingNoteDto {
 }
 
 // Medication Administration Types
-export type MedicationStatus = 'scheduled' | 'given' | 'missed' | 'held' | 'refused';
+export type MedicationStatus = 'scheduled' | 'administered' | 'missed' | 'held' | 'refused';
 
 export interface MedicationAdministration {
   id: string;
@@ -164,7 +184,15 @@ export interface MedicationAdministration {
     lastName: string;
     fullName?: string;
   };
-  administeredTime?: string;
+  /**
+   * The entity column, the service and the API all use `administeredAt`.
+   * This was declared as `administeredTime`, which TypeScript accepted
+   * happily and which arrived undefined at runtime — so the medication
+   * schedule's administration history had no time against a given dose,
+   * on a chart where the time IS the entry. IPDNursingNotesPage always read
+   * administeredAt, so the two screens disagreed about the same field.
+   */
+  administeredAt?: string;
   batchNumber?: string;
   notes?: string;
   reason?: string;
@@ -263,11 +291,29 @@ export const ipdService = {
       const response = await api.get<Admission>(`/ipd/patients/${patientId}/current-admission`);
       return response.data;
     },
-    discharge: async (id: string, data: { dischargeType: string; dischargeSummary: string }): Promise<Admission> => {
+    /**
+     * Mirrors DischargeAdmissionDto. It previously declared `dischargeType`,
+     * which that DTO does not accept — and with the global whitelisting
+     * ValidationPipe an unknown property is a 400, so anything calling this
+     * wrapper would have failed. DischargePage posts the correct fields
+     * directly, which is why nothing was broken in practice.
+     */
+    discharge: async (
+      id: string,
+      data: {
+        dischargeSummary?: string;
+        dischargeDiagnosis?: string;
+        dischargeInstructions?: string;
+        followUpPlan?: string;
+      },
+    ): Promise<Admission> => {
       const response = await api.post<Admission>(`/ipd/admissions/${id}/discharge`, data);
       return response.data;
     },
-    transfer: async (id: string, data: { toWardId: string; toBedId: string; reason: string }): Promise<Admission> => {
+    transfer: async (
+      id: string,
+      data: { toWardId: string; toBedId: string; reason: string },
+    ): Promise<Admission> => {
       const response = await api.post<Admission>(`/ipd/admissions/${id}/transfer`, data);
       return response.data;
     },
@@ -288,21 +334,32 @@ export const ipdService = {
   // Medication Administration
   medications: {
     list: async (admissionId: string, date?: string): Promise<MedicationAdministration[]> => {
-      const response = await api.get<MedicationAdministration[]>(`/ipd/admissions/${admissionId}/medications`, { params: { date } });
+      const response = await api.get<MedicationAdministration[]>(
+        `/ipd/admissions/${admissionId}/medications`,
+        { params: { date } },
+      );
       return response.data;
     },
     schedule: async (data: ScheduleMedicationDto): Promise<MedicationAdministration> => {
       const response = await api.post<MedicationAdministration>('/ipd/medications', data);
       return response.data;
     },
-    administer: async (id: string, data: AdministerMedicationDto): Promise<MedicationAdministration> => {
-      const response = await api.put<MedicationAdministration>(`/ipd/medications/${id}/administer`, data);
+    administer: async (
+      id: string,
+      data: AdministerMedicationDto,
+    ): Promise<MedicationAdministration> => {
+      const response = await api.put<MedicationAdministration>(
+        `/ipd/medications/${id}/administer`,
+        data,
+      );
       return response.data;
     },
   },
 
   // Stats
-  getStats: async (facilityId?: string): Promise<{
+  getStats: async (
+    facilityId?: string,
+  ): Promise<{
     totalAdmissions: number;
     currentInpatients: number;
     dischargedToday: number;
@@ -328,11 +385,7 @@ export const ipdService = {
     const r = await api.get('/ipd/census', { params: { facilityId, dateFrom, dateTo } });
     return r.data;
   },
-  reserveBed: async (
-    bedId: string,
-    holdHours: number,
-    reason: string,
-  ): Promise<Bed> => {
+  reserveBed: async (bedId: string, holdHours: number, reason: string): Promise<Bed> => {
     const r = await api.post(`/ipd/beds/${bedId}/reserve`, { holdHours, reason });
     return r.data;
   },

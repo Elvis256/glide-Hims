@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -25,6 +26,7 @@ import {
   Loader2,
   X,
   Pencil,
+  AlertTriangle,
 } from 'lucide-react';
 import { formatCurrency } from '../../lib/currency';
 import api, { getApiErrorMessage } from '../../services/api';
@@ -55,6 +57,11 @@ interface Admission {
   attendingDoctor?: {
     fullName: string;
   };
+  dischargeDate?: string;
+  metadata?: {
+    inpatientInvoiceId?: string;
+    inpatientBilling?: { status: string; at?: string; error?: string };
+  };
 }
 
 interface InvoiceItem {
@@ -64,6 +71,21 @@ interface InvoiceItem {
   unitPrice: number;
   amount: number;
   category?: string;
+  serviceCode?: string;
+  chargeType?: string;
+  referenceType?: string;
+  referenceId?: string;
+}
+
+/** A bed-day charge line as computed by GET /ipd/admissions/:id/bed-charges-preview. */
+interface BedChargeLine {
+  serviceCode: string;
+  description: string;
+  chargeType: string;
+  quantity: number;
+  unitPrice: number;
+  referenceType: string;
+  referenceId: string;
 }
 
 interface Invoice {
@@ -98,6 +120,13 @@ export default function InpatientBillingPage() {
   });
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editingPrice, setEditingPrice] = useState<number>(0);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showPaymentModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showPaymentModal,
+    onClose: () => setShowPaymentModal(false),
+  });
   const queryClient = useQueryClient();
 
   // Payment mutation
@@ -160,6 +189,58 @@ export default function InpatientBillingPage() {
     onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to add charge')),
   });
 
+  /**
+   * Post the computed bed-day charges onto the patient's bill.
+   *
+   * The backend has always been able to work these out — it walks the
+   * admission's transfers and prices each segment at that bed's own daily rate
+   * — but nothing in the UI ever called it, so bed nights had to be typed in by
+   * hand and were easy to under-bill or miss entirely.
+   *
+   * invoice_items has a UNIQUE index on (reference_type, reference_id), so the
+   * segments cannot all be posted under the bare admission id; each line gets a
+   * per-segment suffix, which keeps the rows traceable to the admission while
+   * satisfying the constraint.
+   */
+  const addBedChargesMutation = useMutation({
+    mutationFn: async (admission: Admission) => {
+      const preview = await api.get(`/ipd/admissions/${admission.id}/bed-charges-preview`);
+      const lines = (preview.data?.data || preview.data || []) as BedChargeLine[];
+      if (!lines.length) return { posted: 0 };
+
+      const withRefs = lines.map((line, i) => ({
+        serviceCode: line.serviceCode,
+        description: line.description,
+        quantity: line.quantity,
+        unitPrice: line.unitPrice,
+        chargeType: line.chargeType,
+        referenceType: line.referenceType,
+        referenceId: `${line.referenceId}#${i + 1}`,
+      }));
+
+      if (currentInvoice) {
+        for (const item of withRefs) {
+          await api.post(`/billing/invoices/${currentInvoice.id}/items`, item);
+        }
+      } else {
+        await api.post('/billing/invoices', {
+          patientId: admission.patient.id,
+          encounterId: admission.encounterId,
+          items: withRefs,
+          notes: `Bed charges — admission ${admission.admissionNumber}`,
+        });
+      }
+      return { posted: withRefs.length };
+    },
+    onSuccess: ({ posted }) => {
+      queryClient.invalidateQueries({ queryKey: ['patient-invoices'] });
+      toast.success(
+        posted ? `Added ${posted} bed charge${posted > 1 ? 's' : ''}` : 'No billable bed nights yet',
+      );
+    },
+    onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to add bed charges')),
+  });
+
   // Update item price mutation
   const updatePriceMutation = useMutation({
     mutationFn: async (data: { invoiceId: string; itemId: string; unitPrice: number }) => {
@@ -196,6 +277,37 @@ export default function InpatientBillingPage() {
     },
   });
 
+  /**
+   * Discharged stays whose bed-day invoice never got raised.
+   *
+   * The list above is scoped to status 'admitted', so a discharge whose
+   * auto-billing failed disappears from this page entirely — the patient is
+   * gone and nothing on screen says the stay was never billed. This is the
+   * queue that surfaces them.
+   */
+  const { data: unbilledDischarges = [] } = useQuery({
+    queryKey: ['unbilled-discharges'],
+    queryFn: async () => {
+      const res = await api.get('/ipd/unbilled-discharges');
+      return (res.data?.data || res.data || []) as Admission[];
+    },
+  });
+
+  const raiseInvoiceMutation = useMutation({
+    mutationFn: async (admissionId: string) => {
+      // Idempotent server-side: an admission already carrying a live invoice
+      // returns it rather than billing the stay a second time.
+      const res = await api.post(`/ipd/admissions/${admissionId}/generate-invoice`);
+      return (res.data?.data || res.data) as { invoiceId: string | null };
+    },
+    onSuccess: ({ invoiceId }) => {
+      queryClient.invalidateQueries({ queryKey: ['unbilled-discharges'] });
+      queryClient.invalidateQueries({ queryKey: ['patient-invoices'] });
+      toast.success(invoiceId ? 'Invoice raised' : 'Stay had nothing chargeable');
+    },
+    onError: (err) => toast.error(getApiErrorMessage(err, 'Could not raise the invoice')),
+  });
+
   // Fetch invoices for selected patient. The endpoint returns {data, total} —
   // treating it as a bare array crashed every useMemo below. Scoped to this
   // ADMISSION (invoices raised since admission) so totals don't drag in the
@@ -217,6 +329,29 @@ export default function InpatientBillingPage() {
   const currentInvoice = useMemo(() => {
     return invoices.find(inv => inv.status !== 'paid') || invoices[0];
   }, [invoices]);
+
+  /** Bed charges already on this bill — used to warn before posting twice. */
+  const existingBedCharges = useMemo(
+    () =>
+      (currentInvoice?.items || []).filter(
+        (i) => i.chargeType === 'bed' || (i.serviceCode || '').startsWith('BED-'),
+      ),
+    [currentInvoice],
+  );
+
+  const handleAddBedCharges = async () => {
+    if (!selectedAdmission) return;
+    if (existingBedCharges.length) {
+      const ok = await confirmDialog({
+        title: 'Bed charges already on this bill',
+        message: `This bill already has ${existingBedCharges.length} bed charge line(s). Adding them again will bill the stay twice. Continue?`,
+        confirmLabel: 'Add anyway',
+        variant: 'danger',
+      });
+      if (!ok) return;
+    }
+    addBedChargesMutation.mutate(selectedAdmission);
+  };
 
   // Calculate totals from invoices
   const totalCharges = useMemo(() => {
@@ -299,6 +434,52 @@ export default function InpatientBillingPage() {
           <span className="text-blue-700 font-medium">{admissions.length} Active Inpatients</span>
         </div>
       </div>
+
+      {/* Discharged stays that were never billed. Hidden entirely when the
+          queue is empty so it reads as an exception, not a standing panel. */}
+      {unbilledDischarges.length > 0 && (
+        <div className="mb-6 bg-amber-50 border border-amber-300 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <AlertTriangle className="w-5 h-5 text-amber-600" />
+            <h2 className="font-semibold text-amber-900">
+              {unbilledDischarges.length} discharged{' '}
+              {unbilledDischarges.length === 1 ? 'stay has' : 'stays have'} no bed-day invoice
+            </h2>
+          </div>
+          <div className="space-y-2 max-h-56 overflow-y-auto">
+            {unbilledDischarges.map((adm) => {
+              const failure = adm.metadata?.inpatientBilling;
+              return (
+                <div
+                  key={adm.id}
+                  className="flex items-center justify-between gap-4 bg-white border border-amber-200 rounded-lg px-3 py-2"
+                >
+                  <div className="min-w-0">
+                    <p className="font-medium text-gray-900 truncate">
+                      {adm.patient?.fullName || 'Unknown patient'}
+                      <span className="ml-2 text-sm text-gray-500">{adm.admissionNumber}</span>
+                    </p>
+                    <p className="text-sm text-gray-500 truncate">
+                      Discharged{' '}
+                      {adm.dischargeDate ? new Date(adm.dischargeDate).toLocaleDateString() : '—'}
+                      {failure?.status === 'failed' && (
+                        <span className="text-red-600"> · billing failed: {failure.error}</span>
+                      )}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => raiseInvoiceMutation.mutate(adm.id)}
+                    disabled={raiseInvoiceMutation.isPending}
+                    className="shrink-0 px-3 py-1.5 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50"
+                  >
+                    Raise invoice
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Main Content */}
       <div className="flex-1 flex gap-6 overflow-hidden">
@@ -430,6 +611,19 @@ export default function InpatientBillingPage() {
               <div className="flex items-center justify-between p-4 border-b border-gray-200">
                 <h3 className="font-semibold text-gray-900">Itemized Charges</h3>
                 <div className="flex gap-2">
+                  <button
+                    onClick={handleAddBedCharges}
+                    disabled={addBedChargesMutation.isPending}
+                    title="Bill the bed nights for this admission, priced per bed and split across any transfers"
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:opacity-50"
+                  >
+                    {addBedChargesMutation.isPending ? (
+                      <Loader2 className="w-4 h-4 inline mr-2 animate-spin" />
+                    ) : (
+                      <Bed className="w-4 h-4 inline mr-2" />
+                    )}
+                    Add Bed Charges
+                  </button>
                   <button
                     onClick={() => setShowAddCharge(!showAddCharge)}
                     className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors font-medium"
@@ -677,7 +871,12 @@ export default function InpatientBillingPage() {
 
       {/* Payment Modal */}
       {showPaymentModal && selectedAdmission && currentInvoice && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showPaymentModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
             <div className="p-6 border-b border-gray-200">
               <div className="flex items-center justify-between">

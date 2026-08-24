@@ -28,6 +28,18 @@ const triageLevelConfig: Record<number, { label: string; color: string; textColo
   5: { label: 'Non-Urgent', color: 'bg-blue-500', textColor: 'text-blue-700', bgLight: 'bg-blue-50', border: 'border-blue-500' },
 };
 
+// A case with no triage level has not been assessed. It used to fall back to
+// the level-4 styling — a green "Less Urgent" card for a patient nobody had
+// seen — so it now says so, in its own colour, at the top of the board.
+const untriagedConfig = {
+  label: 'Untriaged',
+  color: 'bg-slate-700',
+  textColor: 'text-slate-700',
+  bgLight: 'bg-slate-50',
+  border: 'border-slate-600',
+};
+const acuityRank = (level?: number | null) => (level == null ? 0 : level);
+
 function formatElapsedTime(arrivalTime: string): string {
   const diff = Date.now() - new Date(arrivalTime).getTime();
   const hours = Math.floor(diff / 3600000);
@@ -95,7 +107,7 @@ export default function EmergencyQueuePage() {
 
   const stats = {
     totalInED: cases.length,
-    criticalCount: cases.filter(c => c.triageLevel <= 2).length,
+    criticalCount: cases.filter(c => c.triageLevel != null && c.triageLevel <= 2).length,
     avgWaitMinutes: dashboard?.avgWaitTimes?.treatmentMinutes || 0,
     waitingCount: cases.filter(c => c.status === TriageStatus.TRIAGED).length,
   };
@@ -103,7 +115,9 @@ export default function EmergencyQueuePage() {
   // Sort by triage level (critical first), then by time
   const sortedCases = useMemo(() => {
     return [...cases].sort((a, b) => {
-      if (a.triageLevel !== b.triageLevel) return a.triageLevel - b.triageLevel;
+      if (acuityRank(a.triageLevel) !== acuityRank(b.triageLevel)) {
+        return acuityRank(a.triageLevel) - acuityRank(b.triageLevel);
+      }
       return new Date(a.arrivalTime).getTime() - new Date(b.arrivalTime).getTime();
     });
   }, [cases]);
@@ -223,7 +237,9 @@ export default function EmergencyQueuePage() {
                 </tr>
               ) : (
                 sortedCases.map((c) => {
-                const config = triageLevelConfig[c.triageLevel] || triageLevelConfig[4];
+                const config = c.triageLevel == null
+                  ? untriagedConfig
+                  : triageLevelConfig[c.triageLevel] || untriagedConfig;
                 const patient = c.encounter?.patient;
                 const patientName = patient?.fullName || 'Unknown';
                 const isWaiting = c.status === TriageStatus.TRIAGED;

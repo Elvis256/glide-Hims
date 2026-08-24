@@ -175,6 +175,14 @@ export class Employee {
   @Column({ type: 'text', nullable: true, name: 'termination_reason' })
   terminationReason: string;
 
+  /**
+   * Staff medical cover. The column was missing entirely until migration
+   * ...097 — both the read and the write in BiometricsService referenced it and
+   * both answered 500.
+   */
+  @Column({ type: 'jsonb', nullable: true, name: 'insurance_coverage' })
+  insuranceCoverage?: Record<string, unknown> | null;
+
   // Salary information
   @Column({ length: 20, nullable: true, name: 'salary_grade' })
   salaryGrade: string;

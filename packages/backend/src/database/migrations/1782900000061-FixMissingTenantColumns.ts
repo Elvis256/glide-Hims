@@ -15,7 +15,7 @@ export class FixMissingTenantColumns1782900000061 implements MigrationInterface 
     // --- appointments: add tenant_id, backfill from facility, index ---
     await queryRunner.query(`
       ALTER TABLE "appointments"
-      ADD COLUMN "tenant_id" uuid
+      ADD COLUMN IF NOT EXISTS "tenant_id" uuid
     `);
 
     await queryRunner.query(`

@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -29,7 +30,7 @@ import {
 import { rfqService, type RFQ, type RFQStatus as RFQStatusType, type CreateRFQDto } from '../../../services/rfq';
 import { useAuthStore } from '../../../store/auth';
 import { CategoryContextBanner } from '../../../components/procurement/CategoryContextBanner';
-import api from '../../../services/api';
+import api, { getApiErrorMessage } from '../../../services/api';
 
 type RFQStatus = 'draft' | 'sent' | 'pending_responses' | 'responses_received' | 'closed' | 'cancelled';
 
@@ -124,8 +125,10 @@ export default function RFQPage() {
     mutationFn: (data: CreateRFQDto) => rfqService.create(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rfqs'] });
+      toast.success('RFQ created');
       setShowCreateModal(false);
     },
+    onError: (err: any) => toast.error(getApiErrorMessage(err, 'Failed to create RFQ')),
   });
 
   // Send RFQ mutation
@@ -174,6 +177,25 @@ export default function RFQPage() {
   const [quoteWarranty, setQuoteWarranty] = useState('');
   const [quoteNotes, setQuoteNotes] = useState('');
   const [quoteLines, setQuoteLines] = useState<QuoteLine[]>([]);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showCreateModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showCreateModal,
+    onClose: () => setShowCreateModal(false),
+  });
+  const showVendorModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showVendorModal,
+    onClose: () => setShowVendorModal(false),
+  });
+  const showQuoteModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showQuoteModal,
+    onClose: () => setShowQuoteModal(false),
+  });
+  const showDetailsModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showDetailsModal,
+    onClose: () => setShowDetailsModal(false),
+  });
 
   const openQuoteModal = () => {
     if (!selectedRFQ) return;
@@ -581,7 +603,12 @@ export default function RFQPage() {
 
       {/* Create Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showCreateModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-hidden">
             <div className="px-6 py-4 border-b flex items-center justify-between">
               <h2 className="text-lg font-semibold">Create RFQ from Requisition</h2>
@@ -674,7 +701,12 @@ export default function RFQPage() {
 
       {/* Select Vendors Modal */}
       {showVendorModal && selectedRFQ && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showVendorModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-xl max-h-[85vh] overflow-hidden flex flex-col">
             <div className="px-6 py-4 border-b flex items-center justify-between">
               <h2 className="text-lg font-semibold">Select Vendors for {selectedRFQ.rfqNumber}</h2>
@@ -742,7 +774,12 @@ export default function RFQPage() {
       )}
       {/* Record Quotation Modal */}
       {showQuoteModal && selectedRFQ && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={showQuoteModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
             <div className="px-6 py-4 border-b flex items-center justify-between">
               <h2 className="text-lg font-semibold">Record Quotation for {selectedRFQ.rfqNumber}</h2>
@@ -909,7 +946,12 @@ export default function RFQPage() {
       )}
       {/* RFQ Full Details Modal */}
       {showDetailsModal && selectedRFQ && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={showDetailsModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-5xl max-h-[92vh] overflow-hidden flex flex-col">
             <div className="px-6 py-4 border-b flex items-center justify-between">
               <div>

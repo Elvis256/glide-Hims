@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Warehouse,
@@ -61,6 +62,13 @@ export default function StoreLocationsPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingLocation, setEditingLocation] = useState<StoreLocation | null>(null);
   const [formData, setFormData] = useState<LocationFormData>(defaultFormData);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const isModalOpenDialogRef = useDialogA11y<HTMLDivElement>({
+    open: isModalOpen,
+    onClose: () => handleCloseModal(),
+  });
   const facilityId = useFacilityId();
 
   const queryClient = useQueryClient();
@@ -425,7 +433,12 @@ export default function StoreLocationsPage() {
 
       {/* Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={isModalOpenDialogRef}
+        >
           <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
             <div className="flex items-center justify-between p-4 border-b">
               <h2 className="text-lg font-semibold">

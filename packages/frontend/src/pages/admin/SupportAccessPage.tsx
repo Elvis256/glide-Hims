@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -71,6 +72,13 @@ export default function SupportAccessPage() {
   const [requestTier, setRequestTier] = useState(2);
   const [requestDuration, setRequestDuration] = useState(4);
   const [requestReason, setRequestReason] = useState('');
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showRequestFormDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showRequestForm,
+    onClose: () => setShowRequestForm(false),
+  });
   const queryClient = useQueryClient();
 
   // Fetch existing requests for this tenant
@@ -289,7 +297,12 @@ export default function SupportAccessPage() {
 
       {/* Request Form Modal */}
       {showRequestForm && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div
+          className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={showRequestFormDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-6">
             <h3 className="text-lg font-bold text-gray-900 mb-4">Request Support Access</h3>
             <p className="text-sm text-gray-500 mb-6">

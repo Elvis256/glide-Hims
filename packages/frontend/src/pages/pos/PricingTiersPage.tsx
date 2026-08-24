@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Tag, X, Loader2, Percent } from 'lucide-react';
 import { toast } from 'sonner';
@@ -37,6 +38,13 @@ export default function PricingTiersPage() {
 
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState<TierFormData>(emptyForm);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: showModal,
+    onClose: () => closeModal(),
+  });
 
   const { data: tiersData, isLoading } = useQuery({
     queryKey: ['wholesale-tiers', facilityId],
@@ -160,7 +168,12 @@ export default function PricingTiersPage() {
 
       {/* Add/Edit Modal */}
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={showModalDialogRef}
+        >
           <div className="w-full max-w-md rounded-xl bg-white shadow-xl">
             <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
               <h2 className="text-lg font-semibold text-gray-900">Add Tier</h2>

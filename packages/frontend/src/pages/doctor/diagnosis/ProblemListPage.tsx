@@ -1,4 +1,5 @@
 import { usePermissions } from '../../../components/PermissionGate';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
@@ -63,6 +64,13 @@ export default function ProblemListPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingProblem, setEditingProblem] = useState<Problem | null>(null);
   const [diagnosisSearch, setDiagnosisSearch] = useState('');
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showAddModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: showAddModal,
+    onClose: () => closeModal(),
+  });
 
   // Fetch patient from URL params
   const { data: urlPatientData } = useQuery({
@@ -579,7 +587,12 @@ export default function ProblemListPage() {
 
       {/* Add/Edit Problem Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showAddModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-4 border-b border-gray-200">
               <h3 className="text-lg font-semibold text-gray-800">

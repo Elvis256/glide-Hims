@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { Download, Loader2, Plus, RefreshCw, Trash2, Upload, FileArchive, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '../../services/api';
@@ -65,6 +66,13 @@ export default function SystemDownloadsPage() {
     minLicenseTier: '',
   });
   const [confirmAction, setConfirmAction] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showFormDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showForm,
+    onClose: () => setShowForm(false),
+  });
 
   async function load() {
     setLoading(true);
@@ -213,7 +221,12 @@ export default function SystemDownloadsPage() {
       </div>
 
       {showForm && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+        <div
+          className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={showFormDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="p-5 border-b flex items-center justify-between">
               <h2 className="font-semibold flex items-center gap-2"><Upload className="w-4 h-4" /> Register installer</h2>

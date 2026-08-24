@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Building,
@@ -65,6 +66,15 @@ export default function BranchesPage() {
   const [selectedBranch, setSelectedBranch] = useState<Branch | null>(null);
   const [showMenu, setShowMenu] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
+
+  const branchDetailDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!selectedBranch,
+    onClose: () => setSelectedBranch(null),
+  });
+  const addBranchDialogRef = useDialogA11y<HTMLDivElement>({
+    open: showAddModal,
+    onClose: () => setShowAddModal(false),
+  });
   const [modulesModal, setModulesModal] = useState<{ facilityId: string; name: string } | null>(null);
   const [newBranch, setNewBranch] = useState({
     name: '',
@@ -383,7 +393,12 @@ export default function BranchesPage() {
 
       {/* Branch Details Modal */}
       {selectedBranch && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={branchDetailDialogRef}
+        >
           <div className="bg-white rounded-lg w-full max-w-2xl max-h-[80vh] overflow-y-auto m-4">
             <div className="p-6 border-b border-gray-200">
               <div className="flex items-center justify-between">
@@ -462,7 +477,12 @@ export default function BranchesPage() {
 
       {/* Add Branch Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={addBranchDialogRef}
+        >
           <div className="bg-white rounded-lg w-full max-w-md m-4 p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-gray-900">Add New Branch</h2>
@@ -582,6 +602,8 @@ interface ModulesModalProps {
 }
 
 function FacilityModulesModal({ facilityId, facilityName, onClose }: ModulesModalProps) {
+  // This component only exists while the modal is showing, so it is always open.
+  const dialogRef = useDialogA11y<HTMLDivElement>({ open: true, onClose });
   const { data, isLoading } = useQuery({
     queryKey: ['facility-modules', facilityId],
     queryFn: () => facilitiesService.modules.get(facilityId),
@@ -619,7 +641,12 @@ function FacilityModulesModal({ facilityId, facilityName, onClose }: ModulesModa
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+      role="dialog"
+      aria-modal="true"
+      ref={dialogRef}
+    >
       <div className="bg-white rounded-xl w-full max-w-2xl m-4 flex flex-col max-h-[90vh]">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">

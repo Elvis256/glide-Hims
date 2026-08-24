@@ -1,5 +1,5 @@
 import { Entity, Column, ManyToOne, JoinColumn, Index, OneToMany, OneToOne } from 'typeorm';
-import { Exclude } from 'class-transformer';
+import { Exclude, Expose } from 'class-transformer';
 import { BaseEntity } from './base.entity';
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'crypto';
 
@@ -102,6 +102,27 @@ export enum EmploymentType {
   FULL_TIME = 'full-time',
 }
 
+/**
+ * Serialization group that unlocks staff payroll / personal data on User.
+ *
+ * 106 entities carry a relation to User (leadSurgeon, approvedBy, orderedBy,
+ * prescribedBy, triageNurse, ...) and services load them by name, so the whole
+ * user row was serialised into ordinary clinical and procurement payloads:
+ * reading one surgery case returned the surgeon's salary, allowances,
+ * deductions, bank account number, national ID, home address, date of birth
+ * and emergency contact to anyone holding `surgery.read`.
+ *
+ * The tagged columns use `@Expose({ groups })` on its own. `@Exclude()` plus
+ * `@Expose({ groups })` does NOT re-expose under the group in class-transformer
+ * 0.5.1 — it stays hidden in both directions (verified against the installed
+ * version, not assumed). A route opts back in with
+ * `@SerializeOptions({ groups: [HR_SERIALIZE_GROUP] })`.
+ *
+ * Only serialisation changes; property access in code is untouched, so HR
+ * services that build plain objects out of `user.basicSalary` keep working.
+ */
+export const HR_SERIALIZE_GROUP = 'hr';
+
 @Entity('users')
 @Index(['email', 'tenantId'], { unique: true, where: 'deleted_at IS NULL' })
 @Index(['username', 'tenantId'], { unique: true, where: 'deleted_at IS NULL' })
@@ -155,9 +176,12 @@ export class User extends BaseEntity {
   @Column({ type: 'timestamp', nullable: true, name: 'last_login_at' })
   lastLoginAt?: Date;
 
+  // Lockout state — read in code, never wanted in a response body.
+  @Exclude()
   @Column({ type: 'int', default: 0, name: 'failed_login_attempts' })
   failedLoginAttempts: number;
 
+  @Exclude()
   @Column({ type: 'timestamp', nullable: true, name: 'locked_until' })
   lockedUntil?: Date;
 
@@ -195,6 +219,7 @@ export class User extends BaseEntity {
   @Column({ type: 'varchar', length: 50, nullable: true, name: 'employment_type' })
   employmentType?: EmploymentType;
 
+  @Expose({ groups: [HR_SERIALIZE_GROUP] })
   @Column({ type: 'date', nullable: true, name: 'date_of_birth' })
   dateOfBirth?: Date;
 
@@ -204,37 +229,47 @@ export class User extends BaseEntity {
   @Column({ type: 'date', nullable: true, name: 'hire_date' })
   hireDate?: Date;
 
+  @Expose({ groups: [HR_SERIALIZE_GROUP] })
   @Column({ type: 'decimal', precision: 12, scale: 2, nullable: true, name: 'basic_salary' })
   basicSalary?: number;
 
+  @Expose({ groups: [HR_SERIALIZE_GROUP] })
   @Column({ type: 'jsonb', nullable: true })
   allowances?: { name: string; amount: number; taxable: boolean }[];
 
+  @Expose({ groups: [HR_SERIALIZE_GROUP] })
   @Column({ type: 'jsonb', nullable: true })
   deductions?: { name: string; amount: number; type: 'fixed' | 'percentage' }[];
 
+  @Expose({ groups: [HR_SERIALIZE_GROUP] })
   @Column({ type: 'varchar', length: 50, nullable: true, name: 'national_id' })
   nationalId?: string;
 
+  @Expose({ groups: [HR_SERIALIZE_GROUP] })
   @Column({ type: 'text', nullable: true })
   address?: string;
 
   // Emergency contact
+  @Expose({ groups: [HR_SERIALIZE_GROUP] })
   @Column({ type: 'varchar', length: 100, nullable: true, name: 'emergency_contact_name' })
   emergencyContactName?: string;
 
+  @Expose({ groups: [HR_SERIALIZE_GROUP] })
   @Column({ type: 'varchar', length: 20, nullable: true, name: 'emergency_contact_phone' })
   emergencyContactPhone?: string;
 
   // Bank details for payroll
+  @Expose({ groups: [HR_SERIALIZE_GROUP] })
   @Column({ type: 'varchar', length: 100, nullable: true, name: 'bank_name' })
   bankName?: string;
 
+  @Expose({ groups: [HR_SERIALIZE_GROUP] })
   @Column({ type: 'varchar', length: 50, nullable: true, name: 'bank_account_number' })
   bankAccountNumber?: string;
 
   // Leave balances — numeric(5,2): monthly accrual is fractional (1.75 d),
   // int columns silently truncated it
+  @Expose({ groups: [HR_SERIALIZE_GROUP] })
   @Column({
     type: 'numeric',
     precision: 5,
@@ -245,6 +280,7 @@ export class User extends BaseEntity {
   })
   annualLeaveBalance: number;
 
+  @Expose({ groups: [HR_SERIALIZE_GROUP] })
   @Column({
     type: 'numeric',
     precision: 5,
@@ -256,6 +292,7 @@ export class User extends BaseEntity {
   sickLeaveBalance: number;
 
   /** 'YYYY-MM' of the last monthly leave accrual — makes the cron idempotent */
+  @Expose({ groups: [HR_SERIALIZE_GROUP] })
   @Column({ type: 'varchar', length: 7, nullable: true, name: 'leave_last_accrued_month' })
   leaveLastAccruedMonth?: string;
 

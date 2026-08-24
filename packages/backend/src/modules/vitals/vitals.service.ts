@@ -40,8 +40,27 @@ const VITAL_THRESHOLDS = {
   bpDiastolic: { criticalLow: 50, warningLow: 60, warningHigh: 90, criticalHigh: 120 },
   respiratoryRate: { criticalLow: 8, warningLow: 12, warningHigh: 20, criticalHigh: 30 },
   oxygenSaturation: { criticalLow: 90, warningLow: 94, warningHigh: 100, criticalHigh: 101 },
+  // NOTE: blood glucose is handled separately — see glucoseAlert(). These
+  // mg/dL numbers are kept for the mg/dL branch of that function.
   bloodGlucose: { criticalLow: 40, warningLow: 70, warningHigh: 180, criticalHigh: 300 },
 } as const;
+
+/**
+ * Blood glucose in mmol/L — what a Ugandan ward actually writes down.
+ *
+ * Normal fasting is 4-6, hypoglycaemia below 3.9, severe below 3.0; 11.1 is
+ * the diabetes threshold and above 20 is DKA/HHS territory.
+ */
+const GLUCOSE_MMOL = { criticalLow: 3.0, warningLow: 3.9, warningHigh: 11.1, criticalHigh: 20 };
+
+/**
+ * The two glucose scales do not overlap where it matters. 35 mmol/L is 630
+ * mg/dL — the top of what is survivable — while 40 mg/dL is 2.2 mmol/L, a
+ * severe hypo. So a value at or below 35 is read as mmol/L and anything above
+ * as mg/dL, which is the same inference a glucometer integration makes.
+ * Values in that band are extreme under either reading and alert either way.
+ */
+const GLUCOSE_MMOL_CEILING = 35;
 
 const PARAMETER_LABELS: Record<string, string> = {
   temperature: 'Temperature',
@@ -286,6 +305,17 @@ export class VitalsService {
 
       const label = PARAMETER_LABELS[param] || param;
 
+      // Glucose is the one reading whose UNIT changes the answer, and getting
+      // it backwards is dangerous rather than merely wrong: against the mg/dL
+      // table, a glucose of 25 mmol/L — diabetic ketoacidosis — came out as
+      // "Blood Glucose critically low: 25", which tells the nurse to give sugar
+      // to a patient who needs insulin and fluids.
+      if (param === 'bloodGlucose') {
+        const alert = this.glucoseAlert(Number(value));
+        if (alert) alerts.push(alert);
+        continue;
+      }
+
       if (value <= thresholds.criticalLow) {
         alerts.push({
           parameter: param,
@@ -318,6 +348,29 @@ export class VitalsService {
     }
 
     return alerts;
+  }
+
+  /** Glucose alert, in whichever unit the number was plainly written in. */
+  private glucoseAlert(value: number): VitalAlert | null {
+    const mmol = value <= GLUCOSE_MMOL_CEILING;
+    const unit = mmol ? 'mmol/L' : 'mg/dL';
+    const t = mmol ? GLUCOSE_MMOL : VITAL_THRESHOLDS.bloodGlucose;
+    const label = PARAMETER_LABELS.bloodGlucose;
+    const shown = `${value} ${unit}`;
+
+    if (value <= t.criticalLow) {
+      return { parameter: 'bloodGlucose', value, severity: 'critical', message: `${label} critically low: ${shown}` };
+    }
+    if (value <= t.warningLow) {
+      return { parameter: 'bloodGlucose', value, severity: 'warning', message: `${label} below normal: ${shown}` };
+    }
+    if (value >= t.criticalHigh) {
+      return { parameter: 'bloodGlucose', value, severity: 'critical', message: `${label} critically high: ${shown}` };
+    }
+    if (value >= t.warningHigh) {
+      return { parameter: 'bloodGlucose', value, severity: 'warning', message: `${label} above normal: ${shown}` };
+    }
+    return null;
   }
 
   async create(
@@ -658,14 +711,19 @@ export class VitalsService {
         try {
           const targets: string[] = [];
           if (params.facilityId) {
-            const nurseIds = await this.inAppNotifications
+            // Doctors are included here, unlike the encounter path above: this
+            // one fires where there is no attending provider to tell yet —
+            // emergency triage most of all, where a critical vital IS the
+            // reason a doctor is needed. Nurses alone were being told that a
+            // patient had a GCS of 3.
+            const staffIds = await this.inAppNotifications
               .getUserIdsByRole(
-                ['charge_nurse', 'nurse_supervisor', 'nurse'],
+                ['charge_nurse', 'nurse_supervisor', 'nurse', 'doctor', 'medical_officer'],
                 params.facilityId,
                 params.tenantId,
               )
               .catch(() => [] as string[]);
-            targets.push(...nurseIds);
+            targets.push(...staffIds);
           }
           const unique = [...new Set(targets)].filter(Boolean);
           if (unique.length > 0) {

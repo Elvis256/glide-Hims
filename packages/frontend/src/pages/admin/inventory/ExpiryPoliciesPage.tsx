@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Calendar,
@@ -69,6 +70,13 @@ export default function ExpiryPoliciesPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingPolicy, setEditingPolicy] = useState<ExpiryPolicy | null>(null);
   const [formData, setFormData] = useState<Omit<ExpiryPolicy, 'id'>>(getEmptyPolicy());
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const isModalOpenDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!isModalOpen,
+    onClose: () => setIsModalOpen(false),
+  });
 
   const { data: policies = [], isLoading: loading } = useQuery({
     queryKey: ['settings', 'expiry_policies'],
@@ -454,7 +462,12 @@ export default function ExpiryPoliciesPage() {
 
       {/* Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={isModalOpenDialogRef}
+        >
           <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-bold text-gray-900">

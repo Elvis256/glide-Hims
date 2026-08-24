@@ -20,7 +20,7 @@ export class BloodGlucoseReading extends BaseEntity {
   @Column({ type: 'varchar', length: 30 })
   timing: string; // fasting, pre-meal, post-meal, bedtime, random
 
-  @Column({ type: 'jsonb', nullable: true })
+  @Column({ type: 'jsonb', nullable: true, name: 'insulin_given' })
   insulinGiven?: { type: string; dose: number; unit: string };
 
   @Column({ type: 'text', nullable: true })

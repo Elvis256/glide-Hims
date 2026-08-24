@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { CURRENCY_SYMBOL, formatCurrency } from '../../../lib/currency';
 import {
@@ -49,6 +50,17 @@ export default function PriceAgreementsPage() {
   const [viewingAgreement, setViewingAgreement] = useState<PriceAgreement | null>(null);
   const [compareMode, setCompareMode] = useState(false);
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const viewingAgreementDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!viewingAgreement,
+    onClose: () => setViewingAgreement(null),
+  });
+  const showCreateModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showCreateModal,
+    onClose: () => setShowCreateModal(false),
+  });
 
   // Fetch price agreements
   const { data: agreements = [], isLoading } = useQuery({
@@ -446,7 +458,12 @@ export default function PriceAgreementsPage() {
 
       {/* View Agreement Modal */}
       {viewingAgreement && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={viewingAgreementDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[80vh] overflow-hidden">
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <div>
@@ -541,7 +558,12 @@ export default function PriceAgreementsPage() {
 
       {/* Create Agreement Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showCreateModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <div>

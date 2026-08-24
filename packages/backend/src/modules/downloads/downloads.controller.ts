@@ -11,6 +11,7 @@ import {
   Query,
   Req,
   Res,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Response } from 'express';
@@ -19,9 +20,11 @@ import { DownloadsService } from './downloads.service';
 import { CreateInstallerDto, UpdateInstallerDto } from './installer.dto';
 import { meetsTier } from '../../common/constants/license-tiers.constants';
 import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
 @ApiTags('Downloads')
 @RequireModule('reports')
+@UseGuards(ModuleGuard)
 @Controller('downloads')
 export class DownloadsController {
   constructor(private readonly svc: DownloadsService) {}

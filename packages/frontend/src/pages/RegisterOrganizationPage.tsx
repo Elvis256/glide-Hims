@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useId } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
@@ -277,6 +277,7 @@ const presetIcons: Record<string, React.ReactNode> = {
 };
 
 export default function RegisterOrganizationPage() {
+  const fid = useId();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [plans, setPlans] = useState<PublicPlan[]>([]);
@@ -746,8 +747,8 @@ export default function RegisterOrganizationPage() {
             </div>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700">Organization Name *</label>
-                <input
+                <label htmlFor={`${fid}-organization-name`} className="block text-sm font-medium text-gray-700">Organization Name *</label>
+                <input id={`${fid}-organization-name`}
                   type="text"
                   value={formData.organization.name}
                   onChange={(e) => updateFormData('organization', 'name', e.target.value)}
@@ -757,8 +758,8 @@ export default function RegisterOrganizationPage() {
                 {errors['organization.name'] && <p className="mt-1 text-sm text-red-500">{errors['organization.name']}</p>}
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">Organization Code (Slug) *</label>
-                <input
+                <label htmlFor={`${fid}-organization-code-slug`} className="block text-sm font-medium text-gray-700">Organization Code (Slug) *</label>
+                <input id={`${fid}-organization-code-slug`}
                   type="text"
                   value={formData.organization.slug || ''}
                   onChange={(e) => updateFormData('organization', 'slug', e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
@@ -773,8 +774,8 @@ export default function RegisterOrganizationPage() {
                 {errors['organization.slug'] && <p className="mt-1 text-sm text-red-500">{errors['organization.slug']}</p>}
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">Organization Type</label>
-                <select
+                <label htmlFor={`${fid}-organization-type`} className="block text-sm font-medium text-gray-700">Organization Type</label>
+                <select id={`${fid}-organization-type`}
                   value={formData.organization.type}
                   onChange={(e) => updateFormData('organization', 'type', e.target.value)}
                   className="mt-1 block w-full rounded-lg border border-gray-300 px-4 py-3 focus:border-blue-500 focus:ring-blue-500"
@@ -786,8 +787,8 @@ export default function RegisterOrganizationPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">Country</label>
-                <input
+                <label htmlFor={`${fid}-country`} className="block text-sm font-medium text-gray-700">Country</label>
+                <input id={`${fid}-country`}
                   type="text"
                   value={formData.organization.country}
                   onChange={(e) => updateFormData('organization', 'country', e.target.value)}
@@ -886,8 +887,8 @@ export default function RegisterOrganizationPage() {
             </div>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700">Facility Name *</label>
-                <input
+                <label htmlFor={`${fid}-facility-name`} className="block text-sm font-medium text-gray-700">Facility Name *</label>
+                <input id={`${fid}-facility-name`}
                   type="text"
                   value={formData.facility.name}
                   onChange={(e) => updateFormData('facility', 'name', e.target.value)}
@@ -897,8 +898,8 @@ export default function RegisterOrganizationPage() {
                 {errors['facility.name'] && <p className="mt-1 text-sm text-red-500">{errors['facility.name']}</p>}
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">Facility Type</label>
-                <select
+                <label htmlFor={`${fid}-facility-type`} className="block text-sm font-medium text-gray-700">Facility Type</label>
+                <select id={`${fid}-facility-type`}
                   value={formData.facility.type}
                   onChange={(e) => updateFormData('facility', 'type', e.target.value)}
                   className="mt-1 block w-full rounded-lg border border-gray-300 px-4 py-3 focus:border-blue-500 focus:ring-blue-500"
@@ -909,8 +910,8 @@ export default function RegisterOrganizationPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">Location/Address</label>
-                <input
+                <label htmlFor={`${fid}-location-address`} className="block text-sm font-medium text-gray-700">Location/Address</label>
+                <input id={`${fid}-location-address`}
                   type="text"
                   value={formData.facility.location || ''}
                   onChange={(e) => updateFormData('facility', 'location', e.target.value)}
@@ -920,8 +921,8 @@ export default function RegisterOrganizationPage() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Phone</label>
-                  <input
+                  <label htmlFor={`${fid}-phone`} className="block text-sm font-medium text-gray-700">Phone</label>
+                  <input id={`${fid}-phone`}
                     type="tel"
                     value={formData.facility.phone || ''}
                     onChange={(e) => updateFormData('facility', 'phone', e.target.value)}
@@ -930,8 +931,8 @@ export default function RegisterOrganizationPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Email</label>
-                  <input
+                  <label htmlFor={`${fid}-email`} className="block text-sm font-medium text-gray-700">Email</label>
+                  <input id={`${fid}-email`}
                     type="email"
                     value={formData.facility.email || ''}
                     onChange={(e) => updateFormData('facility', 'email', e.target.value)}
@@ -953,8 +954,8 @@ export default function RegisterOrganizationPage() {
             </div>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700">Full Name *</label>
-                <input
+                <label htmlFor={`${fid}-full-name`} className="block text-sm font-medium text-gray-700">Full Name *</label>
+                <input id={`${fid}-full-name`}
                   type="text"
                   value={formData.admin.fullName}
                   onChange={(e) => updateFormData('admin', 'fullName', e.target.value)}
@@ -964,8 +965,8 @@ export default function RegisterOrganizationPage() {
                 {errors['admin.fullName'] && <p className="mt-1 text-sm text-red-500">{errors['admin.fullName']}</p>}
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">Email *</label>
-                <input
+                <label htmlFor={`${fid}-email-2`} className="block text-sm font-medium text-gray-700">Email *</label>
+                <input id={`${fid}-email-2`}
                   type="email"
                   value={formData.admin.email}
                   onChange={(e) => updateFormData('admin', 'email', e.target.value)}
@@ -975,8 +976,8 @@ export default function RegisterOrganizationPage() {
                 {errors['admin.email'] && <p className="mt-1 text-sm text-red-500">{errors['admin.email']}</p>}
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">Username *</label>
-                <input
+                <label htmlFor={`${fid}-username`} className="block text-sm font-medium text-gray-700">Username *</label>
+                <input id={`${fid}-username`}
                   type="text"
                   value={formData.admin.username}
                   onChange={(e) => updateFormData('admin', 'username', e.target.value)}
@@ -986,8 +987,8 @@ export default function RegisterOrganizationPage() {
                 {errors['admin.username'] && <p className="mt-1 text-sm text-red-500">{errors['admin.username']}</p>}
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">Password *</label>
-                <input
+                <label htmlFor={`${fid}-password`} className="block text-sm font-medium text-gray-700">Password *</label>
+                <input id={`${fid}-password`}
                   type="password"
                   value={formData.admin.password}
                   onChange={(e) => updateFormData('admin', 'password', e.target.value)}
@@ -997,8 +998,8 @@ export default function RegisterOrganizationPage() {
                 {errors['admin.password'] && <p className="mt-1 text-sm text-red-500">{errors['admin.password']}</p>}
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">Phone (Optional)</label>
-                <input
+                <label htmlFor={`${fid}-phone-optional`} className="block text-sm font-medium text-gray-700">Phone (Optional)</label>
+                <input id={`${fid}-phone-optional`}
                   type="tel"
                   value={formData.admin.phone || ''}
                   onChange={(e) => updateFormData('admin', 'phone', e.target.value)}
@@ -1019,8 +1020,8 @@ export default function RegisterOrganizationPage() {
             </div>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700">Currency</label>
-                <select
+                <label htmlFor={`${fid}-currency`} className="block text-sm font-medium text-gray-700">Currency</label>
+                <select id={`${fid}-currency`}
                   value={formData.settings?.currency}
                   onChange={(e) => updateFormData('settings', 'currency', e.target.value)}
                   className="mt-1 block w-full rounded-lg border border-gray-300 px-4 py-3 focus:border-blue-500 focus:ring-blue-500"
@@ -1031,8 +1032,8 @@ export default function RegisterOrganizationPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">Date Format</label>
-                <select
+                <label htmlFor={`${fid}-date-format`} className="block text-sm font-medium text-gray-700">Date Format</label>
+                <select id={`${fid}-date-format`}
                   value={formData.settings?.dateFormat}
                   onChange={(e) => updateFormData('settings', 'dateFormat', e.target.value)}
                   className="mt-1 block w-full rounded-lg border border-gray-300 px-4 py-3 focus:border-blue-500 focus:ring-blue-500"

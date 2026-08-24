@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -73,6 +74,17 @@ export default function PharmacyStockPage() {
   const [adjustReason, setAdjustReason] = useState('');
   const [adjustBatch, setAdjustBatch] = useState('');
   const [adjustExpiry, setAdjustExpiry] = useState('');
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const adjustModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!adjustModal,
+    onClose: () => setAdjustModal(null),
+  });
+  const historyModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!historyModal,
+    onClose: () => setHistoryModal(null),
+  });
 
   // Fetch inventory data
   const { data: inventoryData, isLoading, refetch } = useQuery({
@@ -563,7 +575,12 @@ export default function PharmacyStockPage() {
 
       {/* Stock Adjustment Modal */}
       {adjustModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={adjustModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900">
@@ -671,7 +688,12 @@ export default function PharmacyStockPage() {
 
       {/* History Modal */}
       {historyModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={historyModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl p-6 max-h-[80vh] overflow-hidden flex flex-col">
             <div className="flex items-center justify-between mb-4">
               <div>

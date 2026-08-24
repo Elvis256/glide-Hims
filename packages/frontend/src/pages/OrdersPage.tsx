@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useDialogA11y } from '../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api, { getApiErrorMessage } from '../services/api';
 import { toast } from 'sonner';
@@ -67,6 +68,13 @@ export default function OrdersPage() {
   const [activeTab, setActiveTab] = useState<'lab' | 'radiology' | 'all'>('all');
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const selectedOrderDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!selectedOrder,
+    onClose: () => setSelectedOrder(null),
+  });
 
   // Fetch orders
   const { data: orders, isLoading } = useQuery({
@@ -324,7 +332,12 @@ export default function OrdersPage() {
 
       {/* Order Details Modal */}
       {selectedOrder && (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
+        <div
+          className="fixed inset-0 z-50 overflow-y-auto"
+          role="dialog"
+          aria-modal="true"
+          ref={selectedOrderDialogRef}
+        >
           <div className="flex items-center justify-center min-h-screen px-4">
             <div className="fixed inset-0 bg-gray-500 bg-opacity-75" onClick={() => setSelectedOrder(null)} />
             <div className="relative bg-white rounded-lg shadow-xl max-w-lg w-full p-6">

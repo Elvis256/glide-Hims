@@ -28,6 +28,8 @@ import { FinanceService } from '../finance/finance.service';
 import { CriticalResultsService } from '../critical-results/critical-results.service';
 import { AuditLogService } from '../../common/interceptors/audit-log.service';
 import { requireTenantId } from '../../common/utils/tenant.util';
+import { dayBoundsUtc } from '../../common/utils/timezone.util';
+import { localMonthString } from '../../common/utils/timezone.util';
 
 @Injectable()
 export class RadiologyService {
@@ -90,26 +92,41 @@ export class RadiologyService {
     userId: string,
     tenantId?: string,
   ): Promise<ImagingOrder> {
-    return this.dataSource.transaction(async (manager) => {
-      // Generate order number with pessimistic lock
-      const date = new Date();
-      const yearMonth = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}`;
+    const tid = requireTenantId(tenantId);
+    const savedOrder = await this.dataSource.transaction(async (manager) => {
+      // Generate the order number.
+      //
+      // This used to be setLock('pessimistic_write') on a getCount(), which
+      // TypeORM carries into the aggregate query as FOR UPDATE — and Postgres
+      // rejects "FOR UPDATE with aggregate functions" outright. Creating an
+      // imaging order therefore failed every single time.
+      //
+      // Replaced with the advisory-lock + MAX pattern used for PR, PO, GRN and
+      // pre-auth numbers, which fixes three further faults in one go:
+      //  - COUNT+1 reuses a number as soon as any row is deleted; MAX+1 does
+      //    not.
+      //  - The count was scoped per facility while order_number is unique per
+      //    (tenant_id, order_number), so two facilities in one tenant
+      //    generated identical numbers and collided on insert.
+      //  - The month came from the server's clock. The hospital is UTC+3, so
+      //    an order raised at 01:00 on the 1st was numbered under the previous
+      //    month.
+      const yearMonth = localMonthString(new Date()).replace('-', '');
+      const prefix = `IMG${yearMonth}`;
 
-      // Count this month's orders with lock to prevent race conditions
-      const monthStart = new Date(date.getFullYear(), date.getMonth(), 1);
-      const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 1);
+      await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+        `radiology:order-number:${tid}:${prefix}`,
+      ]);
 
-      const count = await manager
+      const last = await manager
         .createQueryBuilder(ImagingOrder, 'imgOrder')
-        .setLock('pessimistic_write')
-        .where('imgOrder.facilityId = :facilityId', { facilityId: dto.facilityId })
-        .andWhere('imgOrder.createdAt >= :start AND imgOrder.createdAt < :end', {
-          start: monthStart,
-          end: monthEnd,
-        })
-        .getCount();
+        .where('imgOrder.order_number LIKE :prefix', { prefix: `${prefix}%` })
+        .andWhere('imgOrder.tenant_id = :tid', { tid })
+        .orderBy('imgOrder.order_number', 'DESC')
+        .getOne();
 
-      const orderNumber = `IMG${yearMonth}${String(count + 1).padStart(5, '0')}`;
+      const seq = last ? (parseInt(last.orderNumber.slice(prefix.length), 10) || 0) + 1 : 1;
+      const orderNumber = `${prefix}${String(seq).padStart(5, '0')}`;
 
       const order = manager.create(ImagingOrder, {
         orderNumber,
@@ -134,24 +151,30 @@ export class RadiologyService {
         `Imaging order created: ${orderNumber} for patient ${dto.patientId} by user ${userId}`,
       );
 
-      this.auditLogService
-        .log({
-          action: 'CREATE_IMAGING_ORDER',
-          entityType: 'ImagingOrder',
-          entityId: savedOrder.id,
-          userId,
-          tenantId,
-          newValue: {
-            orderNumber,
-            studyType: dto.studyType,
-            patientId: dto.patientId,
-            status: ImagingOrderStatus.ORDERED,
-          },
-        })
-        .catch(() => {});
-
       return savedOrder;
     });
+
+    // Audit after the commit. It writes through AuditLogService on its own
+    // connection, so from inside the transaction the log row committed
+    // independently: roll the order back and the trail still said it was
+    // created. Still best-effort — a logging failure must not fail the order.
+    this.auditLogService
+      .log({
+        action: 'CREATE_IMAGING_ORDER',
+        entityType: 'ImagingOrder',
+        entityId: savedOrder.id,
+        userId,
+        tenantId,
+        newValue: {
+          orderNumber: savedOrder.orderNumber,
+          studyType: dto.studyType,
+          patientId: dto.patientId,
+          status: ImagingOrderStatus.ORDERED,
+        },
+      })
+      .catch(() => {});
+
+    return savedOrder;
   }
 
   async getOrder(id: string, tenantId?: string): Promise<ImagingOrder> {
@@ -198,10 +221,9 @@ export class RadiologyService {
       qb.andWhere('imgOrder.priority = :priority', { priority: options.priority });
     }
     if (options.date) {
-      const start = new Date(options.date);
-      start.setHours(0, 0, 0, 0);
-      const end = new Date(options.date);
-      end.setHours(23, 59, 59, 999);
+      // A requested date is a calendar day where the department is, not a
+      // 24 hours starting at UTC midnight.
+      const { start, end } = dayBoundsUtc(options.date);
       qb.andWhere('imgOrder.orderedAt BETWEEN :start AND :end', { start, end });
     }
 
@@ -476,6 +498,7 @@ export class RadiologyService {
             ),
           flaggedById: userId,
           assignedToId: order.orderedById,
+          facilityId: order.facilityId ?? null,
           tenantId,
         });
         if (isCrit) {
@@ -514,8 +537,7 @@ export class RadiologyService {
 
   async getDashboard(facilityId: string, tenantId?: string) {
     const tid = requireTenantId(tenantId);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const { start: today } = dayBoundsUtc(new Date());
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 

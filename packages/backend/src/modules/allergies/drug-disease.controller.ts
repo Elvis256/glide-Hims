@@ -1,7 +1,8 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Query } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 import { DrugDiseaseService } from './drug-disease.service';
 import {
   IsString,
@@ -73,6 +74,7 @@ export class UpdateDrugDiseaseInteractionDto {
 }
 
 @RequireModule('pharmacy')
+@UseGuards(ModuleGuard)
 @Controller('drug-disease-interactions')
 export class DrugDiseaseController {
   constructor(private readonly service: DrugDiseaseService) {}

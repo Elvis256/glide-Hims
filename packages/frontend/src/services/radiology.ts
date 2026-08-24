@@ -56,7 +56,14 @@ export interface ImagingResult {
   findings: string;
   impression: string;
   recommendations?: string;
-  findingCategory: 'normal' | 'abnormal' | 'critical' | 'incidental';
+  /**
+   * Mirrors FindingCategory in imaging-result.entity.ts. This declared
+   * 'incidental', which the backend enum does not contain — so the union
+   * both offered a value that would be rejected and omitted 'indeterminate',
+   * which is valid. RadiologyPage keeps its own string state and its dropdown
+   * lists the correct four, which is why nothing was broken in practice.
+   */
+  findingCategory: 'normal' | 'abnormal' | 'critical' | 'indeterminate';
   isCritical: boolean;
   reportedById: string;
   reportedBy?: { fullName?: string; firstName?: string; lastName?: string };
@@ -95,7 +102,7 @@ export interface CreateImagingResultDto {
   findings: string;
   impression: string;
   recommendations?: string;
-  findingCategory?: 'normal' | 'abnormal' | 'critical' | 'incidental';
+  findingCategory?: 'normal' | 'abnormal' | 'critical' | 'indeterminate';
   isCritical?: boolean;
 }
 

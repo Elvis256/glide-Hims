@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useDialogA11y } from '../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -273,6 +274,12 @@ interface ScheduleModalProps {
 }
 
 function ScheduleModal({ doctors, schedule, onClose, onSubmit, onDelete, isLoading }: ScheduleModalProps) {
+  // This component is mounted only while the modal is showing.
+  const dialogRef = useDialogA11y<HTMLDivElement>({
+    open: true,
+    onClose,
+  });
+
   const [form, setForm] = useState({
     doctorId: schedule?.doctorId || '',
     dayOfWeek: schedule?.dayOfWeek ?? 1,
@@ -294,7 +301,12 @@ function ScheduleModal({ doctors, schedule, onClose, onSubmit, onDelete, isLoadi
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+      role="dialog"
+      aria-modal="true"
+      ref={dialogRef}
+    >
       <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
         <div className="flex items-center justify-between p-4 border-b">
           <h2 className="text-lg font-semibold">

@@ -47,7 +47,15 @@ export class CheckCoverageDto {
 export class CoverageDetailResponse {
   drugId: string;
   covered: boolean;
-  copayAmount: number;
+  /**
+   * A single `copayAmount` used to carry EITHER a percentage or a fixed sum,
+   * whichever the policy defined, and the pharmacy screen suffixed all of them
+   * with '%'. A 10% copay was shown as "10" and a 5,000/= fixed copay as
+   * "5000%". They are separate things and are reported separately now: exactly
+   * one of the two is set.
+   */
+  copayPercentage?: number;
+  copayAmount?: number;
   requiresPreAuth: boolean;
   rejectionReason?: string;
 }

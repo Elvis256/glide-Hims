@@ -24,10 +24,18 @@ import { DutyStatus } from '../../database/entities/doctor-duty.entity';
 import { RequireModule } from '../auth/decorators/module.decorator';
 import { ModuleGuard } from '../auth/guards/module.guard';
 
-@UseGuards(ModuleGuard)
+/**
+ * One @UseGuards, not two. This class carried `@UseGuards(ModuleGuard)` above
+ * and `@UseGuards(AuthGuard('jwt'))` below, which do not compose: UseGuards
+ * defines its metadata outright, so the decorator applied last — the topmost —
+ * replaced the other, and only ModuleGuard survived. It happened to be
+ * harmless, because AuthWithPermissions puts GlobalJwtAuthGuard on every
+ * handler anyway, but swapping the two lines would have quietly turned the
+ * module gate off instead.
+ */
 @RequireModule('doctors')
 @Controller('doctor-duty')
-@UseGuards(AuthGuard('jwt'))
+@UseGuards(AuthGuard('jwt'), ModuleGuard)
 export class DoctorDutyController {
   constructor(private readonly doctorDutyService: DoctorDutyService) {}
 

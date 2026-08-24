@@ -1,4 +1,5 @@
 import { usePermissions } from '../../components/PermissionGate';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import AccessDenied from '../../components/AccessDenied';
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -28,7 +29,12 @@ import { getApiErrorMessage } from '../../services/api';
 import type { EnterResultDto } from '../../services/lab';
 import { useFacilityId } from '../../lib/facility';
 import { useAuthStore } from '../../store/auth';
-import { generateLabReportPdf, printLabReport, buildReportParams, type LabReportFormat } from '../../lib/labReport';
+import {
+  generateLabReportPdf,
+  printLabReport,
+  buildReportParams,
+  type LabReportFormat,
+} from '../../lib/labReport';
 import { useInstitutionInfo } from '../../lib/useInstitutionInfo';
 
 interface TestResult {
@@ -53,7 +59,13 @@ interface PendingSample {
   collectedAt: string;
   collectedAtRaw?: string;
   priority?: 'routine' | 'urgent' | 'stat';
-  parameters: { name: string; unit: string; referenceRange: string; criticalLow?: number; criticalHigh?: number }[];
+  parameters: {
+    name: string;
+    unit: string;
+    referenceRange: string;
+    criticalLow?: number;
+    criticalHigh?: number;
+  }[];
   results: TestResult[];
   status: string;
   verified: boolean;
@@ -103,12 +115,17 @@ export default function ResultsEntryPage() {
   const [criticalSamples, setCriticalSamples] = useState<Record<string, string[]>>({});
 
   // QC state per sample
-  const [qcState, setQcState] = useState<Record<string, {
-    qcSamplePassed: boolean;
-    calibVerified: boolean;
-    reagentsOk: boolean;
-    failureReason: string;
-  }>>({});
+  const [qcState, setQcState] = useState<
+    Record<
+      string,
+      {
+        qcSamplePassed: boolean;
+        calibVerified: boolean;
+        reagentsOk: boolean;
+        failureReason: string;
+      }
+    >
+  >({});
 
   // Sent to doctor state
   const [sentToDoctor, setSentToDoctor] = useState<Record<string, boolean>>({});
@@ -126,12 +143,31 @@ export default function ResultsEntryPage() {
   const [releaseCriticalAcked, setReleaseCriticalAcked] = useState(false);
 
   // Rejection modal state
-  const [rejectModal, setRejectModal] = useState<{ sampleId: string; sampleNumber: string } | null>(null);
+  const [rejectModal, setRejectModal] = useState<{ sampleId: string; sampleNumber: string } | null>(
+    null,
+  );
   const [rejectReason, setRejectReason] = useState('');
   const [rejectNotes, setRejectNotes] = useState('');
 
   // Auto-prepare samples when navigating with an orderId
   const [prepared, setPrepared] = useState(false);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showCriticalAlertDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showCriticalAlert,
+    // No onClose: this is an acknowledgement gate, not a dismissable
+    // dialog. It still traps focus and restores it on close.
+  });
+  const releaseCriticalAlertDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!releaseCriticalAlert,
+    // No onClose: this is an acknowledgement gate, not a dismissable
+    // dialog. It still traps focus and restores it on close.
+  });
+  const rejectModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!rejectModal,
+    onClose: () => setRejectModal(null),
+  });
   const prepareMutation = useMutation({
     mutationFn: (oid: string) => labService.samples.prepareForOrder(oid),
     onSuccess: () => {
@@ -155,11 +191,12 @@ export default function ResultsEntryPage() {
   // Fetch lab samples ready for results entry
   const { data: samplesData, isLoading } = useQuery({
     queryKey: ['lab-samples', 'results-entry', facilityId, orderId],
-    queryFn: () => labService.samples.list({
-      facilityId,
-      ...(orderId ? { orderId } : {}),
-      statuses: 'collected,received,processing',
-    }),
+    queryFn: () =>
+      labService.samples.list({
+        facilityId,
+        ...(orderId ? { orderId } : {}),
+        statuses: 'collected,received,processing',
+      }),
     staleTime: 20000,
     enabled: orderId ? prepared : true,
   });
@@ -167,10 +204,11 @@ export default function ResultsEntryPage() {
   // Transform API samples to display format
   const samples: PendingSample[] = useMemo(() => {
     const raw = samplesData;
-    const sampleList = Array.isArray(raw) ? raw : (raw?.data || []);
+    const sampleList = Array.isArray(raw) ? raw : raw?.data || [];
     if (sampleList.length === 0) return [];
     return sampleList.map((sample: LabSample) => {
-      const hasRanges = Array.isArray(sample.labTest?.referenceRanges) && sample.labTest.referenceRanges.length > 0;
+      const hasRanges =
+        Array.isArray(sample.labTest?.referenceRanges) && sample.labTest.referenceRanges.length > 0;
       return {
         id: sample.id,
         sampleNumber: sample.sampleNumber || sample.barcode || sample.id,
@@ -182,7 +220,12 @@ export default function ResultsEntryPage() {
         testCategory: sample.labTest?.category,
         testId: sample.labTestId,
         sampleType: sample.sampleType,
-        collectedAt: sample.collectionTime ? new Date(sample.collectionTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : 'N/A',
+        collectedAt: sample.collectionTime
+          ? new Date(sample.collectionTime).toLocaleTimeString('en-US', {
+              hour: '2-digit',
+              minute: '2-digit',
+            })
+          : 'N/A',
         collectedAtRaw: sample.collectionTime,
         priority: sample.priority || 'routine',
         parameters: hasRanges
@@ -221,7 +264,13 @@ export default function ResultsEntryPage() {
         const dto: EnterResultDto = {
           parameter: result.name,
           value: result.value,
-          numericValue: parseFloat(result.value) || undefined,
+          // Not `|| undefined`: a result of 0 is falsy, so it was dropped and
+          // the value went in with no numeric part. Without one the backend
+          // cannot compare against the reference range and records the result
+          // as normal — a platelet or white-cell count of zero, filed as fine.
+          numericValue: Number.isNaN(parseFloat(result.value))
+            ? undefined
+            : parseFloat(result.value),
           unit: result.unit,
           referenceRange: result.referenceRange,
           comments: data.comments,
@@ -232,7 +281,7 @@ export default function ResultsEntryPage() {
       return { sampleId: data.sampleId, ids };
     },
     onSuccess: ({ sampleId, ids }) => {
-      setEnteredResultIds(prev => ({ ...prev, [sampleId]: ids }));
+      setEnteredResultIds((prev) => ({ ...prev, [sampleId]: ids }));
       queryClient.invalidateQueries({ queryKey: ['lab-samples'] });
       if (selectedSample) {
         setSelectedSample({ ...selectedSample, verified: true });
@@ -245,14 +294,17 @@ export default function ResultsEntryPage() {
     mutationFn: async ({ sampleId, isCritical }: { sampleId: string; isCritical: boolean }) => {
       const ids = enteredResultIds[sampleId] || [];
       for (const resultId of ids) {
-        await labService.results.validate(resultId, user?.fullName ? `Validated by ${user.fullName}` : undefined);
+        await labService.results.validate(
+          resultId,
+          user?.fullName ? `Validated by ${user.fullName}` : undefined,
+        );
         await labService.results.release(resultId);
       }
       return { isCritical };
     },
     onSuccess: ({ isCritical }, { sampleId }) => {
       queryClient.invalidateQueries({ queryKey: ['lab-samples'] });
-      setSentToDoctor(prev => ({ ...prev, [sampleId]: true }));
+      setSentToDoctor((prev) => ({ ...prev, [sampleId]: true }));
       if (isCritical) {
         toast.warning('Critical value notification sent — acknowledge when physician contacted');
       } else {
@@ -270,7 +322,15 @@ export default function ResultsEntryPage() {
 
   // Sample rejection mutation
   const rejectMutation = useMutation({
-    mutationFn: async ({ sampleId, reason, notes }: { sampleId: string; reason: string; notes: string }) => {
+    mutationFn: async ({
+      sampleId,
+      reason,
+      notes,
+    }: {
+      sampleId: string;
+      reason: string;
+      notes: string;
+    }) => {
       const rejectionReason = notes ? `${reason}: ${notes}` : reason;
       return labService.samples.reject(sampleId, rejectionReason);
     },
@@ -291,7 +351,14 @@ export default function ResultsEntryPage() {
     },
   });
   const completeMutation = useMutation({
-    mutationFn: async ({ sampleId }: { sampleId: string; criticalParams: string[]; patientName: string; referringDoctor: string }) => {
+    mutationFn: async ({
+      sampleId,
+    }: {
+      sampleId: string;
+      criticalParams: string[];
+      patientName: string;
+      referringDoctor: string;
+    }) => {
       // First, receive the sample if it's in collected status
       try {
         await labService.samples.receive(sampleId);
@@ -301,7 +368,7 @@ export default function ResultsEntryPage() {
           console.warn('Could not receive sample:', e.message);
         }
       }
-      
+
       // Then start processing
       try {
         await labService.samples.startProcessing(sampleId);
@@ -309,7 +376,7 @@ export default function ResultsEntryPage() {
         // Ignore if already processing
         console.warn('Could not start processing:', e.message);
       }
-      
+
       return { success: true };
     },
     onSuccess: (_, { sampleId, criticalParams, patientName, referringDoctor }) => {
@@ -327,10 +394,11 @@ export default function ResultsEntryPage() {
   const pendingSamples = useMemo(() => {
     return samples
       .filter((s) => !s.approved)
-      .filter((s) =>
-        s.patientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        s.testName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        s.sampleNumber.toLowerCase().includes(searchTerm.toLowerCase())
+      .filter(
+        (s) =>
+          s.patientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          s.testName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          s.sampleNumber.toLowerCase().includes(searchTerm.toLowerCase()),
       );
   }, [samples, searchTerm]);
 
@@ -338,7 +406,10 @@ export default function ResultsEntryPage() {
     return <AccessDenied />;
   }
 
-  const getResultStatus = (value: string, param: { referenceRange: string; criticalLow?: number; criticalHigh?: number }): 'Normal' | 'Abnormal' | 'Critical' => {
+  const getResultStatus = (
+    value: string,
+    param: { referenceRange: string; criticalLow?: number; criticalHigh?: number },
+  ): 'Normal' | 'Abnormal' | 'Critical' => {
     const numValue = parseFloat(value);
     if (isNaN(numValue)) return 'Normal';
 
@@ -373,16 +444,22 @@ export default function ResultsEntryPage() {
       if (status === 'Critical') {
         criticals.push(`${param.name}: ${value} ${param.unit}`);
       }
-      return { name: param.name, value, unit: param.unit, referenceRange: param.referenceRange, status };
+      return {
+        name: param.name,
+        value,
+        unit: param.unit,
+        referenceRange: param.referenceRange,
+        status,
+      };
     });
 
     if (criticals.length > 0) {
       setCriticalValues(criticals);
-      setCriticalSamples(prev => ({ ...prev, [selectedSample.id]: criticals }));
+      setCriticalSamples((prev) => ({ ...prev, [selectedSample.id]: criticals }));
       setShowCriticalAlert(true);
       // Browser notification for critical values
       if ('Notification' in window) {
-        Notification.requestPermission().then(permission => {
+        Notification.requestPermission().then((permission) => {
           if (permission === 'granted') {
             new Notification('Critical Lab Value', {
               body: criticals.join(', '),
@@ -426,9 +503,14 @@ export default function ResultsEntryPage() {
     setComments(sample.comments);
     // Reset QC state for this sample if not set yet
     if (!qcState[sample.id]) {
-      setQcState(prev => ({
+      setQcState((prev) => ({
         ...prev,
-        [sample.id]: { qcSamplePassed: true, calibVerified: true, reagentsOk: true, failureReason: '' },
+        [sample.id]: {
+          qcSamplePassed: true,
+          calibVerified: true,
+          reagentsOk: true,
+          failureReason: '',
+        },
       }));
     }
   };
@@ -453,15 +535,21 @@ export default function ResultsEntryPage() {
         </div>
         <div className="flex gap-3">
           <div className="px-4 py-2 bg-amber-50 border border-amber-200 rounded-lg text-center">
-            <p className="text-xl font-bold text-amber-600">{samples.filter((s) => !s.verified).length}</p>
+            <p className="text-xl font-bold text-amber-600">
+              {samples.filter((s) => !s.verified).length}
+            </p>
             <p className="text-xs text-amber-500">Pending Entry</p>
           </div>
           <div className="px-4 py-2 bg-blue-50 border border-blue-200 rounded-lg text-center">
-            <p className="text-xl font-bold text-blue-600">{samples.filter((s) => s.verified && !s.approved).length}</p>
+            <p className="text-xl font-bold text-blue-600">
+              {samples.filter((s) => s.verified && !s.approved).length}
+            </p>
             <p className="text-xs text-blue-500">Awaiting Approval</p>
           </div>
           <div className="px-4 py-2 bg-green-50 border border-green-200 rounded-lg text-center">
-            <p className="text-xl font-bold text-green-600">{samples.filter((s) => s.approved).length}</p>
+            <p className="text-xl font-bold text-green-600">
+              {samples.filter((s) => s.approved).length}
+            </p>
             <p className="text-xs text-green-500">Approved</p>
           </div>
         </div>
@@ -492,67 +580,82 @@ export default function ResultsEntryPage() {
               const elapsed = sample.collectedAtRaw
                 ? Math.round((Date.now() - new Date(sample.collectedAtRaw).getTime()) / 60000)
                 : null;
-              const elapsedStr = elapsed !== null
-                ? elapsed < 60 ? `${elapsed}m` : `${Math.floor(elapsed / 60)}h ${elapsed % 60}m`
-                : '';
-              const priorityStyle = sample.priority === 'stat'
-                ? 'border-l-4 border-red-500'
-                : sample.priority === 'urgent'
-                  ? 'border-l-4 border-orange-400'
+              const elapsedStr =
+                elapsed !== null
+                  ? elapsed < 60
+                    ? `${elapsed}m`
+                    : `${Math.floor(elapsed / 60)}h ${elapsed % 60}m`
                   : '';
+              const priorityStyle =
+                sample.priority === 'stat'
+                  ? 'border-l-4 border-red-500'
+                  : sample.priority === 'urgent'
+                    ? 'border-l-4 border-orange-400'
+                    : '';
               return (
-              <div
-                key={sample.id}
-                onClick={() => selectSample(sample)}
-                className={`p-4 hover:bg-gray-50 cursor-pointer transition-colors ${priorityStyle} ${
-                  selectedSample?.id === sample.id ? 'bg-emerald-50 border-l-4 !border-emerald-500' : ''
-                }`}
-              >
-                <div className="flex items-start justify-between">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <p className="font-medium text-gray-900 truncate">{sample.testName}</p>
-                      {sample.priority === 'stat' && (
-                        <span className="px-1.5 py-0.5 bg-red-100 text-red-700 text-[10px] font-bold rounded uppercase flex-shrink-0">STAT</span>
-                      )}
-                      {sample.priority === 'urgent' && (
-                        <span className="px-1.5 py-0.5 bg-orange-100 text-orange-700 text-[10px] font-bold rounded uppercase flex-shrink-0">URG</span>
-                      )}
+                <div
+                  key={sample.id}
+                  onClick={() => selectSample(sample)}
+                  className={`p-4 hover:bg-gray-50 cursor-pointer transition-colors ${priorityStyle} ${
+                    selectedSample?.id === sample.id
+                      ? 'bg-emerald-50 border-l-4 !border-emerald-500'
+                      : ''
+                  }`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium text-gray-900 truncate">{sample.testName}</p>
+                        {sample.priority === 'stat' && (
+                          <span className="px-1.5 py-0.5 bg-red-100 text-red-700 text-[10px] font-bold rounded uppercase flex-shrink-0">
+                            STAT
+                          </span>
+                        )}
+                        {sample.priority === 'urgent' && (
+                          <span className="px-1.5 py-0.5 bg-orange-100 text-orange-700 text-[10px] font-bold rounded uppercase flex-shrink-0">
+                            URG
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-sm text-gray-500">{sample.patientName}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <p className="text-xs text-gray-400">{sample.sampleNumber}</p>
+                        {elapsed !== null && (
+                          <span
+                            className={`text-xs ${elapsed > 120 ? 'text-red-500 font-medium' : elapsed > 60 ? 'text-orange-500' : 'text-gray-400'}`}
+                          >
+                            • {elapsedStr} ago
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <p className="text-sm text-gray-500">{sample.patientName}</p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <p className="text-xs text-gray-400">{sample.sampleNumber}</p>
-                      {elapsed !== null && (
-                        <span className={`text-xs ${elapsed > 120 ? 'text-red-500 font-medium' : elapsed > 60 ? 'text-orange-500' : 'text-gray-400'}`}>
-                          • {elapsedStr} ago
+                    <div className="flex flex-col items-end gap-1 flex-shrink-0 ml-2">
+                      {sample.verified ? (
+                        <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded flex items-center gap-1">
+                          <ShieldCheck className="w-3 h-3" /> Verified
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded flex items-center gap-1">
+                          <Clock className="w-3 h-3" /> Pending
                         </span>
                       )}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setRejectReason('');
+                          setRejectNotes('');
+                          setRejectModal({
+                            sampleId: sample.id,
+                            sampleNumber: sample.sampleNumber,
+                          });
+                        }}
+                        className="px-2 py-0.5 bg-red-50 text-red-600 border border-red-200 text-xs rounded flex items-center gap-1 hover:bg-red-100 mt-1"
+                      >
+                        <XCircle className="w-3 h-3" /> Reject
+                      </button>
                     </div>
                   </div>
-                  <div className="flex flex-col items-end gap-1 flex-shrink-0 ml-2">
-                    {sample.verified ? (
-                      <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded flex items-center gap-1">
-                        <ShieldCheck className="w-3 h-3" /> Verified
-                      </span>
-                    ) : (
-                      <span className="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded flex items-center gap-1">
-                        <Clock className="w-3 h-3" /> Pending
-                      </span>
-                    )}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setRejectReason('');
-                        setRejectNotes('');
-                        setRejectModal({ sampleId: sample.id, sampleNumber: sample.sampleNumber });
-                      }}
-                      className="px-2 py-0.5 bg-red-50 text-red-600 border border-red-200 text-xs rounded flex items-center gap-1 hover:bg-red-100 mt-1"
-                    >
-                      <XCircle className="w-3 h-3" /> Reject
-                    </button>
-                  </div>
                 </div>
-              </div>
               );
             })}
           </div>
@@ -567,19 +670,27 @@ export default function ResultsEntryPage() {
                     <div className="flex items-center gap-2">
                       <h2 className="font-semibold text-gray-900">{selectedSample.testName}</h2>
                       {selectedSample.testCode && (
-                        <span className="px-2 py-0.5 bg-gray-200 text-gray-600 text-xs rounded font-mono">{selectedSample.testCode}</span>
+                        <span className="px-2 py-0.5 bg-gray-200 text-gray-600 text-xs rounded font-mono">
+                          {selectedSample.testCode}
+                        </span>
                       )}
                       {selectedSample.priority === 'stat' && (
-                        <span className="px-2 py-0.5 bg-red-100 text-red-700 text-xs font-bold rounded">STAT</span>
+                        <span className="px-2 py-0.5 bg-red-100 text-red-700 text-xs font-bold rounded">
+                          STAT
+                        </span>
                       )}
                       {selectedSample.priority === 'urgent' && (
-                        <span className="px-2 py-0.5 bg-orange-100 text-orange-700 text-xs font-bold rounded">URGENT</span>
+                        <span className="px-2 py-0.5 bg-orange-100 text-orange-700 text-xs font-bold rounded">
+                          URGENT
+                        </span>
                       )}
                     </div>
                     <div className="flex items-center gap-3 mt-1">
                       <p className="text-sm text-gray-500">
                         {selectedSample.patientName}
-                        {selectedSample.patientMrn && <span className="text-gray-400"> • MRN: {selectedSample.patientMrn}</span>}
+                        {selectedSample.patientMrn && (
+                          <span className="text-gray-400"> • MRN: {selectedSample.patientMrn}</span>
+                        )}
                       </p>
                     </div>
                     <div className="flex items-center gap-3 mt-0.5">
@@ -588,58 +699,83 @@ export default function ResultsEntryPage() {
                         <span className="text-xs text-gray-400">• {selectedSample.sampleType}</span>
                       )}
                       {selectedSample.testCategory && (
-                        <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-600 text-[10px] rounded capitalize">{selectedSample.testCategory}</span>
+                        <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-600 text-[10px] rounded capitalize">
+                          {selectedSample.testCategory}
+                        </span>
                       )}
                     </div>
                   </div>
                   <div className="text-right">
                     <p className="text-sm text-gray-500">Collected: {selectedSample.collectedAt}</p>
-                    <p className="text-xs text-gray-400">{selectedSample.parameters.length} parameter{selectedSample.parameters.length !== 1 ? 's' : ''}</p>
+                    <p className="text-xs text-gray-400">
+                      {selectedSample.parameters.length} parameter
+                      {selectedSample.parameters.length !== 1 ? 's' : ''}
+                    </p>
                   </div>
                 </div>
               </div>
 
               <div className="flex-1 overflow-auto p-4">
                 {/* Progress bar */}
-                {!selectedSample.verified && (() => {
-                  const filled = selectedSample.parameters.filter(p => results[p.name]).length;
-                  const total = selectedSample.parameters.length;
-                  const pct = total > 0 ? Math.round((filled / total) * 100) : 0;
-                  return (
-                    <div className="mb-4 flex items-center gap-3">
-                      <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
-                        <div className={`h-full rounded-full transition-all ${pct === 100 ? 'bg-emerald-500' : 'bg-blue-500'}`} style={{ width: `${pct}%` }} />
+                {!selectedSample.verified &&
+                  (() => {
+                    const filled = selectedSample.parameters.filter((p) => results[p.name]).length;
+                    const total = selectedSample.parameters.length;
+                    const pct = total > 0 ? Math.round((filled / total) * 100) : 0;
+                    return (
+                      <div className="mb-4 flex items-center gap-3">
+                        <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all ${pct === 100 ? 'bg-emerald-500' : 'bg-blue-500'}`}
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                        <span className="text-xs text-gray-500 whitespace-nowrap">
+                          {filled}/{total} filled
+                        </span>
                       </div>
-                      <span className="text-xs text-gray-500 whitespace-nowrap">{filled}/{total} filled</span>
-                    </div>
-                  );
-                })()}
+                    );
+                  })()}
                 {/* Critical value banner */}
-                {selectedSample.verified && (criticalSamples[selectedSample.id]?.length ?? 0) > 0 && (
-                  <div className="mb-4 p-4 bg-red-50 border-2 border-red-500 rounded-lg flex items-start gap-3">
-                    <AlertTriangle className="w-6 h-6 text-red-600 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p className="font-bold text-red-700 text-sm">⚠️ CRITICAL VALUE DETECTED</p>
-                      {criticalSamples[selectedSample.id].map((val, idx) => (
-                        <p key={idx} className="text-red-700 text-sm font-medium">{val}</p>
-                      ))}
-                      <p className="text-red-600 text-xs mt-1">Notify attending physician immediately.</p>
+                {selectedSample.verified &&
+                  (criticalSamples[selectedSample.id]?.length ?? 0) > 0 && (
+                    <div className="mb-4 p-4 bg-red-50 border-2 border-red-500 rounded-lg flex items-start gap-3">
+                      <AlertTriangle className="w-6 h-6 text-red-600 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-bold text-red-700 text-sm">⚠️ CRITICAL VALUE DETECTED</p>
+                        {criticalSamples[selectedSample.id].map((val, idx) => (
+                          <p key={idx} className="text-red-700 text-sm font-medium">
+                            {val}
+                          </p>
+                        ))}
+                        <p className="text-red-600 text-xs mt-1">
+                          Notify attending physician immediately.
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
                 {/* Fallback parameters warning */}
                 {selectedSample.usingFallbackParameters && !selectedSample.verified && (
                   <div className="mb-4 p-4 bg-amber-50 border border-amber-300 rounded-lg flex items-start gap-2.5">
                     <Info className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-amber-800">No parameters configured</p>
+                      <p className="text-sm font-semibold text-amber-800">
+                        No parameters configured
+                      </p>
                       <p className="text-sm text-amber-700 mt-1">
-                        <strong>{selectedSample.testName}</strong> has no reference ranges configured in the test catalog.
-                        Please configure the test parameters before entering results to ensure data quality.
+                        <strong>{selectedSample.testName}</strong> has no reference ranges
+                        configured in the test catalog. Please configure the test parameters before
+                        entering results to ensure data quality.
                       </p>
                     </div>
                     <button
-                      onClick={() => navigate(selectedSample.testId ? `/admin/lab/tests/${selectedSample.testId}` : '/admin/lab/tests')}
+                      onClick={() =>
+                        navigate(
+                          selectedSample.testId
+                            ? `/admin/lab/tests/${selectedSample.testId}`
+                            : '/admin/lab/tests',
+                        )
+                      }
                       className="px-3 py-1.5 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 flex-shrink-0"
                     >
                       Configure Test
@@ -660,18 +796,29 @@ export default function ResultsEntryPage() {
                     {selectedSample.parameters.map((param, idx) => {
                       const value = results[param.name] || '';
                       const status = value ? getResultStatus(value, param) : null;
-                      const isQualitative = !param.unit || param.referenceRange === 'Negative' || param.referenceRange === 'Non-Reactive' || param.referenceRange === 'Not Seen' || param.referenceRange === 'No Growth' || param.referenceRange === 'Compatible';
-                      const rowBg = status === 'Critical'
-                        ? 'bg-red-50'
-                        : status === 'Abnormal'
-                          ? 'bg-orange-50'
-                          : value
-                            ? 'bg-green-50/30'
-                            : idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50';
+                      const isQualitative =
+                        !param.unit ||
+                        param.referenceRange === 'Negative' ||
+                        param.referenceRange === 'Non-Reactive' ||
+                        param.referenceRange === 'Not Seen' ||
+                        param.referenceRange === 'No Growth' ||
+                        param.referenceRange === 'Compatible';
+                      const rowBg =
+                        status === 'Critical'
+                          ? 'bg-red-50'
+                          : status === 'Abnormal'
+                            ? 'bg-orange-50'
+                            : value
+                              ? 'bg-green-50/30'
+                              : idx % 2 === 0
+                                ? 'bg-white'
+                                : 'bg-gray-50/50';
                       return (
                         <tr key={param.name} className={`${rowBg} transition-colors`}>
                           <td className="px-4 py-3">
-                            <span className={`font-medium ${status === 'Critical' ? 'text-red-700' : status === 'Abnormal' ? 'text-orange-700' : 'text-gray-900'}`}>
+                            <span
+                              className={`font-medium ${status === 'Critical' ? 'text-red-700' : status === 'Abnormal' ? 'text-orange-700' : 'text-gray-900'}`}
+                            >
                               {param.name}
                             </span>
                           </td>
@@ -683,15 +830,21 @@ export default function ResultsEntryPage() {
                               disabled={selectedSample.verified}
                               placeholder={isQualitative ? param.referenceRange : '—'}
                               className={`${isQualitative ? 'w-36' : 'w-24'} px-3 py-1.5 border rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 ${
-                                selectedSample.verified ? 'bg-gray-100 text-gray-600' : 'border-gray-300'
+                                selectedSample.verified
+                                  ? 'bg-gray-100 text-gray-600'
+                                  : 'border-gray-300'
                               } ${status === 'Critical' ? 'border-red-500 bg-red-50 text-red-800 font-semibold' : ''} ${status === 'Abnormal' ? 'border-orange-400 bg-orange-50 text-orange-800' : ''}`}
                             />
                           </td>
                           <td className="px-4 py-3 text-sm text-gray-500">{param.unit}</td>
-                          <td className="px-4 py-3 text-sm text-gray-500 font-mono">{param.referenceRange}</td>
+                          <td className="px-4 py-3 text-sm text-gray-500 font-mono">
+                            {param.referenceRange}
+                          </td>
                           <td className="px-4 py-3">
                             {status && (
-                              <span className={`px-2 py-1 rounded text-xs font-medium inline-flex items-center gap-1 ${statusColors[status]}`}>
+                              <span
+                                className={`px-2 py-1 rounded text-xs font-medium inline-flex items-center gap-1 ${statusColors[status]}`}
+                              >
                                 {status === 'Critical' && <AlertTriangle className="w-3 h-3" />}
                                 {status === 'Abnormal' && <Flag className="w-3 h-3" />}
                                 {status === 'Normal' && <CheckCircle className="w-3 h-3" />}
@@ -725,9 +878,14 @@ export default function ResultsEntryPage() {
                     <p className="font-medium text-blue-700">Quality Control</p>
                   </div>
                   {(() => {
-                    const qc = qcState[selectedSample.id] ?? { qcSamplePassed: true, calibVerified: true, reagentsOk: true, failureReason: '' };
+                    const qc = qcState[selectedSample.id] ?? {
+                      qcSamplePassed: true,
+                      calibVerified: true,
+                      reagentsOk: true,
+                      failureReason: '',
+                    };
                     const updateQc = (patch: Partial<typeof qc>) =>
-                      setQcState(prev => ({ ...prev, [selectedSample.id]: { ...qc, ...patch } }));
+                      setQcState((prev) => ({ ...prev, [selectedSample.id]: { ...qc, ...patch } }));
                     const anyFailed = !qc.qcSamplePassed || !qc.calibVerified || !qc.reagentsOk;
                     return (
                       <>
@@ -736,7 +894,7 @@ export default function ResultsEntryPage() {
                             <input
                               type="checkbox"
                               checked={qc.qcSamplePassed}
-                              onChange={e => updateQc({ qcSamplePassed: e.target.checked })}
+                              onChange={(e) => updateQc({ qcSamplePassed: e.target.checked })}
                               className="rounded"
                             />
                             QC sample passed
@@ -745,7 +903,7 @@ export default function ResultsEntryPage() {
                             <input
                               type="checkbox"
                               checked={qc.calibVerified}
-                              onChange={e => updateQc({ calibVerified: e.target.checked })}
+                              onChange={(e) => updateQc({ calibVerified: e.target.checked })}
                               className="rounded"
                             />
                             Calibration verified
@@ -754,7 +912,7 @@ export default function ResultsEntryPage() {
                             <input
                               type="checkbox"
                               checked={qc.reagentsOk}
-                              onChange={e => updateQc({ reagentsOk: e.target.checked })}
+                              onChange={(e) => updateQc({ reagentsOk: e.target.checked })}
                               className="rounded"
                             />
                             Reagents in date
@@ -768,7 +926,7 @@ export default function ResultsEntryPage() {
                             <input
                               type="text"
                               value={qc.failureReason}
-                              onChange={e => updateQc({ failureReason: e.target.value })}
+                              onChange={(e) => updateQc({ failureReason: e.target.value })}
                               placeholder="Describe the QC failure..."
                               className="w-full px-3 py-1.5 border border-red-300 rounded-lg text-sm focus:ring-2 focus:ring-red-400"
                             />
@@ -866,22 +1024,38 @@ export default function ResultsEntryPage() {
                       disabled={enterResultMutation.isPending}
                       className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 flex items-center gap-2 disabled:opacity-50"
                     >
-                      {enterResultMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
+                      {enterResultMutation.isPending ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <ShieldCheck className="w-4 h-4" />
+                      )}
                       Verify Results
                     </button>
                   ) : !selectedSample.approved ? (
                     <>
-                      {sentToDoctor[selectedSample.id] && (criticalSamples[selectedSample.id]?.length ?? 0) > 0 && !criticalAcknowledged[selectedSample.id] && (
-                        <button
-                          onClick={() => setCriticalAcknowledged(prev => ({ ...prev, [selectedSample.id]: true }))}
-                          className="px-4 py-2 bg-orange-100 border border-orange-400 text-orange-700 rounded-lg flex items-center gap-2 text-sm"
-                        >
-                          <AlertTriangle className="w-4 h-4" />
-                          Critical value notification sent — acknowledge when physician contacted
-                        </button>
-                      )}
+                      {sentToDoctor[selectedSample.id] &&
+                        (criticalSamples[selectedSample.id]?.length ?? 0) > 0 &&
+                        !criticalAcknowledged[selectedSample.id] && (
+                          <button
+                            onClick={() =>
+                              setCriticalAcknowledged((prev) => ({
+                                ...prev,
+                                [selectedSample.id]: true,
+                              }))
+                            }
+                            className="px-4 py-2 bg-orange-100 border border-orange-400 text-orange-700 rounded-lg flex items-center gap-2 text-sm"
+                          >
+                            <AlertTriangle className="w-4 h-4" />
+                            Critical value notification sent — acknowledge when physician contacted
+                          </button>
+                        )}
                       {(() => {
-                        const qc = qcState[selectedSample.id] ?? { qcSamplePassed: true, calibVerified: true, reagentsOk: true, failureReason: '' };
+                        const qc = qcState[selectedSample.id] ?? {
+                          qcSamplePassed: true,
+                          calibVerified: true,
+                          reagentsOk: true,
+                          failureReason: '',
+                        };
                         const qcFailed = !qc.qcSamplePassed || !qc.calibVerified || !qc.reagentsOk;
                         const isCritical = (criticalSamples[selectedSample.id]?.length ?? 0) > 0;
                         const alreadySent = sentToDoctor[selectedSample.id];
@@ -894,7 +1068,11 @@ export default function ResultsEntryPage() {
                                 ? 'bg-red-600 hover:bg-red-700 text-white'
                                 : 'border border-gray-300 text-gray-700 hover:bg-gray-100'
                             } ${qcFailed ? 'cursor-not-allowed' : ''}`}
-                            title={qcFailed ? 'QC checks must all pass before sending to doctor' : undefined}
+                            title={
+                              qcFailed
+                                ? 'QC checks must all pass before sending to doctor'
+                                : undefined
+                            }
                           >
                             {sendToDoctorMutation.isPending ? (
                               <Loader2 className="w-4 h-4 animate-spin" />
@@ -902,8 +1080,12 @@ export default function ResultsEntryPage() {
                               <Send className="w-4 h-4" />
                             )}
                             {alreadySent
-                              ? isCritical ? 'Sent URGENT to Doctor' : 'Sent to Doctor'
-                              : isCritical ? 'Send URGENT to Doctor' : 'Send to Doctor'}
+                              ? isCritical
+                                ? 'Sent URGENT to Doctor'
+                                : 'Sent to Doctor'
+                              : isCritical
+                                ? 'Send URGENT to Doctor'
+                                : 'Send to Doctor'}
                           </button>
                         );
                       })()}
@@ -911,9 +1093,17 @@ export default function ResultsEntryPage() {
                         onClick={handleApprove}
                         disabled={completeMutation.isPending || !sentToDoctor[selectedSample.id]}
                         className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                        title={!sentToDoctor[selectedSample.id] ? 'Must validate before releasing' : undefined}
+                        title={
+                          !sentToDoctor[selectedSample.id]
+                            ? 'Must validate before releasing'
+                            : undefined
+                        }
                       >
-                        {completeMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <ThumbsUp className="w-4 h-4" />}
+                        {completeMutation.isPending ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <ThumbsUp className="w-4 h-4" />
+                        )}
                         Approve & Release
                       </button>
                     </>
@@ -933,20 +1123,31 @@ export default function ResultsEntryPage() {
       </div>
 
       {showCriticalAlert && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showCriticalAlertDialogRef}
+        >
           <div className="bg-white rounded-lg p-6 w-96 shadow-xl">
             <div className="text-center">
               <div className="w-16 h-16 mx-auto mb-4 bg-red-100 rounded-full flex items-center justify-center">
                 <AlertCircle className="w-10 h-10 text-red-600" />
               </div>
               <h3 className="text-lg font-bold text-red-700 mb-2">Critical Values Detected!</h3>
-              <p className="text-gray-600 mb-4">The following values are critical and require immediate attention:</p>
+              <p className="text-gray-600 mb-4">
+                The following values are critical and require immediate attention:
+              </p>
               <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
                 {criticalValues.map((val, idx) => (
-                  <p key={idx} className="text-red-700 font-medium">{val}</p>
+                  <p key={idx} className="text-red-700 font-medium">
+                    {val}
+                  </p>
                 ))}
               </div>
-              <p className="text-sm text-gray-500 mb-4">Please notify the attending physician immediately.</p>
+              <p className="text-sm text-gray-500 mb-4">
+                Please notify the attending physician immediately.
+              </p>
               <button
                 onClick={() => setShowCriticalAlert(false)}
                 className="w-full py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
@@ -959,7 +1160,12 @@ export default function ResultsEntryPage() {
       )}
 
       {releaseCriticalAlert && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={releaseCriticalAlertDialogRef}
+        >
           <div className="bg-white rounded-xl p-6 w-[500px] shadow-2xl border-2 border-red-500">
             <div className="flex items-start gap-3 mb-4">
               <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
@@ -967,8 +1173,13 @@ export default function ResultsEntryPage() {
               </div>
               <div>
                 <h3 className="text-xl font-bold text-red-700">⚠️ Critical Value Alert</h3>
-                <p className="text-sm text-gray-600 mt-0.5">Patient: <span className="font-medium">{releaseCriticalAlert.patientName}</span></p>
-                <p className="text-sm text-gray-600">Referring Physician: <span className="font-medium">{releaseCriticalAlert.referringDoctor}</span></p>
+                <p className="text-sm text-gray-600 mt-0.5">
+                  Patient: <span className="font-medium">{releaseCriticalAlert.patientName}</span>
+                </p>
+                <p className="text-sm text-gray-600">
+                  Referring Physician:{' '}
+                  <span className="font-medium">{releaseCriticalAlert.referringDoctor}</span>
+                </p>
               </div>
             </div>
 
@@ -983,18 +1194,26 @@ export default function ResultsEntryPage() {
             </div>
 
             <p className="text-sm text-gray-600 mb-4">
-              These results contain critical values. The attending physician must be notified immediately.
+              These results contain critical values. The attending physician must be notified
+              immediately.
             </p>
 
             {!sentToDoctor[releaseCriticalAlert.sampleId] && (
               <button
                 onClick={() => {
-                  sendToDoctorMutation.mutate({ sampleId: releaseCriticalAlert.sampleId, isCritical: true });
+                  sendToDoctorMutation.mutate({
+                    sampleId: releaseCriticalAlert.sampleId,
+                    isCritical: true,
+                  });
                 }}
                 disabled={sendToDoctorMutation.isPending}
                 className="w-full mb-4 px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg flex items-center justify-center gap-2 font-semibold disabled:opacity-50"
               >
-                {sendToDoctorMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                {sendToDoctorMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Send className="w-4 h-4" />
+                )}
                 Notify Doctor (Send URGENT)
               </button>
             )}
@@ -1008,7 +1227,7 @@ export default function ResultsEntryPage() {
               <input
                 type="checkbox"
                 checked={releaseCriticalAcked}
-                onChange={e => setReleaseCriticalAcked(e.target.checked)}
+                onChange={(e) => setReleaseCriticalAcked(e.target.checked)}
                 className="w-4 h-4 rounded accent-orange-600"
               />
               <span className="text-sm font-medium text-orange-800">
@@ -1018,7 +1237,10 @@ export default function ResultsEntryPage() {
 
             <button
               onClick={() => {
-                setCriticalAcknowledged(prev => ({ ...prev, [releaseCriticalAlert.sampleId]: true }));
+                setCriticalAcknowledged((prev) => ({
+                  ...prev,
+                  [releaseCriticalAlert.sampleId]: true,
+                }));
                 setReleaseCriticalAlert(null);
               }}
               disabled={!releaseCriticalAcked}
@@ -1031,7 +1253,12 @@ export default function ResultsEntryPage() {
       )}
 
       {rejectModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={rejectModalDialogRef}
+        >
           <div className="bg-white rounded-lg p-6 w-[480px] shadow-xl">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
@@ -1054,20 +1281,24 @@ export default function ResultsEntryPage() {
               </label>
               <select
                 value={rejectReason}
-                onChange={e => setRejectReason(e.target.value)}
+                onChange={(e) => setRejectReason(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-400"
               >
                 <option value="">Select reason...</option>
-                {REJECTION_REASONS.map(r => (
-                  <option key={r} value={r}>{r}</option>
+                {REJECTION_REASONS.map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
                 ))}
               </select>
             </div>
             <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Additional Notes</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Additional Notes
+              </label>
               <textarea
                 value={rejectNotes}
-                onChange={e => setRejectNotes(e.target.value)}
+                onChange={(e) => setRejectNotes(e.target.value)}
                 placeholder="Optional notes..."
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-400 resize-none h-20"
               />
@@ -1082,12 +1313,20 @@ export default function ResultsEntryPage() {
               <button
                 onClick={() => {
                   if (!rejectReason) return;
-                  rejectMutation.mutate({ sampleId: rejectModal.sampleId, reason: rejectReason, notes: rejectNotes });
+                  rejectMutation.mutate({
+                    sampleId: rejectModal.sampleId,
+                    reason: rejectReason,
+                    notes: rejectNotes,
+                  });
                 }}
                 disabled={!rejectReason || rejectMutation.isPending}
                 className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2 disabled:opacity-50"
               >
-                {rejectMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4" />}
+                {rejectMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <XCircle className="w-4 h-4" />
+                )}
                 Confirm Rejection
               </button>
             </div>

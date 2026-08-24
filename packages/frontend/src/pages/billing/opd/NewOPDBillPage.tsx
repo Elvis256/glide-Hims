@@ -674,7 +674,11 @@ export default function NewOPDBillPage() {
                             <div className="bg-purple-50 rounded-lg p-2.5 text-xs space-y-1">
                               <div className="flex justify-between">
                                 <span className="text-gray-500">Coverage Limit</span>
-                                <span className="font-medium">{formatCurrency(Number(selectedPolicy.coverageLimit) || 0)}</span>
+                                {/* annualLimit is the field the API sends;
+                                    coverageLimit does not exist on the payload,
+                                    so this panel showed a limit of 0 and a
+                                    negative Remaining to the cashier. */}
+                                <span className="font-medium">{formatCurrency(Number(selectedPolicy.annualLimit) || 0)}</span>
                               </div>
                               <div className="flex justify-between">
                                 <span className="text-gray-500">Used</span>
@@ -682,11 +686,11 @@ export default function NewOPDBillPage() {
                               </div>
                               <div className="flex justify-between text-purple-700 font-medium">
                                 <span>Remaining</span>
-                                <span>{formatCurrency((Number(selectedPolicy.coverageLimit) || 0) - (Number(selectedPolicy.usedAmount) || 0))}</span>
+                                <span>{formatCurrency((Number(selectedPolicy.annualLimit) || 0) - (Number(selectedPolicy.usedAmount) || 0))}</span>
                               </div>
                               <div className="flex justify-between">
                                 <span className="text-gray-500">Co-pay</span>
-                                <span className="font-medium">{Number(selectedPolicy.copayPercent) || 0}%</span>
+                                <span className="font-medium">{Number(selectedPolicy.copayPercentage) || 0}%</span>
                               </div>
                             </div>
                           )}

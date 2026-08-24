@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
@@ -63,6 +64,17 @@ export default function ChronicRegistryPage() {
   const [viewPatient, setViewPatient] = useState<ChronicPatient | null>(null);
   const [patientSearch, setPatientSearch] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<any>(null);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showModal,
+    onClose: () => setSelectedPatient(null),
+  });
+  const viewPatientDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!viewPatient,
+    onClose: () => setViewPatient(null),
+  });
 
   const [formData, setFormData] = useState({
     patientId: '',
@@ -379,7 +391,12 @@ export default function ChronicRegistryPage() {
 
       {/* Enroll/Edit Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showModalDialogRef}
+        >
           <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between">
               <h2 className="text-lg font-semibold">
@@ -614,7 +631,12 @@ export default function ChronicRegistryPage() {
 
       {/* View Patient Modal */}
       {viewPatient && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={viewPatientDialogRef}
+        >
           <div className="bg-white rounded-lg shadow-xl w-full max-w-lg">
             <div className="border-b px-6 py-4 flex items-center justify-between">
               <h2 className="text-lg font-semibold">Patient Details</h2>

@@ -35,6 +35,11 @@ import {
   ProcessPreAuthDto,
   RecordPaymentDto,
 } from './dto/insurance.dto';
+import {
+  dayBoundsUtc,
+  monthBoundsUtc,
+  localWallClockSql,
+} from '../../common/utils/timezone.util';
 
 @Injectable()
 export class InsuranceService {
@@ -68,7 +73,10 @@ export class InsuranceService {
   async getDashboard(facilityId: string, tenantId?: string) {
     const tid = requireTenantId(tenantId);
     const today = new Date();
-    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    // new Date(y, m, 1) is midnight in the SERVER's zone — 03:00 in Kampala —
+    // so claims raised in the first three hours of the 1st were counted under
+    // the month before.
+    const { start: startOfMonth } = monthBoundsUtc();
     const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
 
     const tenantFilter = { tenantId: tid };
@@ -153,7 +161,13 @@ export class InsuranceService {
       this.claimRepo
         .createQueryBuilder('claim')
         .select(
-          'ROUND(AVG(EXTRACT(EPOCH FROM (claim.paidAt - claim.submittedAt)) / 86400), 1)',
+          // paid_at holds the insurer's payment DATE, stored as midnight, while
+          // submitted_at is a real instant — so subtracting them made a claim
+          // paid the same day it was submitted come out at MINUS 0.9 days, and
+          // understated every other claim by up to a day. Compare calendar days
+          // in the hospital's zone, and never report a negative turnaround.
+          `ROUND(AVG(GREATEST(0, (${localWallClockSql('claim.paidAt', true)})::date` +
+            ` - (${localWallClockSql('claim.submittedAt', true)})::date)), 1)`,
           'avgDays',
         )
         .where('claim.facilityId = :facilityId', { facilityId })
@@ -176,7 +190,7 @@ export class InsuranceService {
       // Monthly trend: last 12 months
       this.claimRepo
         .createQueryBuilder('claim')
-        .select("TO_CHAR(claim.createdAt, 'YYYY-MM')", 'month')
+        .select(`TO_CHAR(${localWallClockSql('claim.createdAt', true)}, 'YYYY-MM')`, 'month')
         .addSelect('COUNT(*)', 'submitted')
         .addSelect(
           `SUM(CASE WHEN claim.status IN ('approved','partially_approved','paid') THEN 1 ELSE 0 END)`,
@@ -189,7 +203,7 @@ export class InsuranceService {
         .where('claim.facilityId = :facilityId', { facilityId })
         .andWhere("claim.createdAt >= NOW() - INTERVAL '12 months'")
         .andWhere(tenantCond, tenantParams)
-        .groupBy("TO_CHAR(claim.createdAt, 'YYYY-MM')")
+        .groupBy(`TO_CHAR(${localWallClockSql('claim.createdAt', true)}, 'YYYY-MM')`)
         .orderBy('month', 'ASC')
         .getRawMany(),
 
@@ -408,8 +422,12 @@ export class InsuranceService {
 
     const savedClaim = await this.dataSource.transaction(async (manager) => {
       const claimNumber = await this.generateClaimNumber(manager, tenantId);
+      // Keep the item DTOs off the claim entity: they would land on the `items`
+      // relation, and saving the claim again below would make TypeORM treat the
+      // rows we insert here as no longer belonging to it and null their claim_id.
+      const { items: _items, ...claimFields } = dto;
       const claim = manager.create(InsuranceClaim, {
-        ...dto,
+        ...claimFields,
         claimNumber,
         providerId: policy.providerId,
         patientId: policy.patientId,
@@ -460,7 +478,7 @@ export class InsuranceService {
           totalClaimed += item.claimedAmount;
         }
         saved.totalClaimed = totalClaimed;
-        await manager.save(InsuranceClaim, saved);
+        await manager.update(InsuranceClaim, saved.id, { totalClaimed });
       }
 
       return saved;
@@ -652,7 +670,8 @@ export class InsuranceService {
     tenantId?: string,
     userId?: string,
   ): Promise<InsuranceClaim> {
-    return this.dataSource.transaction(async (manager) => {
+    let auditPrevious: Record<string, unknown> = {};
+    const saved = await this.dataSource.transaction(async (manager) => {
       const claim = await manager.findOne(InsuranceClaim, {
         where: { id, tenantId: requireTenantId(tenantId) },
         lock: { mode: 'pessimistic_write' },
@@ -744,29 +763,35 @@ export class InsuranceService {
 
       const saved = await manager.save(InsuranceClaim, claim);
 
-      await this.auditLogService
-        .log({
-          userId,
-          action: approve ? 'INSURANCE_CLAIM_APPROVED' : 'INSURANCE_CLAIM_REJECTED',
-          entityType: 'InsuranceClaim',
-          entityId: saved.id,
-          oldValue: { status: previousStatus, totalApproved: previousApproved },
-          newValue: {
-            status: saved.status,
-            totalApproved: Number(saved.totalApproved),
-            patientResponsibility: Number(saved.patientResponsibility),
-            denialReason: saved.denialReason || null,
-            denialCode: saved.denialCode || null,
-          },
-          reason: dto.notes,
-          tenantId: requireTenantId(tenantId),
-        })
-        .catch((err) =>
-          this.logger.error(`Audit log failed for processClaim ${saved.id}: ${err.message}`),
-        );
-
+      auditPrevious = { status: previousStatus, totalApproved: previousApproved };
       return saved;
     });
+
+    // Audit after the commit — it writes on its own connection, so inside the
+    // transaction the log row committed independently of the adjudication it
+    // recorded. Still best-effort.
+    await this.auditLogService
+      .log({
+        userId,
+        action: approve ? 'INSURANCE_CLAIM_APPROVED' : 'INSURANCE_CLAIM_REJECTED',
+        entityType: 'InsuranceClaim',
+        entityId: saved.id,
+        oldValue: auditPrevious,
+        newValue: {
+          status: saved.status,
+          totalApproved: Number(saved.totalApproved),
+          patientResponsibility: Number(saved.patientResponsibility),
+          denialReason: saved.denialReason || null,
+          denialCode: saved.denialCode || null,
+        },
+        reason: dto.notes,
+        tenantId: requireTenantId(tenantId),
+      })
+      .catch((err) =>
+        this.logger.error(`Audit log failed for processClaim ${saved.id}: ${err.message}`),
+      );
+
+    return saved;
   }
 
   async recordPayment(
@@ -780,103 +805,127 @@ export class InsuranceService {
       throw new BadRequestException('Paid amount must be positive');
     }
 
-    const { saved, settledInBilling } = await this.dataSource.transaction(async (manager) => {
-      const claim = await manager.findOne(InsuranceClaim, {
-        where: { id, tenantId: requireTenantId(tenantId) },
-        lock: { mode: 'pessimistic_write' },
-      });
-      if (!claim) throw new NotFoundException('Claim not found');
+    const { saved, mirror, auditPrevious, policyUsedAmount, delta } =
+      await this.dataSource.transaction(async (manager) => {
+        const claim = await manager.findOne(InsuranceClaim, {
+          where: { id, tenantId: requireTenantId(tenantId) },
+          lock: { mode: 'pessimistic_write' },
+        });
+        if (!claim) throw new NotFoundException('Claim not found');
 
-      if (
-        claim.status !== ClaimStatus.APPROVED &&
-        claim.status !== ClaimStatus.PARTIALLY_APPROVED
-      ) {
-        throw new BadRequestException(
-          'Claim must be approved (or partially approved) to record payment',
-        );
-      }
+        if (
+          claim.status !== ClaimStatus.APPROVED &&
+          claim.status !== ClaimStatus.PARTIALLY_APPROVED
+        ) {
+          throw new BadRequestException(
+            'Claim must be approved (or partially approved) to record payment',
+          );
+        }
 
-      // Segregation of duties: neither the submitter nor the user who recorded
-      // the previous payment can post a new payment on the same claim.
-      if (userId && claim.submittedById && claim.submittedById === userId) {
-        throw new BadRequestException(
-          'Segregation of duties violation: the user who submitted the claim cannot also record the payment',
-        );
-      }
+        // Segregation of duties: neither the submitter nor the user who recorded
+        // the previous payment can post a new payment on the same claim.
+        if (userId && claim.submittedById && claim.submittedById === userId) {
+          throw new BadRequestException(
+            'Segregation of duties violation: the user who submitted the claim cannot also record the payment',
+          );
+        }
 
-      // Idempotency + cap: paidAmount is treated as the cumulative paid total
-      // for this claim. We reject duplicates and amounts that exceed the
-      // approved ceiling, so calling recordPayment twice (or with an inflated
-      // value) cannot inflate policy.usedAmount beyond what was approved.
-      const previouslyPaid = Number(claim.totalPaid || 0);
-      const approvedCeiling = Number(claim.totalApproved || 0);
-      if (paidAmount > approvedCeiling) {
-        throw new BadRequestException(
-          `Paid amount ${paidAmount} exceeds approved amount ${approvedCeiling}`,
-        );
-      }
-      if (paidAmount <= previouslyPaid) {
-        throw new BadRequestException(
-          `Paid amount ${paidAmount} is not greater than already recorded ${previouslyPaid}; nothing to post`,
-        );
-      }
-      const delta = paidAmount - previouslyPaid;
+        // Idempotency + cap: paidAmount is treated as the cumulative paid total
+        // for this claim. We reject duplicates and amounts that exceed the
+        // approved ceiling, so calling recordPayment twice (or with an inflated
+        // value) cannot inflate policy.usedAmount beyond what was approved.
+        const previouslyPaid = Number(claim.totalPaid || 0);
+        const approvedCeiling = Number(claim.totalApproved || 0);
+        if (paidAmount > approvedCeiling) {
+          throw new BadRequestException(
+            `Paid amount ${paidAmount} exceeds approved amount ${approvedCeiling}`,
+          );
+        }
+        if (paidAmount <= previouslyPaid) {
+          throw new BadRequestException(
+            `Paid amount ${paidAmount} is not greater than already recorded ${previouslyPaid}; nothing to post`,
+          );
+        }
+        const delta = paidAmount - previouslyPaid;
 
-      const policy = await manager.findOne(InsurancePolicy, {
-        where: { id: claim.policyId, tenantId: requireTenantId(tenantId) },
-        lock: { mode: 'pessimistic_write' },
-      });
-      if (!policy) throw new NotFoundException('Policy not found');
+        const policy = await manager.findOne(InsurancePolicy, {
+          where: { id: claim.policyId, tenantId: requireTenantId(tenantId) },
+          lock: { mode: 'pessimistic_write' },
+        });
+        if (!policy) throw new NotFoundException('Policy not found');
 
-      claim.totalPaid = paidAmount;
-      claim.paymentReference = dto.paymentReference;
-      claim.paidAt = dto.paymentDate ? new Date(dto.paymentDate) : new Date();
-      claim.status = ClaimStatus.PAID;
+        claim.totalPaid = paidAmount;
+        claim.paymentReference = dto.paymentReference;
+        claim.paidAt = dto.paymentDate ? new Date(dto.paymentDate) : new Date();
+        claim.status = ClaimStatus.PAID;
 
-      policy.usedAmount = Number(policy.usedAmount || 0) + delta;
-      await manager.save(InsurancePolicy, policy);
+        policy.usedAmount = Number(policy.usedAmount || 0) + delta;
+        await manager.save(InsurancePolicy, policy);
 
-      const savedClaim = await manager.save(InsuranceClaim, claim);
+        const savedClaim = await manager.save(InsuranceClaim, claim);
 
-      // Mirror the settlement onto the invoice inside the SAME txn so a
-      // billing failure rolls back the claim flip and the policy increment.
-      // recordInsuranceClaimPayment is idempotent on transactionReference,
-      // so retries are safe even if upstream calls this method more than once.
-      let mirror = null;
-      if (savedClaim.invoiceId && delta > 0) {
-        mirror = await this.billingService.recordInsuranceClaimPayment(
-          savedClaim.invoiceId,
+        // Mirror the settlement onto the invoice inside the SAME txn so a
+        // billing failure rolls back the claim flip and the policy increment.
+        return {
+          saved: savedClaim,
+          // Mirrored into billing after this commits, not before.
+          mirror:
+            savedClaim.invoiceId && delta > 0 ? { invoiceId: savedClaim.invoiceId, delta } : null,
+          auditPrevious: { totalPaid: previouslyPaid, status: ClaimStatus.APPROVED },
+          policyUsedAmount: Number(policy.usedAmount),
           delta,
-          savedClaim.claimNumber,
+        };
+      });
+
+    // Mirror the insurer's payment onto the patient's invoice, after the
+    // commit.
+    //
+    // This went through BillingService on its own connection from inside the
+    // transaction, so the Payment row against the invoice committed the
+    // moment it was written — while the claim, policy and invoice writes
+    // beside it could still roll back. That left the invoice showing the
+    // insurer had paid against a claim payment that was never recorded. It is
+    // idempotent on transactionReference, so a retry after a partial failure
+    // is safe.
+    let settledInBilling = false;
+    if (mirror) {
+      try {
+        const mirrored = await this.billingService.recordInsuranceClaimPayment(
+          mirror.invoiceId,
+          mirror.delta,
+          saved.claimNumber,
           dto.paymentReference,
           userId || 'system',
           tenantId,
         );
-      }
-
-      await this.auditLogService
-        .log({
-          userId,
-          action: 'INSURANCE_CLAIM_PAYMENT_RECORDED',
-          entityType: 'InsuranceClaim',
-          entityId: savedClaim.id,
-          oldValue: { totalPaid: previouslyPaid, status: ClaimStatus.APPROVED },
-          newValue: {
-            totalPaid: paidAmount,
-            delta,
-            status: savedClaim.status,
-            policyUsedAmount: Number(policy.usedAmount),
-            paymentReference: dto.paymentReference,
-            mirrored: Boolean(mirror),
-          },
-          tenantId: requireTenantId(tenantId),
-        })
-        .catch((err) =>
-          this.logger.error(`Audit log failed for recordPayment ${savedClaim.id}: ${err.message}`),
+        settledInBilling = Boolean(mirrored);
+      } catch (err: any) {
+        this.logger.error(
+          `Failed to mirror insurance payment for claim ${saved.claimNumber} onto invoice ${mirror.invoiceId}: ${err?.message || err}`,
         );
+      }
+    }
 
-      return { saved: savedClaim, settledInBilling: Boolean(mirror) };
-    });
+    await this.auditLogService
+      .log({
+        userId,
+        action: 'INSURANCE_CLAIM_PAYMENT_RECORDED',
+        entityType: 'InsuranceClaim',
+        entityId: saved.id,
+        oldValue: auditPrevious,
+        newValue: {
+          totalPaid: paidAmount,
+          delta,
+          status: saved.status,
+          policyUsedAmount,
+          paymentReference: dto.paymentReference,
+          mirrored: settledInBilling,
+        },
+        tenantId: requireTenantId(tenantId),
+      })
+      .catch((err) =>
+        this.logger.error(`Audit log failed for recordPayment ${saved.id}: ${err.message}`),
+      );
 
     // GL posting runs on its own connection and is best-effort — outside the
     // txn so a GL failure does not roll back the claim/policy/invoice writes,
@@ -901,7 +950,6 @@ export class InsuranceService {
         });
     }
 
-    void settledInBilling;
     return saved;
   }
 
@@ -1053,60 +1101,69 @@ export class InsuranceService {
     userId?: string,
   ): Promise<PreAuthorization> {
     const tid = requireTenantId(tenantId);
-    return this.dataSource.transaction(async (manager) => {
-    const preAuth = await manager.findOne(PreAuthorization, {
-      where: { id, tenantId: tid },
-      lock: { mode: 'pessimistic_write' },
-    });
-    if (!preAuth) throw new NotFoundException('Pre-authorization not found');
+    const { saved, preAuthAuditPrevious } = await this.dataSource.transaction(async (manager) => {
+      const preAuth = await manager.findOne(PreAuthorization, {
+        where: { id, tenantId: tid },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!preAuth) throw new NotFoundException('Pre-authorization not found');
 
-    if (preAuth.status !== PreAuthStatus.SUBMITTED && preAuth.status !== PreAuthStatus.PENDING) {
-      throw new BadRequestException('Pre-authorization cannot be processed');
-    }
+      if (preAuth.status !== PreAuthStatus.SUBMITTED && preAuth.status !== PreAuthStatus.PENDING) {
+        throw new BadRequestException('Pre-authorization cannot be processed');
+      }
 
-    // Segregation of duties: the user who requested the pre-auth cannot also
-    // approve / deny it.
-    if (userId && preAuth.requestedById && preAuth.requestedById === userId) {
-      throw new BadRequestException(
-        'Segregation of duties violation: the user who requested the pre-authorization cannot also process it',
-      );
-    }
+      // Segregation of duties: the user who requested the pre-auth cannot also
+      // approve / deny it.
+      if (userId && preAuth.requestedById && preAuth.requestedById === userId) {
+        throw new BadRequestException(
+          'Segregation of duties violation: the user who requested the pre-authorization cannot also process it',
+        );
+      }
 
-    const previousStatus = preAuth.status;
-    const previousApproved = Number(preAuth.approvedAmount || 0);
-    preAuth.approvedAt = new Date();
+      const previousStatus = preAuth.status;
+      const previousApproved = Number(preAuth.approvedAmount || 0);
+      preAuth.approvedAt = new Date();
 
-    if (approve) {
-      preAuth.approvedAmount = dto.approvedAmount;
-      if (dto.validFrom) preAuth.validFrom = new Date(dto.validFrom);
-      if (dto.validUntil) preAuth.validUntil = new Date(dto.validUntil);
-      if (dto.insurerReference) preAuth.insurerReference = dto.insurerReference;
+      if (approve) {
+        preAuth.approvedAmount = dto.approvedAmount;
+        if (dto.validFrom) preAuth.validFrom = new Date(dto.validFrom);
+        if (dto.validUntil) preAuth.validUntil = new Date(dto.validUntil);
+        if (dto.insurerReference) preAuth.insurerReference = dto.insurerReference;
 
-      if (dto.approvedAmount >= Number(preAuth.estimatedCost)) {
-        preAuth.status = PreAuthStatus.APPROVED;
-      } else if (dto.approvedAmount > 0) {
-        preAuth.status = PreAuthStatus.PARTIALLY_APPROVED;
+        if (dto.approvedAmount >= Number(preAuth.estimatedCost)) {
+          preAuth.status = PreAuthStatus.APPROVED;
+        } else if (dto.approvedAmount > 0) {
+          preAuth.status = PreAuthStatus.PARTIALLY_APPROVED;
+        } else {
+          preAuth.status = PreAuthStatus.DENIED;
+          preAuth.denialReason = dto.denialReason;
+        }
       } else {
         preAuth.status = PreAuthStatus.DENIED;
         preAuth.denialReason = dto.denialReason;
+        preAuth.approvedAmount = 0;
       }
-    } else {
-      preAuth.status = PreAuthStatus.DENIED;
-      preAuth.denialReason = dto.denialReason;
-      preAuth.approvedAmount = 0;
-    }
 
-    if (dto.notes) preAuth.notes = dto.notes;
+      if (dto.notes) preAuth.notes = dto.notes;
 
-    const saved = await manager.save(PreAuthorization, preAuth);
+      const saved = await manager.save(PreAuthorization, preAuth);
 
+      return {
+        saved,
+        preAuthAuditPrevious: { status: previousStatus, approvedAmount: previousApproved },
+      };
+    });
+
+    // Audit after the commit — it writes on its own connection, so inside the
+    // transaction the log row committed independently of the decision it
+    // recorded. Still best-effort.
     await this.auditLogService
       .log({
         userId,
         action: approve ? 'PREAUTH_APPROVED' : 'PREAUTH_DENIED',
         entityType: 'PreAuthorization',
         entityId: saved.id,
-        oldValue: { status: previousStatus, approvedAmount: previousApproved },
+        oldValue: preAuthAuditPrevious,
         newValue: {
           status: saved.status,
           approvedAmount: Number(saved.approvedAmount),
@@ -1121,7 +1178,6 @@ export class InsuranceService {
       );
 
     return saved;
-    });
   }
 
   // ============ REPORTS ============
@@ -1326,7 +1382,8 @@ export class InsuranceService {
       .addSelect('SUM(claim.totalClaimed)', 'totalClaimed')
       .addSelect('SUM(claim.totalPaid)', 'totalPaid')
       .addSelect(
-        'AVG(EXTRACT(EPOCH FROM (claim.paidAt - claim.submittedAt)) / 86400)',
+        `AVG(GREATEST(0, (${localWallClockSql('claim.paidAt', true)})::date` +
+          ` - (${localWallClockSql('claim.submittedAt', true)})::date))`,
         'avgDaysToPayment',
       )
       .where('claim.facilityId = :facilityId', { facilityId })
@@ -1340,7 +1397,10 @@ export class InsuranceService {
     const performance = await qb
       .groupBy('provider.id')
       .addGroupBy('provider.name')
-      .orderBy('totalClaimed', 'DESC')
+      // Unquoted, Postgres folds the alias to `totalclaimed` and cannot find
+      // the quoted "totalClaimed" it just selected — this report answered every
+      // request with a 500.
+      .orderBy('"totalClaimed"', 'DESC')
       .getRawMany();
 
     return performance;
@@ -1407,8 +1467,9 @@ export class InsuranceService {
     }
 
     if (filters?.endDate) {
-      const endDate = new Date(filters.endDate);
-      endDate.setHours(23, 59, 59, 999);
+      // The end of that day where the hospital is; on the server clock this
+      // reached 03:00 the following morning and pulled the next day in.
+      const { end: endDate } = dayBoundsUtc(filters.endDate);
       qb.andWhere('encounter.start_time <= :endDate', { endDate });
     }
 

@@ -1,4 +1,5 @@
 import { useMemo, useState, useEffect } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
@@ -136,6 +137,13 @@ export default function AssetRegisterPage() {
   const [viewingAsset, setViewingAsset] = useState<FixedAsset | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>('identification');
   const [form, setForm] = useState<AssetForm>(emptyForm());
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const viewingAssetDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!viewingAsset,
+    onClose: () => setViewingAsset(null),
+  });
 
   const { data: assets = [], isLoading } = useQuery({
     queryKey: ['assets', facilityId, assetClassFilter, criticalityFilter, categoryFilter, departmentFilter, statusFilter, searchTerm],
@@ -827,7 +835,12 @@ export default function AssetRegisterPage() {
 
       {/* View Modal */}
       {viewingAsset && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={viewingAssetDialogRef}
+        >
           <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between">
               <h2 className="text-lg font-semibold">Asset Details</h2>

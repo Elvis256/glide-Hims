@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, DataSource } from 'typeorm';
+import { sqlSafeTimeZone } from '../../common/utils/timezone.util';
 import { Patient } from '../../database/entities/patient.entity';
 import { Encounter, EncounterStatus } from '../../database/entities/encounter.entity';
 import { Invoice, Payment } from '../../database/entities/invoice.entity';
@@ -11,6 +12,23 @@ import { AuditLog } from '../../database/entities/audit-log.entity';
 import { Item, StockBalance, StockLedger } from '../../database/entities/inventory.entity';
 import { LabResult, AbnormalFlag, ResultStatus } from '../../database/entities/lab-result.entity';
 import { requireTenantId } from '../../common/utils/tenant.util';
+
+/**
+ * SQL for the start of the current `unit` where the hospital is.
+ *
+ * date_trunc works in the session timezone, and the session is UTC while the
+ * hospital is UTC+3 — so "this month" began at 03:00 on the 1st locally, and
+ * everything registered in those three hours counted towards the month before.
+ * Converting into the zone, truncating, then converting back gives the instant
+ * the local period actually started.
+ *
+ * `offset` shifts by whole periods, e.g. "-1 month" for the previous one.
+ */
+function localStart(unit: 'day' | 'week' | 'month', offset?: string): string {
+  const tz = sqlSafeTimeZone();
+  const now = offset ? `(NOW() + INTERVAL '${offset}')` : 'NOW()';
+  return `(date_trunc('${unit}', ${now} AT TIME ZONE '${tz}') AT TIME ZONE '${tz}')`;
+}
 
 @Injectable()
 export class AnalyticsService {
@@ -81,7 +99,7 @@ export class AnalyticsService {
         params,
       );
       const newRes = await this.dataSource.query(
-        `SELECT COUNT(*) as count FROM users WHERE deleted_at IS NULL AND created_at >= date_trunc('month', NOW()) ${tenantFilter}`,
+        `SELECT COUNT(*) as count FROM users WHERE deleted_at IS NULL AND created_at >= ${localStart('month')} ${tenantFilter}`,
         params,
       );
       return {
@@ -102,11 +120,11 @@ export class AnalyticsService {
         params,
       );
       const newThisMonthRes = await this.dataSource.query(
-        `SELECT COUNT(*) as count FROM patients WHERE deleted_at IS NULL AND created_at >= date_trunc('month', NOW()) ${tenantFilter}`,
+        `SELECT COUNT(*) as count FROM patients WHERE deleted_at IS NULL AND created_at >= ${localStart('month')} ${tenantFilter}`,
         params,
       );
       const newLastMonthRes = await this.dataSource.query(
-        `SELECT COUNT(*) as count FROM patients WHERE deleted_at IS NULL AND created_at >= date_trunc('month', NOW() - INTERVAL '1 month') AND created_at < date_trunc('month', NOW()) ${tenantFilter}`,
+        `SELECT COUNT(*) as count FROM patients WHERE deleted_at IS NULL AND created_at >= ${localStart('month', '-1 month')} AND created_at < ${localStart('month')} ${tenantFilter}`,
         params,
       );
       return {
@@ -144,15 +162,15 @@ export class AnalyticsService {
   private async getAdminRecentActivity(tenantFilter: string, params: any[]) {
     try {
       const todayRes = await this.dataSource.query(
-        `SELECT COUNT(*) as count FROM audit_logs WHERE deleted_at IS NULL AND created_at >= date_trunc('day', NOW()) ${tenantFilter}`,
+        `SELECT COUNT(*) as count FROM audit_logs WHERE deleted_at IS NULL AND created_at >= ${localStart('day')} ${tenantFilter}`,
         params,
       );
       const weekRes = await this.dataSource.query(
-        `SELECT COUNT(*) as count FROM audit_logs WHERE deleted_at IS NULL AND created_at >= date_trunc('week', NOW()) ${tenantFilter}`,
+        `SELECT COUNT(*) as count FROM audit_logs WHERE deleted_at IS NULL AND created_at >= ${localStart('week')} ${tenantFilter}`,
         params,
       );
       const monthRes = await this.dataSource.query(
-        `SELECT COUNT(*) as count FROM audit_logs WHERE deleted_at IS NULL AND created_at >= date_trunc('month', NOW()) ${tenantFilter}`,
+        `SELECT COUNT(*) as count FROM audit_logs WHERE deleted_at IS NULL AND created_at >= ${localStart('month')} ${tenantFilter}`,
         params,
       );
       return {
@@ -380,7 +398,11 @@ export class AnalyticsService {
       WHERE facility_id = $1 AND created_at >= $2 AND tenant_id = $3
       GROUP BY DATE_TRUNC('${groupBy}', created_at), type
       ORDER BY period`;
-    const encounterTrend = await this.encounterRepo.query(encTrendSql, [facilityId, startDate, tid]);
+    const encounterTrend = await this.encounterRepo.query(encTrendSql, [
+      facilityId,
+      startDate,
+      tid,
+    ]);
 
     // Top diagnoses from clinical_notes JSON
     const diagSql = `
@@ -406,7 +428,11 @@ export class AnalyticsService {
       FROM encounters
       WHERE facility_id = $1 AND created_at >= $2 AND tenant_id = $3
       GROUP BY type`;
-    const encountersByType = await this.encounterRepo.query(encTypeSql, [facilityId, startDate, tid]);
+    const encountersByType = await this.encounterRepo.query(encTypeSql, [
+      facilityId,
+      startDate,
+      tid,
+    ]);
 
     return {
       encounterTrend,
@@ -437,10 +463,12 @@ export class AnalyticsService {
         AND i.tenant_id = $3
       GROUP BY DATE_TRUNC('${groupBy}', i.created_at)
       ORDER BY period`;
-    const revenueTrend = await this.invoiceRepo.query(revTrendSql, [facilityId, startDate, tid]).catch((err) => {
-      this.logger.warn('Analytics query failed: ' + err.message);
-      return [];
-    });
+    const revenueTrend = await this.invoiceRepo
+      .query(revTrendSql, [facilityId, startDate, tid])
+      .catch((err) => {
+        this.logger.warn('Analytics query failed: ' + err.message);
+        return [];
+      });
 
     // Collections trend
     const collTrendSql = `
@@ -521,10 +549,12 @@ export class AnalyticsService {
         AND i.status NOT IN ('paid', 'cancelled') AND i.balance_due > 0 AND i.deleted_at IS NULL
         AND i.tenant_id = $2
       GROUP BY age_bucket`;
-    const outstandingByAge = await this.invoiceRepo.query(outAgeSql, [facilityId, tid]).catch((err) => {
-      this.logger.warn('Analytics query failed: ' + err.message);
-      return [];
-    });
+    const outstandingByAge = await this.invoiceRepo
+      .query(outAgeSql, [facilityId, tid])
+      .catch((err) => {
+        this.logger.warn('Analytics query failed: ' + err.message);
+        return [];
+      });
 
     // Recent transactions
     const recentTxSql = `
@@ -1203,10 +1233,12 @@ export class AnalyticsService {
       GROUP BY d->>'code', d->>'description', age_band, sex
       ORDER BY count DESC`;
 
-    const rawDiagnoses = await this.encounterRepo.query(topSql, [facilityId, startDate, endDate, tid]).catch((err) => {
-      this.logger.warn('HMIS105 SectionA top diagnoses failed: ' + err.message);
-      return [];
-    });
+    const rawDiagnoses = await this.encounterRepo
+      .query(topSql, [facilityId, startDate, endDate, tid])
+      .catch((err) => {
+        this.logger.warn('HMIS105 SectionA top diagnoses failed: ' + err.message);
+        return [];
+      });
 
     // Pivot raw rows into { code, diagnosis, totalCount, ageSexBreakdown }
     const diagMap = new Map<string, any>();
@@ -1262,10 +1294,12 @@ export class AnalyticsService {
       GROUP BY chapter_letter, age_band, sex
       ORDER BY chapter_letter`;
 
-    const rawGroups = await this.encounterRepo.query(grpSql, [facilityId, startDate, endDate, tid]).catch((err) => {
-      this.logger.warn('HMIS105 SectionA diagnosis groups failed: ' + err.message);
-      return [];
-    });
+    const rawGroups = await this.encounterRepo
+      .query(grpSql, [facilityId, startDate, endDate, tid])
+      .catch((err) => {
+        this.logger.warn('HMIS105 SectionA diagnosis groups failed: ' + err.message);
+        return [];
+      });
 
     const chapterMap = new Map<string, any>();
     for (const r of rawGroups) {
@@ -1318,10 +1352,12 @@ export class AnalyticsService {
       GROUP BY lt.category
       ORDER BY total_samples DESC`;
 
-    const byCategory = await this.encounterRepo.query(catSql, [facilityId, startDate, endDate, tid]).catch((err) => {
-      this.logger.warn('HMIS105 SectionB lab by category failed: ' + err.message);
-      return [];
-    });
+    const byCategory = await this.encounterRepo
+      .query(catSql, [facilityId, startDate, endDate, tid])
+      .catch((err) => {
+        this.logger.warn('HMIS105 SectionB lab by category failed: ' + err.message);
+        return [];
+      });
 
     // Totals
     const totSql = `
@@ -1336,10 +1372,12 @@ export class AnalyticsService {
         AND ls.deleted_at IS NULL
         AND ls.tenant_id = $4`;
 
-    const totals = await this.encounterRepo.query(totSql, [facilityId, startDate, endDate, tid]).catch((err) => {
-      this.logger.warn('HMIS105 SectionB lab totals failed: ' + err.message);
-      return [{ total_samples: 0, total_results: 0 }];
-    });
+    const totals = await this.encounterRepo
+      .query(totSql, [facilityId, startDate, endDate, tid])
+      .catch((err) => {
+        this.logger.warn('HMIS105 SectionB lab totals failed: ' + err.message);
+        return [{ total_samples: 0, total_results: 0 }];
+      });
 
     return {
       title: 'Section B: Laboratory',
@@ -1386,10 +1424,12 @@ export class AnalyticsService {
       ORDER BY total_dispensed DESC
       LIMIT 20`;
 
-    const topMedicines = await this.encounterRepo.query(medSql, [facilityId, startDate, endDate, tid]).catch((err) => {
-      this.logger.warn('HMIS105 SectionC top medicines failed: ' + err.message);
-      return [];
-    });
+    const topMedicines = await this.encounterRepo
+      .query(medSql, [facilityId, startDate, endDate, tid])
+      .catch((err) => {
+        this.logger.warn('HMIS105 SectionC top medicines failed: ' + err.message);
+        return [];
+      });
 
     // Total prescriptions filled
     const rxSql = `
@@ -1404,10 +1444,12 @@ export class AnalyticsService {
         AND p.deleted_at IS NULL
         AND p.tenant_id = $4`;
 
-    const rxTotals = await this.encounterRepo.query(rxSql, [facilityId, startDate, endDate, tid]).catch((err) => {
-      this.logger.warn('HMIS105 SectionC prescription totals failed: ' + err.message);
-      return [{ filled: 0, total: 0 }];
-    });
+    const rxTotals = await this.encounterRepo
+      .query(rxSql, [facilityId, startDate, endDate, tid])
+      .catch((err) => {
+        this.logger.warn('HMIS105 SectionC prescription totals failed: ' + err.message);
+        return [{ filled: 0, total: 0 }];
+      });
 
     // Stock-out days: count days with zero balance_after on SALE movements
     const soSql = `
@@ -1427,10 +1469,12 @@ export class AnalyticsService {
       ORDER BY stockout_days DESC
       LIMIT 20`;
 
-    const stockOuts = await this.encounterRepo.query(soSql, [facilityId, startDate, endDate, tid]).catch((err) => {
-      this.logger.warn('HMIS105 SectionC stock-out days failed: ' + err.message);
-      return [];
-    });
+    const stockOuts = await this.encounterRepo
+      .query(soSql, [facilityId, startDate, endDate, tid])
+      .catch((err) => {
+        this.logger.warn('HMIS105 SectionC stock-out days failed: ' + err.message);
+        return [];
+      });
 
     return {
       title: 'Section C: Pharmacy / Dispensing',
@@ -1584,10 +1628,12 @@ export class AnalyticsService {
           AND e.tenant_id = $4
       ) e`;
 
-    const opdData = await this.encounterRepo.query(opdSql, [facilityId, startDate, endDate, tid]).catch((err) => {
-      this.logger.warn('HMIS105 SectionE OPD attendance failed: ' + err.message);
-      return [{ total_opd: 0, opd_visits: 0, new_visits: 0, return_visits: 0 }];
-    });
+    const opdData = await this.encounterRepo
+      .query(opdSql, [facilityId, startDate, endDate, tid])
+      .catch((err) => {
+        this.logger.warn('HMIS105 SectionE OPD attendance failed: ' + err.message);
+        return [{ total_opd: 0, opd_visits: 0, new_visits: 0, return_visits: 0 }];
+      });
 
     // Admissions, discharges, deaths
     const admSql = `
@@ -1605,10 +1651,12 @@ export class AnalyticsService {
         )
         AND a.tenant_id = $4`;
 
-    const admData = await this.admissionRepo.query(admSql, [facilityId, startDate, endDate, tid]).catch((err) => {
-      this.logger.warn('HMIS105 SectionE admissions failed: ' + err.message);
-      return [{ admissions: 0, discharges: 0, deaths: 0 }];
-    });
+    const admData = await this.admissionRepo
+      .query(admSql, [facilityId, startDate, endDate, tid])
+      .catch((err) => {
+        this.logger.warn('HMIS105 SectionE admissions failed: ' + err.message);
+        return [{ admissions: 0, discharges: 0, deaths: 0 }];
+      });
 
     // Referrals out
     const refSql = `
@@ -1620,10 +1668,12 @@ export class AnalyticsService {
         AND r.deleted_at IS NULL
         AND r.tenant_id = $4`;
 
-    const refData = await this.encounterRepo.query(refSql, [facilityId, startDate, endDate, tid]).catch((err) => {
-      this.logger.warn('HMIS105 SectionE referrals failed: ' + err.message);
-      return [{ referrals_out: 0 }];
-    });
+    const refData = await this.encounterRepo
+      .query(refSql, [facilityId, startDate, endDate, tid])
+      .catch((err) => {
+        this.logger.warn('HMIS105 SectionE referrals failed: ' + err.message);
+        return [{ referrals_out: 0 }];
+      });
 
     return {
       title: 'Section E: Summary Statistics',

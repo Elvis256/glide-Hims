@@ -8,6 +8,7 @@ import {
   Min,
   Max,
   IsBoolean,
+  IsArray,
 } from 'class-validator';
 import { MAX_MONEY, NUMBER_OPTS } from '../../../common/constants/validation.constants';
 
@@ -128,6 +129,28 @@ export class ThreeWayMatchDto {
 
   @IsBoolean()
   isMatched: boolean;
+
+  /** The supplier's invoice figure, taken from the GRN. Null if none recorded. */
+  @IsOptional()
+  @IsNumber(NUMBER_OPTS)
+  @Min(0)
+  @Max(MAX_MONEY)
+  invoiceAmount?: number | null;
+
+  /** Null when there is no invoice to compare — distinct from "does not match". */
+  @IsOptional()
+  @IsBoolean()
+  invoiceMatches?: boolean | null;
+
+  /** The lines that did not reconcile, so the variance is actionable. */
+  @IsOptional()
+  @IsArray()
+  lineDiscrepancies?: {
+    itemId: string;
+    itemName: string;
+    quantityOrdered: number;
+    quantityAccepted: number;
+  }[];
 
   @IsEnum(MatchStatus)
   matchStatus: MatchStatus;

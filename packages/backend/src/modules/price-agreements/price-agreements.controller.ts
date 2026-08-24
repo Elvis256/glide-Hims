@@ -9,6 +9,7 @@ import { PriceAgreementStatus } from '../../database/entities/price-agreement.en
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { RequireModule } from '../auth/decorators/module.decorator';
 import { ModuleGuard } from '../auth/guards/module.guard';
+import { FacilityId } from '../../common/decorators/facility-id.decorator';
 
 @UseGuards(ModuleGuard)
 @RequireModule('stores')
@@ -25,7 +26,7 @@ export class PriceAgreementsController {
   @AuthWithPermissions('procurement.read')
   @Get()
   findAll(
-    @Query('facilityId') facilityId: string,
+    @FacilityId() facilityId: string,
     @Query('status') status?: PriceAgreementStatus,
     @Query('supplierId') supplierId?: string,
     @Query('itemCode') itemCode?: string,
@@ -36,14 +37,14 @@ export class PriceAgreementsController {
 
   @AuthWithPermissions('procurement.read')
   @Get('stats')
-  getStats(@Query('facilityId') facilityId: string, @Request() req: any) {
+  getStats(@FacilityId() facilityId: string, @Request() req: any) {
     return this.service.getStats(facilityId, req.user?.tenantId);
   }
 
   @AuthWithPermissions('procurement.read')
   @Get('expiring')
   getExpiring(
-    @Query('facilityId') facilityId: string,
+    @FacilityId() facilityId: string,
     @Query('daysAhead') daysAhead?: string,
     @Request() req?: any,
   ) {
@@ -55,7 +56,7 @@ export class PriceAgreementsController {
   @AuthWithPermissions('procurement.create')
   @Post('compare')
   comparePrices(
-    @Query('facilityId') facilityId: string,
+    @FacilityId() facilityId: string,
     @Body() dto: ComparePricesDto,
     @Request() req: any,
   ) {
@@ -65,7 +66,7 @@ export class PriceAgreementsController {
   @AuthWithPermissions('procurement.read')
   @Get('best-price/:itemCode')
   getBestPrice(
-    @Query('facilityId') facilityId: string,
+    @FacilityId() facilityId: string,
     @Param('itemCode') itemCode: string,
     @Query('quantity') quantity?: string,
     @Request() req?: any,

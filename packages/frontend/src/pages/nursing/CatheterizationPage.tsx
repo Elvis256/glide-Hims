@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useId } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -87,6 +87,7 @@ const complications = [
 ];
 
 export default function CatheterizationPage() {
+  const fid = useId();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { hasPermission } = usePermissions();
@@ -362,8 +363,8 @@ export default function CatheterizationPage() {
 
                 {/* Catheter Size */}
                 <div>
-                  <label className="text-sm font-medium text-gray-700 mb-1 block">Catheter Size (French) *</label>
-                  <select
+                  <label htmlFor={`${fid}-catheter-size-french`} className="text-sm font-medium text-gray-700 mb-1 block">Catheter Size (French) *</label>
+                  <select id={`${fid}-catheter-size-french`}
                     value={formData.catheterSize}
                     onChange={(e) => setFormData({ ...formData, catheterSize: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
@@ -401,8 +402,8 @@ export default function CatheterizationPage() {
                 {/* Date/Time */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-sm font-medium text-gray-700 mb-1 block">Insertion Date</label>
-                    <input
+                    <label htmlFor={`${fid}-insertion-date`} className="text-sm font-medium text-gray-700 mb-1 block">Insertion Date</label>
+                    <input id={`${fid}-insertion-date`}
                       type="date"
                       value={formData.insertionDate}
                       onChange={(e) => setFormData({ ...formData, insertionDate: e.target.value })}
@@ -410,8 +411,8 @@ export default function CatheterizationPage() {
                     />
                   </div>
                   <div>
-                    <label className="text-sm font-medium text-gray-700 mb-1 block">Time</label>
-                    <input
+                    <label htmlFor={`${fid}-time`} className="text-sm font-medium text-gray-700 mb-1 block">Time</label>
+                    <input id={`${fid}-time`}
                       type="time"
                       value={formData.insertionTime}
                       onChange={(e) => setFormData({ ...formData, insertionTime: e.target.value })}
@@ -458,8 +459,8 @@ export default function CatheterizationPage() {
 
                 {/* Indication */}
                 <div>
-                  <label className="text-sm font-medium text-gray-700 mb-1 block">Indication</label>
-                  <input
+                  <label htmlFor={`${fid}-indication`} className="text-sm font-medium text-gray-700 mb-1 block">Indication</label>
+                  <input id={`${fid}-indication`}
                     type="text"
                     value={formData.indication}
                     onChange={(e) => setFormData({ ...formData, indication: e.target.value })}
@@ -470,8 +471,8 @@ export default function CatheterizationPage() {
 
                 {/* Complications */}
                 <div>
-                  <label className="text-sm font-medium text-gray-700 mb-1 block">Complications</label>
-                  <select
+                  <label htmlFor={`${fid}-complications`} className="text-sm font-medium text-gray-700 mb-1 block">Complications</label>
+                  <select id={`${fid}-complications`}
                     value={formData.complications}
                     onChange={(e) => setFormData({ ...formData, complications: e.target.value })}
                     className={`w-full px-3 py-2 border rounded-lg text-sm ${
@@ -488,8 +489,8 @@ export default function CatheterizationPage() {
 
                 {/* Inserted By */}
                 <div>
-                  <label className="text-sm font-medium text-gray-700 mb-1 block">Inserted By</label>
-                  <input
+                  <label htmlFor={`${fid}-inserted-by`} className="text-sm font-medium text-gray-700 mb-1 block">Inserted By</label>
+                  <input id={`${fid}-inserted-by`}
                     type="text"
                     value={formData.insertedBy}
                     onChange={(e) => setFormData({ ...formData, insertedBy: e.target.value })}
@@ -500,8 +501,8 @@ export default function CatheterizationPage() {
 
                 {/* Notes */}
                 <div className="md:col-span-2">
-                  <label className="text-sm font-medium text-gray-700 mb-1 block">Notes</label>
-                  <textarea
+                  <label htmlFor={`${fid}-notes`} className="text-sm font-medium text-gray-700 mb-1 block">Notes</label>
+                  <textarea id={`${fid}-notes`}
                     rows={2}
                     value={formData.notes}
                     onChange={(e) => setFormData({ ...formData, notes: e.target.value })}

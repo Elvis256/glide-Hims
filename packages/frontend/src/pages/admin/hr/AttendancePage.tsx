@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Calendar, Clock, CheckCircle, XCircle, Users, Loader2, LogIn, LogOut, Plus } from 'lucide-react';
 import { hrService, type Attendance, type Employee } from '../../../services/hr';
@@ -11,6 +12,13 @@ export default function AttendancePage() {
   const [clockInTime, setClockInTime] = useState('');
   const [clockOutTime, setClockOutTime] = useState('');
   const [status, setStatus] = useState<'present' | 'absent' | 'late' | 'half-day'>('present');
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showRecordModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showRecordModal,
+    onClose: () => setShowRecordModal(false),
+  });
   const queryClient = useQueryClient();
 
   // Get facility
@@ -291,7 +299,12 @@ export default function AttendancePage() {
 
       {/* Record Attendance Modal */}
       {showRecordModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showRecordModalDialogRef}
+        >
           <div className="bg-white rounded-lg p-6 w-full max-w-md">
             <h2 className="text-xl font-semibold mb-4">Record Attendance</h2>
             <div className="space-y-4">

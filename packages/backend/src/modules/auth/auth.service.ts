@@ -669,6 +669,8 @@ export class AuthService {
           tokenVersion: user.tokenVersion,
         };
 
+        // txn-connection-ok: signing a JWT is pure crypto over the payload
+        // above — no connection, no query, nothing to be stale about.
         const accessToken = this.jwtService.sign(newPayload);
         const newRefreshToken = this.jwtService.sign(
           { ...newPayload, jti: crypto.randomUUID() },
@@ -1037,6 +1039,13 @@ export class AuthService {
       isSystemAdmin: user.isSystemAdmin || false,
       mfaEnabled: user.mfaEnabled,
       lastLoginAt: user.lastLoginAt,
+      // PATCH /auth/profile writes these three and echoes them back, but the
+      // read side omitted them — so My Profile loaded blank every time, and a
+      // staff member who had just saved an emergency contact watched it
+      // disappear on the very next fetch. The value was stored all along.
+      address: user.address,
+      emergencyContactName: user.emergencyContactName,
+      emergencyContactPhone: user.emergencyContactPhone,
       roles: userRoles.map((ur) => ({
         role: ur.role.name,
         facility: ur.facility?.name,

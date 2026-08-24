@@ -11,6 +11,26 @@ import { withSystemContext } from '../../common/context/tenant-context';
 const PORTAL_COOKIE = 'portalToken';
 const PORTAL_TTL_SECONDS = 7 * 24 * 60 * 60;
 
+/**
+ * `@Public()` on routes that are anything but public.
+ *
+ * main.ts installs GlobalJwtAuthGuard over every route that is not marked
+ * @Public(), and that guard runs the STAFF passport strategy, which looks
+ * `payload.sub` up in `users`. A patient portal token's `sub` is a patient id,
+ * so it was never going to be found: every authenticated portal endpoint
+ * answered a valid patient token with 401 "User not found" — /me,
+ * /appointments, /invoices, /lab-results, /prescriptions and
+ * /discharge-summaries, all six. Global guards run before controller guards,
+ * so PatientPortalGuard never got to look at the token at all.
+ *
+ * @Public() here means "not staff-authenticated". PatientPortalGuard is the
+ * real authentication on each of these handlers and it is not optional — it
+ * verifies the JWT, requires kind === 'patient', and stamps req.patientId and
+ * req.tenantId, which is also what TenantInterceptor reads to scope RLS. Do
+ * not remove @Public() without also removing the global guard, and never add a
+ * route to this controller without @UseGuards(PatientPortalGuard) unless it is
+ * genuinely open.
+ */
 @ApiTags('patient-portal')
 @Controller('portal')
 export class PatientPortalController {
@@ -56,6 +76,7 @@ export class PatientPortalController {
     return { ok: true };
   }
 
+  @Public()
   @UseGuards(PatientPortalGuard)
   @ApiBearerAuth()
   @Get('me')
@@ -64,6 +85,7 @@ export class PatientPortalController {
     return this.service.getMe(req.patientId, req.ip);
   }
 
+  @Public()
   @UseGuards(PatientPortalGuard)
   @ApiBearerAuth()
   @Get('appointments')
@@ -72,6 +94,7 @@ export class PatientPortalController {
     return this.service.listAppointments(req.patientId, req.ip);
   }
 
+  @Public()
   @UseGuards(PatientPortalGuard)
   @ApiBearerAuth()
   @Get('invoices')
@@ -80,6 +103,7 @@ export class PatientPortalController {
     return this.service.listInvoices(req.patientId, req.ip);
   }
 
+  @Public()
   @UseGuards(PatientPortalGuard)
   @ApiBearerAuth()
   @Get('lab-results')
@@ -88,6 +112,7 @@ export class PatientPortalController {
     return this.service.listLabResults(req.patientId, req.ip);
   }
 
+  @Public()
   @UseGuards(PatientPortalGuard)
   @ApiBearerAuth()
   @Get('prescriptions')
@@ -96,6 +121,7 @@ export class PatientPortalController {
     return this.service.listPrescriptions(req.patientId, req.ip);
   }
 
+  @Public()
   @UseGuards(PatientPortalGuard)
   @ApiBearerAuth()
   @Get('discharge-summaries')

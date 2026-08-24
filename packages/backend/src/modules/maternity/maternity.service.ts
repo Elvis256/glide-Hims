@@ -1,4 +1,11 @@
-import { Injectable, Logger, NotFoundException, BadRequestException, Optional } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  BadRequestException,
+  Optional,
+  Inject,
+} from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { NotificationsService } from '../notifications/notifications.service';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -41,6 +48,10 @@ import {
   RecordBabyWellnessDto,
   AdministerVaccineDto,
 } from './dto/maternity.dto';
+import { Patient } from '../../database/entities/patient.entity';
+import { InAppNotificationsService } from '../in-app-notifications/in-app-notifications.service';
+import { InAppNotificationType } from '../../database/entities/in-app-notification.entity';
+import { localDateString, monthBoundsUtc, startOfDayUtc } from '../../common/utils/timezone.util';
 import { AuditLogService } from '../../common/interceptors/audit-log.service';
 import { requireTenantId } from '../../common/utils/tenant.util';
 
@@ -63,8 +74,17 @@ export class MaternityService {
     private immunizationRepo: Repository<ImmunizationSchedule>,
     private readonly auditLogService: AuditLogService,
     private readonly dataSource: DataSource,
+    // NB: @Inject(...) is required alongside @Optional() here. With a union
+    // parameter type (`X | null`) TypeScript emits `Object` as the design type,
+    // so Nest has no token to resolve, silently injects undefined, and every
+    // `if (!this.x) return;` guard below reads as "feature disabled". That is
+    // why the EPI defaulter SMS cron had never sent a single reminder.
     @Optional()
+    @Inject(NotificationsService)
     private readonly notificationsService: NotificationsService | null,
+    @Optional()
+    @Inject(InAppNotificationsService)
+    private readonly inAppNotifications: InAppNotificationsService | null,
   ) {}
 
   private readonly cronLogger = new Logger(MaternityService.name);
@@ -175,6 +195,110 @@ export class MaternityService {
     return diffWeeks;
   }
 
+  /**
+   * Everything the caller does not tell us, from the two structured facts we do
+   * have. Age and gravida are the two markers of a high-risk booking that need
+   * no clinician judgement; a clinician can still book the case higher, and a
+   * measured danger sign at any visit escalates it (see assessDangerSigns).
+   */
+  /** Whole days between two instants, counted on the hospital's calendar. */
+  private calendarDaysBetween(from: Date | string, to: Date | string): number {
+    const fromDay = startOfDayUtc(localDateString(from instanceof Date ? from : new Date(from)));
+    const toDay = startOfDayUtc(localDateString(to instanceof Date ? to : new Date(to)));
+    return Math.round((toDay.getTime() - fromDay.getTime()) / (24 * 3600 * 1000));
+  }
+
+  private bookingRiskLevel(patient: Patient, gravida: number): RiskLevel {
+    const age = this.ageInYears(patient.dateOfBirth);
+    if ((age != null && (age < 16 || age >= 40)) || gravida >= 5) return RiskLevel.HIGH;
+    if ((age != null && (age < 18 || age > 35)) || gravida === 4) return RiskLevel.MEDIUM;
+    return RiskLevel.LOW;
+  }
+
+  private ageInYears(dateOfBirth: Date | string | null | undefined): number | null {
+    if (!dateOfBirth) return null;
+    const dob = dateOfBirth instanceof Date ? dateOfBirth : new Date(dateOfBirth);
+    if (Number.isNaN(dob.getTime())) return null;
+    return Math.floor((Date.now() - dob.getTime()) / (365.25 * 24 * 3600 * 1000));
+  }
+
+  /**
+   * The measured findings that mean "refer now" in the Uganda ANC/PNC guidelines.
+   * Before this, a woman could be charted at 168/112 with proteinuria, an Hb of
+   * 6.5 and a fetal heart of 98 and the case stayed 'low risk' with nobody told —
+   * the partograph raised alerts, but nothing else in maternity did.
+   */
+  private assessDangerSigns(v: {
+    bpSystolic?: number | null;
+    bpDiastolic?: number | null;
+    urineProtein?: boolean | null;
+    hemoglobin?: number | null;
+    fetalHeartRate?: number | null;
+    temperature?: number | null;
+  }): string[] {
+    const signs: string[] = [];
+    const sys = v.bpSystolic ?? null;
+    const dia = v.bpDiastolic ?? null;
+    if ((sys != null && sys >= 160) || (dia != null && dia >= 110)) {
+      signs.push(`Severe hypertension ${sys ?? '?'}/${dia ?? '?'} mmHg`);
+    } else if ((sys != null && sys >= 140) || (dia != null && dia >= 90)) {
+      signs.push(`Raised blood pressure ${sys ?? '?'}/${dia ?? '?'} mmHg`);
+    }
+    if (v.urineProtein) signs.push('Proteinuria');
+    if (v.hemoglobin != null && v.hemoglobin < 7) {
+      signs.push(`Severe anaemia (Hb ${v.hemoglobin} g/dL)`);
+    }
+    if (v.fetalHeartRate != null && (v.fetalHeartRate < 110 || v.fetalHeartRate > 160)) {
+      signs.push(`Abnormal fetal heart rate ${v.fetalHeartRate} bpm (normal 110–160)`);
+    }
+    if (v.temperature != null && v.temperature >= 38) {
+      signs.push(`Fever ${v.temperature} °C`);
+    }
+    return signs;
+  }
+
+  /** Raise the case to high risk and tell the maternity team. Never throws. */
+  private async escalateDangerSigns(
+    registration: AntenatalRegistration,
+    signs: string[],
+    context: string,
+    tid: string,
+  ): Promise<void> {
+    try {
+      if (registration.riskLevel !== RiskLevel.HIGH) {
+        await this.ancRepo.update(
+          { id: registration.id, tenantId: tid },
+          { riskLevel: RiskLevel.HIGH },
+        );
+      }
+      if (!this.inAppNotifications) return;
+      const targets = await this.inAppNotifications.getUserIdsByRole(
+        ['nurse', 'midwife', 'charge_nurse', 'nurse_supervisor', 'doctor', 'obstetrician'],
+        registration.facilityId,
+        tid,
+      );
+      if (targets.length === 0) return;
+      await this.inAppNotifications.notifyMany(
+        targets,
+        {
+          type: InAppNotificationType.GENERAL,
+          title: 'Maternity Danger Sign',
+          message: `${registration.ancNumber} (${context}): ${signs.join('; ')}`,
+          facilityId: registration.facilityId,
+          metadata: {
+            kind: 'maternity_danger_sign',
+            registrationId: registration.id,
+            context,
+            signs,
+          },
+        },
+        tid,
+      );
+    } catch (err: any) {
+      this.cronLogger.warn(`Maternity danger-sign escalation failed: ${err.message}`);
+    }
+  }
+
   async registerAntenatal(
     dto: RegisterAntenatalDto,
     userId: string,
@@ -185,11 +309,46 @@ export class MaternityService {
     const edd = this.calculateEdd(lmpDate);
     const gestationalAge = this.calculateGestationalAge(lmpDate);
 
+    // A pregnancy cannot start in the future and cannot outrun 44 weeks. Both
+    // were accepted before: a future LMP booked a case at MINUS 20 weeks with an
+    // EDD in 2027, and a three-year-old LMP booked one at 172 weeks. Either way
+    // an impossible case joined the active register, the due-soon list and the
+    // dashboard count.
+    if (gestationalAge < 0) {
+      throw new BadRequestException('Last menstrual period cannot be in the future');
+    }
+    if (gestationalAge > 44) {
+      throw new BadRequestException(
+        `Last menstrual period gives a gestational age of ${gestationalAge} weeks — check the date`,
+      );
+    }
+    // The current pregnancy is one of the gravida, so everything that came
+    // before it has to fit in the rest. G2 P9 was accepted before this.
+    const priorOutcomes = (dto.para ?? 0) + (dto.abortions ?? 0);
+    if (priorOutcomes > dto.gravida - 1) {
+      throw new BadRequestException(
+        `Obstetric history does not add up: gravida ${dto.gravida} leaves ${dto.gravida - 1} prior ` +
+          `pregnancies, but para ${dto.para} + abortions ${dto.abortions ?? 0} = ${priorOutcomes}`,
+      );
+    }
+
     const saved = await this.dataSource.transaction(async (manager) => {
       // Serialize per patient so two concurrent registrations can't both pass
       await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
         `anc_reg:${tid}:${dto.patientId}`,
       ]);
+
+      // Without this the FK violation surfaced as a bare 500, and a male
+      // patient could be booked for antenatal care.
+      const patient = await manager.findOne(Patient, {
+        where: { id: dto.patientId, tenantId: tid },
+      });
+      if (!patient) throw new NotFoundException('Patient not found');
+      if ((patient.gender || '').toLowerCase() === 'male') {
+        throw new BadRequestException(
+          `${patient.fullName} is recorded as male — correct the patient record before booking antenatal care`,
+        );
+      }
 
       const activePregnancy = await manager.findOne(AntenatalRegistration, {
         where: { patientId: dto.patientId, status: PregnancyStatus.ACTIVE, tenantId: tid },
@@ -217,7 +376,7 @@ export class MaternityService {
       rhPositive: dto.rhPositive,
       medicalHistory: dto.medicalHistory,
       allergies: dto.allergies,
-      riskLevel: dto.riskLevel || RiskLevel.LOW,
+      riskLevel: dto.riskLevel || this.bookingRiskLevel(patient, dto.gravida),
       riskFactors: dto.riskFactors,
       partnerName: dto.partnerName,
       partnerPhone: dto.partnerPhone,
@@ -322,7 +481,7 @@ export class MaternityService {
     tenantId?: string,
   ): Promise<AntenatalVisit> {
     const tid = requireTenantId(tenantId);
-    const savedVisit = await this.dataSource.transaction(async (manager) => {
+    const savedVisitResult = await this.dataSource.transaction(async (manager) => {
       // Serialize per registration so concurrent visits get distinct numbers
       await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
         `anc_visit:${tid}:${dto.registrationId}`,
@@ -370,8 +529,24 @@ export class MaternityService {
       });
       visit.tenantId = tid;
 
-      return manager.save(visit);
+      const saved = await manager.save(visit);
+      return { saved, registration };
     });
+
+    const { saved: savedVisit, registration } = savedVisitResult;
+
+    const dangerSigns = this.assessDangerSigns({
+      bpSystolic: dto.bpSystolic,
+      bpDiastolic: dto.bpDiastolic,
+      urineProtein: dto.urineProtein,
+      hemoglobin: dto.hemoglobin,
+      fetalHeartRate: dto.fetalHeartRate,
+      temperature: dto.temperature,
+    });
+    if (dangerSigns.length > 0) {
+      await this.escalateDangerSigns(registration, dangerSigns, 'ANC visit', tid);
+    }
+    (savedVisit as AntenatalVisit & { dangerSigns?: string[] }).dangerSigns = dangerSigns;
 
     this.auditLogService
       .log({
@@ -595,6 +770,30 @@ export class MaternityService {
 
       const savedDelivery = await labourRepoTx.save(labour);
 
+      // Blood loss and a retained placenta are the two things that kill women
+      // in the hour after birth, and both were being filed in silence.
+      const pphThreshold = dto.deliveryMode === DeliveryMode.CAESAREAN ? 1000 : 500;
+      const deliverySigns: string[] = [];
+      if (dto.bloodLossMl != null && dto.bloodLossMl >= pphThreshold) {
+        deliverySigns.push(`Postpartum haemorrhage — ${dto.bloodLossMl} ml estimated blood loss`);
+      }
+      if (dto.placentaComplete === false) {
+        deliverySigns.push('Placenta incomplete — retained products');
+      }
+      if (deliverySigns.length > 0) {
+        const registration = await ancRepoTx.findOne({
+          where: { id: labour.registrationId, tenantId: requireTenantId(tenantId) },
+        });
+        if (registration) {
+          void this.escalateDangerSigns(
+            registration,
+            deliverySigns,
+            `delivery ${labour.labourNumber}`,
+            requireTenantId(tenantId),
+          );
+        }
+      }
+
       this.auditLogService
         .log({
           action: 'RECORD_DELIVERY',
@@ -619,6 +818,14 @@ export class MaternityService {
       where: { id: dto.labourRecordId, tenantId: requireTenantId(tenantId) },
     });
     if (!labour) throw new NotFoundException('Labour record not found');
+    // A birth cannot be charted against a labour that has not delivered. Before
+    // this a baby could be registered while the mother was still in the first
+    // stage, and her pregnancy stayed 'active' with a child already recorded.
+    if (labour.status !== LabourStatus.DELIVERED) {
+      throw new BadRequestException(
+        `Record the delivery first — labour ${labour.labourNumber} is '${labour.status}'`,
+      );
+    }
 
     const babyNumber = dto.babyNumber || 1;
     const duplicate = await this.outcomeRepo.findOne({
@@ -650,6 +857,8 @@ export class MaternityService {
       breastfeedingInitiated: dto.breastfeedingInitiated || false,
       vitaminKGiven: dto.vitaminKGiven || false,
       bcgGiven: dto.bcgGiven || false,
+      opv0Given: dto.opv0Given || false,
+      eyeProphylaxis: dto.eyeProphylaxis || false,
       abnormalities: dto.abnormalities,
       notes: dto.notes,
       babyStatus:
@@ -689,7 +898,10 @@ export class MaternityService {
 
   async getDashboard(facilityId: string, tenantId?: string) {
     const today = new Date();
-    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    // The server runs UTC and the hospital does not: a month that starts at
+    // UTC midnight starts at 03:00 local, so deliveries in the first three
+    // hours of the 1st were counted in the month before.
+    const { start: startOfMonth } = monthBoundsUtc(0);
     const thirtyDaysAhead = new Date();
     thirtyDaysAhead.setDate(thirtyDaysAhead.getDate() + 30);
 
@@ -811,9 +1023,11 @@ export class MaternityService {
 
     const deliveryDate = deliveryOutcome.timeOfBirth;
     const visitDate = new Date(dto.visitDate);
-    const daysPostpartum = Math.floor(
-      (visitDate.getTime() - deliveryDate.getTime()) / (1000 * 60 * 60 * 24),
-    );
+    // Calendar days where the hospital is, not a millisecond subtraction. A
+    // date-only visitDate parses to UTC midnight, so a baby born at 08:02 and
+    // seen the same morning came out at MINUS ONE day postpartum — and every
+    // other visit was liable to be a day out.
+    const daysPostpartum = this.calendarDaysBetween(deliveryDate, visitDate);
 
     // Determine mental health risk from EPDS score
     let mentalHealthRisk = MentalHealthRisk.NONE;
@@ -872,7 +1086,32 @@ export class MaternityService {
     });
     visit.tenantId = requireTenantId(tenantId);
 
-    return this.pncRepo.save(visit);
+    const saved = await this.pncRepo.save(visit);
+
+    // The postnatal danger signs the form already collects, plus the measured
+    // ones. Nothing acted on any of them before: a mother could be charted at
+    // 39.4 °C with convulsions and the visit saved without a word to anyone.
+    const dangerSigns = this.assessDangerSigns({
+      bpSystolic: dto.bpSystolic,
+      bpDiastolic: dto.bpDiastolic,
+      temperature: dto.temperature,
+    });
+    if (dto.convulsions) dangerSigns.push('Convulsions');
+    if (dto.severeHeadache) dangerSigns.push('Severe headache');
+    if (dto.blurredVision) dangerSigns.push('Blurred vision');
+    if (dto.breathingDifficulty) dangerSigns.push('Difficulty breathing');
+    if (dto.lochiaFoulSmelling) dangerSigns.push('Foul-smelling lochia');
+    if (dangerSigns.length > 0) {
+      await this.escalateDangerSigns(
+        registration,
+        dangerSigns,
+        `PNC visit #${dto.visitNumber}`,
+        requireTenantId(tenantId),
+      );
+    }
+    (saved as PostnatalVisit & { dangerSigns?: string[] }).dangerSigns = dangerSigns;
+
+    return saved;
   }
 
   async getPostnatalVisits(registrationId: string, tenantId?: string): Promise<PostnatalVisit[]> {
@@ -920,9 +1159,7 @@ export class MaternityService {
         where: { deliveryOutcomeId: delivery.id, tenantId: requireTenantId(tenantId) },
       });
       const completedVisits = visits.map((v) => v.visitNumber);
-      const daysPostpartum = Math.floor(
-        (new Date().getTime() - delivery.timeOfBirth.getTime()) / (1000 * 60 * 60 * 24),
-      );
+      const daysPostpartum = this.calendarDaysBetween(delivery.timeOfBirth, new Date());
 
       // Determine which visits are due
       const dueVisits = [];
@@ -1064,6 +1301,14 @@ export class MaternityService {
       const gracePeriodEnd = new Date(scheduledDate);
       gracePeriodEnd.setDate(gracePeriodEnd.getDate() + 14); // 2-week grace period
 
+      // The birth doses are given in the delivery room and recorded on the
+      // outcome. Generating them as merely 'scheduled' put a child who already
+      // had BCG on the due list, and then on the defaulter list — which sends
+      // the mother an SMS calling her back for a dose the baby has had.
+      const givenAtBirth =
+        (vaccine.vaccine === 'BCG' && delivery.bcgGiven) ||
+        (vaccine.vaccine === 'OPV-0' && delivery.opv0Given);
+
       const schedule = this.immunizationRepo.create({
         facilityId,
         deliveryOutcomeId,
@@ -1073,7 +1318,8 @@ export class MaternityService {
         scheduledDate,
         dueDate,
         gracePeriodEnd,
-        status: ImmunizationStatus.SCHEDULED,
+        status: givenAtBirth ? ImmunizationStatus.ADMINISTERED : ImmunizationStatus.SCHEDULED,
+        administeredAt: givenAtBirth ? birthDate : undefined,
       });
       schedule.tenantId = requireTenantId(tenantId);
 

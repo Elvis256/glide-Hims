@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -41,6 +42,13 @@ export default function StockAdjustmentsPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [showNewAdjustment, setShowNewAdjustment] = useState(false);
   const [adjustForm, setAdjustForm] = useState({ itemSearch: '', itemId: '', type: '', newQty: '', reason: '' });
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showNewAdjustmentDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showNewAdjustment,
+    onClose: () => setShowNewAdjustment(false),
+  });
 
   const { data: movements = [], isLoading } = useQuery({
     queryKey: ['stock-movements', 'adjustment', facilityId],
@@ -260,7 +268,12 @@ export default function StockAdjustmentsPage() {
 
       {/* New Adjustment Modal */}
       {showNewAdjustment && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showNewAdjustmentDialogRef}
+        >
           <div className="bg-white rounded-lg w-full max-w-lg p-6">
             <h2 className="text-lg font-bold text-gray-900 mb-4">New Stock Adjustment</h2>
             <div className="space-y-4">

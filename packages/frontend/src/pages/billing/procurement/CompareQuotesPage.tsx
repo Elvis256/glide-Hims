@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import {
@@ -36,6 +37,13 @@ export default function CompareQuotesPage() {
 
   const [selectedQuotationId, setSelectedQuotationId] = useState<string | null>(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showConfirmModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showConfirmModal,
+    onClose: () => setShowConfirmModal(false),
+  });
 
   // Fetch RFQ details
   const { data: rfq, isLoading: rfqLoading } = useQuery({
@@ -448,7 +456,12 @@ export default function CompareQuotesPage() {
 
       {/* Confirm Modal */}
       {showConfirmModal && selectedQuote && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showConfirmModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
             <div className="px-6 py-4 border-b">
               <h2 className="text-lg font-semibold">Confirm Vendor Selection</h2>

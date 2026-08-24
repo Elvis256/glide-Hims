@@ -200,6 +200,22 @@ export class AddInvoiceItemDto {
   @Min(0.01)
   @Max(MAX_MONEY)
   unitPrice: number;
+
+  // Present on InvoiceItemDto (the create-invoice path) but omitted here, so a
+  // line added to an existing invoice could not record what it was charging
+  // for. With forbidNonWhitelisted the request was rejected outright rather
+  // than silently dropping the field. invoice_items has a unique index on
+  // (reference_type, reference_id), which is what makes a charge traceable to
+  // its admission/order and prevents billing the same thing twice.
+  @IsString()
+  @IsOptional()
+  @MaxLength(64)
+  referenceType?: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(64)
+  referenceId?: string;
 }
 
 export class CreatePaymentDto {

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useDialogA11y } from '../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -173,6 +174,21 @@ export default function CashierPage() {
 
   // Payment mutation
   const [paymentError, setPaymentError] = useState<string | null>(null);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showReturnModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showReturnModal,
+    onClose: () => setShowReturnModal(false),
+  });
+  const showReturnPharmacyModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showReturnPharmacyModal,
+    onClose: () => setShowReturnPharmacyModal(false),
+  });
+  const showReturnLabModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showReturnLabModal,
+    onClose: () => setShowReturnLabModal(false),
+  });
 
   const paymentMutation = useMutation({
     mutationFn: async (data: { invoiceId: string; amount: number; method: string; reference?: string }) => {
@@ -1114,7 +1130,12 @@ export default function CashierPage() {
 
       {/* Return to Doctor Modal */}
       {showReturnModal && selectedInvoice && (
-        <div className="fixed inset-0 bg-surface-900/50 flex items-center justify-center z-50 p-4">
+        <div
+          className="fixed inset-0 bg-surface-900/50 flex items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={showReturnModalDialogRef}
+        >
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-5">
             <h3 className="font-semibold text-surface-900 mb-1 flex items-center gap-2">
               <RotateCcw className="w-4 h-4 text-amber-600" /> Return to Doctor
@@ -1148,7 +1169,12 @@ export default function CashierPage() {
 
       {/* Return to Pharmacy Modal */}
       {showReturnPharmacyModal && selectedInvoice && (
-        <div className="fixed inset-0 bg-surface-900/50 flex items-center justify-center z-50 p-4">
+        <div
+          className="fixed inset-0 bg-surface-900/50 flex items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={showReturnPharmacyModalDialogRef}
+        >
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-5">
             <h3 className="font-semibold text-surface-900 mb-1 flex items-center gap-2">
               <Pill className="w-4 h-4 text-purple-600" /> Return to Pharmacy
@@ -1182,7 +1208,12 @@ export default function CashierPage() {
 
       {/* Return to Lab Modal */}
       {showReturnLabModal && selectedInvoice && (
-        <div className="fixed inset-0 bg-surface-900/50 flex items-center justify-center z-50 p-4">
+        <div
+          className="fixed inset-0 bg-surface-900/50 flex items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={showReturnLabModalDialogRef}
+        >
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-5">
             <h3 className="font-semibold text-surface-900 mb-1 flex items-center gap-2">
               <FlaskConical className="w-4 h-4 text-cyan-600" /> Return to Lab

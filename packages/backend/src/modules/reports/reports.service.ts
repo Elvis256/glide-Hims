@@ -1,6 +1,7 @@
 import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
+import { sqlSafeTimeZone } from '../../common/utils/timezone.util';
 import {
   DashboardQueryDto,
   VisitsQueryDto,
@@ -307,6 +308,11 @@ export class ReportsService {
   // 2. Visits
   // ---------------------------------------------------------------------
   async getVisits(q: VisitsQueryDto, tenantId?: string) {
+    // Buckets are cut where the hospital is. Without this every
+    // date_trunc groups on the UTC day, so on UTC+3 the first three hours
+    // of each day land in the day before — and the figures an
+    // administrator reconciles are quietly three hours out.
+    const tz = sqlSafeTimeZone();
     const tid = this.requireTenant(tenantId);
     await this.requireFacility(tid, q.facilityId);
     if (q.departmentId) await this.requireDepartment(tid, q.facilityId, q.departmentId);
@@ -320,7 +326,7 @@ export class ReportsService {
 
     const [trend, byType, byStatus, byDept] = await Promise.all([
       this.ds.query(
-        `SELECT date_trunc('${trunc}', e.start_time) AS period,
+        `SELECT date_trunc('${trunc}', e.start_time AT TIME ZONE '${tz}') AS period,
                 COUNT(*)::int AS count
          FROM encounters e
          WHERE e.tenant_id = $1 AND e.facility_id = $2
@@ -365,6 +371,11 @@ export class ReportsService {
   // 3. Patient statistics (age/sex/department)
   // ---------------------------------------------------------------------
   async getPatientStatistics(q: PatientStatsQueryDto, tenantId?: string) {
+    // Buckets are cut where the hospital is. Without this every
+    // date_trunc groups on the UTC day, so on UTC+3 the first three hours
+    // of each day land in the day before — and the figures an
+    // administrator reconciles are quietly three hours out.
+    const tz = sqlSafeTimeZone();
     const tid = this.requireTenant(tenantId);
     await this.requireFacility(tid, q.facilityId);
     const period = q.period || 'month';
@@ -414,7 +425,7 @@ export class ReportsService {
         [tid, q.facilityId, since],
       ),
       this.ds.query(
-        `SELECT date_trunc('day', p.created_at) AS day,
+        `SELECT date_trunc('day', p.created_at AT TIME ZONE 'UTC' AT TIME ZONE '${tz}') AS day,
                 COUNT(*)::int AS count
          FROM patients p
          WHERE p.tenant_id = $1 AND p.created_at >= $2
@@ -468,6 +479,11 @@ export class ReportsService {
   // 5. Mortality
   // ---------------------------------------------------------------------
   async getMortality(q: MortalityQueryDto, tenantId?: string) {
+    // Buckets are cut where the hospital is. Without this every
+    // date_trunc groups on the UTC day, so on UTC+3 the first three hours
+    // of each day land in the day before — and the figures an
+    // administrator reconciles are quietly three hours out.
+    const tz = sqlSafeTimeZone();
     const tid = this.requireTenant(tenantId);
     await this.requireFacility(tid, q.facilityId);
     const { start, end } = this.resolveRange(q.startDate, q.endDate);
@@ -487,7 +503,7 @@ export class ReportsService {
         .catch(() => [{ deaths: 0 }]),
       this.ds
         .query(
-          `SELECT date_trunc('day', a."dischargeDate") AS day, COUNT(*)::int AS count
+          `SELECT date_trunc('day', a."dischargeDate" AT TIME ZONE 'UTC' AT TIME ZONE '${tz}') AS day, COUNT(*)::int AS count
          FROM admissions a
          JOIN encounters e ON e.id = a."encounterId"
          WHERE a.tenant_id = $1 AND e.facility_id = $2
@@ -538,6 +554,11 @@ export class ReportsService {
   // 6. Revenue
   // ---------------------------------------------------------------------
   async getRevenue(q: RevenueQueryDto, tenantId?: string) {
+    // Buckets are cut where the hospital is. Without this every
+    // date_trunc groups on the UTC day, so on UTC+3 the first three hours
+    // of each day land in the day before — and the figures an
+    // administrator reconciles are quietly three hours out.
+    const tz = sqlSafeTimeZone();
     const tid = this.requireTenant(tenantId);
     await this.requireFacility(tid, q.facilityId);
     const { start, end } = this.resolveRange(q.startDate, q.endDate);
@@ -546,7 +567,7 @@ export class ReportsService {
 
     const [trend, byService, totals] = await Promise.all([
       this.ds.query(
-        `SELECT date_trunc('${trunc}', i.created_at) AS period,
+        `SELECT date_trunc('${trunc}', i.created_at AT TIME ZONE 'UTC' AT TIME ZONE '${tz}') AS period,
                 COALESCE(SUM(i.total_amount),0)::float AS revenue,
                 COALESCE(SUM(i.amount_paid),0)::float AS collected
          FROM invoices i
@@ -589,6 +610,11 @@ export class ReportsService {
   // 7. Collections
   // ---------------------------------------------------------------------
   async getCollections(q: CollectionsQueryDto, tenantId?: string) {
+    // Buckets are cut where the hospital is. Without this every
+    // date_trunc groups on the UTC day, so on UTC+3 the first three hours
+    // of each day land in the day before — and the figures an
+    // administrator reconciles are quietly three hours out.
+    const tz = sqlSafeTimeZone();
     const tid = this.requireTenant(tenantId);
     await this.requireFacility(tid, q.facilityId);
     const { start, end } = this.resolveRange(q.startDate, q.endDate);
@@ -614,7 +640,7 @@ export class ReportsService {
         params,
       ),
       this.ds.query(
-        `SELECT date_trunc('day', p.paid_at) AS day,
+        `SELECT date_trunc('day', p.paid_at AT TIME ZONE '${tz}') AS day,
                 COALESCE(SUM(p.amount),0)::float AS amount
          FROM payments p
          JOIN invoices i ON i.id = p.invoice_id
@@ -642,6 +668,11 @@ export class ReportsService {
   // 8. Outstanding
   // ---------------------------------------------------------------------
   async getOutstanding(q: OutstandingQueryDto, tenantId?: string) {
+    // Buckets are cut where the hospital is. Without this every
+    // date_trunc groups on the UTC day, so on UTC+3 the first three hours
+    // of each day land in the day before — and the figures an
+    // administrator reconciles are quietly three hours out.
+    const tz = sqlSafeTimeZone();
     const tid = this.requireTenant(tenantId);
     await this.requireFacility(tid, q.facilityId);
     const asOf = q.asOf ? new Date(q.asOf) : new Date();
@@ -649,9 +680,9 @@ export class ReportsService {
     const aging = await this.ds.query(
       `SELECT
          CASE
-           WHEN (DATE($3) - DATE(i.created_at)) <= 30 THEN '0-30'
-           WHEN (DATE($3) - DATE(i.created_at)) <= 60 THEN '31-60'
-           WHEN (DATE($3) - DATE(i.created_at)) <= 90 THEN '61-90'
+           WHEN (DATE($3 AT TIME ZONE '${tz}') - DATE(i.created_at AT TIME ZONE 'UTC' AT TIME ZONE '${tz}')) <= 30 THEN '0-30'
+           WHEN (DATE($3 AT TIME ZONE '${tz}') - DATE(i.created_at AT TIME ZONE 'UTC' AT TIME ZONE '${tz}')) <= 60 THEN '31-60'
+           WHEN (DATE($3 AT TIME ZONE '${tz}') - DATE(i.created_at AT TIME ZONE 'UTC' AT TIME ZONE '${tz}')) <= 90 THEN '61-90'
            ELSE '90+'
          END AS bucket,
          COUNT(*)::int AS invoices,
@@ -669,7 +700,7 @@ export class ReportsService {
     const top = await this.ds.query(
       `SELECT i.id, i.invoice_number, p.full_name AS patient,
               i.balance_due::float AS balance,
-              (DATE($3) - DATE(i.created_at))::int AS age_days,
+              (DATE($3 AT TIME ZONE '${tz}') - DATE(i.created_at AT TIME ZONE 'UTC' AT TIME ZONE '${tz}'))::int AS age_days,
               i.created_at
        FROM invoices i
        JOIN patients p ON p.id = i.patient_id
@@ -740,6 +771,11 @@ export class ReportsService {
   // 10. Consumption
   // ---------------------------------------------------------------------
   async getConsumption(q: ConsumptionQueryDto, tenantId?: string) {
+    // Buckets are cut where the hospital is. Without this every
+    // date_trunc groups on the UTC day, so on UTC+3 the first three hours
+    // of each day land in the day before — and the figures an
+    // administrator reconciles are quietly three hours out.
+    const tz = sqlSafeTimeZone();
     const tid = this.requireTenant(tenantId);
     await this.requireFacility(tid, q.facilityId);
     await this.requireItem(tid, q.facilityId, q.itemId);
@@ -767,7 +803,7 @@ export class ReportsService {
     );
 
     const trend = await this.ds.query(
-      `SELECT date_trunc('day', sl.created_at) AS day,
+      `SELECT date_trunc('day', sl.created_at AT TIME ZONE 'UTC' AT TIME ZONE '${tz}') AS day,
               SUM(ABS(sl.quantity))::int AS quantity
        FROM stock_ledger sl
        WHERE sl.tenant_id = $1 AND sl.facility_id = $2

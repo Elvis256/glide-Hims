@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useCallback, useEffect } from 'react';
+import { useState, useMemo, useRef, useCallback, useEffect, useId } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -551,6 +551,7 @@ function ProgressChart({ measurements }: { measurements: WoundMeasurement[] }) {
 }
 
 export default function WoundAssessmentPage() {
+  const fid = useId();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { hasPermission } = usePermissions();
@@ -1203,8 +1204,8 @@ ${selectedWound.treatmentPlan.consults.length > 0 ? `Scheduled consultations: ${
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {/* Location */}
                       <div>
-                        <label className="text-sm font-medium text-gray-700 mb-1 block">Wound Location *</label>
-                        <select
+                        <label htmlFor={`${fid}-wound-location`} className="text-sm font-medium text-gray-700 mb-1 block">Wound Location *</label>
+                        <select id={`${fid}-wound-location`}
                           value={showNewForm ? assessment.woundLocation : selectedWound?.location || ''}
                           onChange={(e) => setAssessment(prev => ({ ...prev, woundLocation: e.target.value }))}
                           disabled={!showNewForm && !canUpdate}
@@ -1219,8 +1220,8 @@ ${selectedWound.treatmentPlan.consults.length > 0 ? `Scheduled consultations: ${
 
                       {/* Type */}
                       <div>
-                        <label className="text-sm font-medium text-gray-700 mb-1 block">Wound Type *</label>
-                        <select
+                        <label htmlFor={`${fid}-wound-type`} className="text-sm font-medium text-gray-700 mb-1 block">Wound Type *</label>
+                        <select id={`${fid}-wound-type`}
                           value={showNewForm ? assessment.woundType : selectedWound?.type || ''}
                           onChange={(e) => setAssessment(prev => ({ ...prev, woundType: e.target.value }))}
                           disabled={!showNewForm && !canUpdate}
@@ -1266,8 +1267,8 @@ ${selectedWound.treatmentPlan.consults.length > 0 ? `Scheduled consultations: ${
                         </label>
                         <div className="grid grid-cols-4 gap-3">
                           <div>
-                            <label className="text-xs text-gray-500 mb-1 block">Length</label>
-                            <input
+                            <label htmlFor={`${fid}-length`} className="text-xs text-gray-500 mb-1 block">Length</label>
+                            <input id={`${fid}-length`}
                               type="number"
                               step="0.1"
                               value={showNewForm ? assessment.length : ''}
@@ -1278,8 +1279,8 @@ ${selectedWound.treatmentPlan.consults.length > 0 ? `Scheduled consultations: ${
                             />
                           </div>
                           <div>
-                            <label className="text-xs text-gray-500 mb-1 block">Width</label>
-                            <input
+                            <label htmlFor={`${fid}-width`} className="text-xs text-gray-500 mb-1 block">Width</label>
+                            <input id={`${fid}-width`}
                               type="number"
                               step="0.1"
                               value={showNewForm ? assessment.width : ''}
@@ -1290,8 +1291,8 @@ ${selectedWound.treatmentPlan.consults.length > 0 ? `Scheduled consultations: ${
                             />
                           </div>
                           <div>
-                            <label className="text-xs text-gray-500 mb-1 block">Depth</label>
-                            <input
+                            <label htmlFor={`${fid}-depth`} className="text-xs text-gray-500 mb-1 block">Depth</label>
+                            <input id={`${fid}-depth`}
                               type="number"
                               step="0.1"
                               value={showNewForm ? assessment.depth : ''}
@@ -1353,11 +1354,11 @@ ${selectedWound.treatmentPlan.consults.length > 0 ? `Scheduled consultations: ${
 
                       {/* Exudate */}
                       <div>
-                        <label className="text-sm font-medium text-gray-700 mb-1 block flex items-center gap-2">
+                        <label htmlFor={`${fid}-exudate-amount`} className="text-sm font-medium text-gray-700 mb-1 block flex items-center gap-2">
                           <Droplets className="w-4 h-4" />
                           Exudate Amount
                         </label>
-                        <select
+                        <select id={`${fid}-exudate-amount`}
                           value={showNewForm ? assessment.exudateAmount : ''}
                           onChange={(e) => setAssessment(prev => ({ ...prev, exudateAmount: e.target.value }))}
                           disabled={!showNewForm && !canUpdate}
@@ -1370,8 +1371,8 @@ ${selectedWound.treatmentPlan.consults.length > 0 ? `Scheduled consultations: ${
                         </select>
                       </div>
                       <div>
-                        <label className="text-sm font-medium text-gray-700 mb-1 block">Exudate Type</label>
-                        <select
+                        <label htmlFor={`${fid}-exudate-type`} className="text-sm font-medium text-gray-700 mb-1 block">Exudate Type</label>
+                        <select id={`${fid}-exudate-type`}
                           value={showNewForm ? assessment.exudateType : ''}
                           onChange={(e) => setAssessment(prev => ({ ...prev, exudateType: e.target.value }))}
                           disabled={!showNewForm && !canUpdate}
@@ -1432,11 +1433,11 @@ ${selectedWound.treatmentPlan.consults.length > 0 ? `Scheduled consultations: ${
 
                       {/* Odor */}
                       <div>
-                        <label className="text-sm font-medium text-gray-700 mb-1 block flex items-center gap-2">
+                        <label htmlFor={`${fid}-odor`} className="text-sm font-medium text-gray-700 mb-1 block flex items-center gap-2">
                           <ThermometerSun className="w-4 h-4" />
                           Odor
                         </label>
-                        <select
+                        <select id={`${fid}-odor`}
                           value={showNewForm ? assessment.odor : ''}
                           onChange={(e) => setAssessment(prev => ({ ...prev, odor: e.target.value }))}
                           disabled={!showNewForm && !canUpdate}
@@ -1482,8 +1483,8 @@ ${selectedWound.treatmentPlan.consults.length > 0 ? `Scheduled consultations: ${
 
                       {/* Notes */}
                       <div className="md:col-span-2">
-                        <label className="text-sm font-medium text-gray-700 mb-1 block">Additional Notes</label>
-                        <textarea
+                        <label htmlFor={`${fid}-additional-notes`} className="text-sm font-medium text-gray-700 mb-1 block">Additional Notes</label>
+                        <textarea id={`${fid}-additional-notes`}
                           rows={2}
                           value={showNewForm ? assessment.notes : ''}
                           onChange={(e) => setAssessment(prev => ({ ...prev, notes: e.target.value }))}
@@ -1619,8 +1620,8 @@ ${selectedWound.treatmentPlan.consults.length > 0 ? `Scheduled consultations: ${
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {/* Dressing Type */}
                       <div>
-                        <label className="text-sm font-medium text-gray-700 mb-1 block">Current Dressing Type</label>
-                        <select
+                        <label htmlFor={`${fid}-current-dressing-type`} className="text-sm font-medium text-gray-700 mb-1 block">Current Dressing Type</label>
+                        <select id={`${fid}-current-dressing-type`}
                           value={showNewForm ? assessment.dressingType : selectedWound?.treatmentPlan?.dressingType || ''}
                           onChange={(e) => setAssessment(prev => ({ ...prev, dressingType: e.target.value }))}
                           disabled={!showNewForm && !canUpdate}
@@ -1635,8 +1636,8 @@ ${selectedWound.treatmentPlan.consults.length > 0 ? `Scheduled consultations: ${
 
                       {/* Change Frequency */}
                       <div>
-                        <label className="text-sm font-medium text-gray-700 mb-1 block">Dressing Change Frequency</label>
-                        <select
+                        <label htmlFor={`${fid}-dressing-change-frequency`} className="text-sm font-medium text-gray-700 mb-1 block">Dressing Change Frequency</label>
+                        <select id={`${fid}-dressing-change-frequency`}
                           value={showNewForm ? assessment.changeFrequency : selectedWound?.treatmentPlan?.changeFrequency || ''}
                           onChange={(e) => setAssessment(prev => ({ ...prev, changeFrequency: e.target.value }))}
                           disabled={!showNewForm && !canUpdate}

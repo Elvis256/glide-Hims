@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Briefcase, Users, FileText, CheckCircle, Clock, Plus, Loader2, Eye, Trash2, Edit } from 'lucide-react';
 import { hrService, type JobPosting, type CreateJobPostingDto } from '../../../services/hr';
@@ -6,6 +7,13 @@ import { facilitiesService } from '../../../services';
 
 export default function RecruitmentPage() {
   const [showModal, setShowModal] = useState(false);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showModal,
+    onClose: () => setShowModal(false),
+  });
   const [formData, setFormData] = useState<Partial<CreateJobPostingDto>>({
     title: '',
     description: '',
@@ -277,7 +285,12 @@ export default function RecruitmentPage() {
 
       {/* Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showModalDialogRef}
+        >
           <div className="bg-white rounded-lg p-6 w-full max-w-lg">
             <h2 className="text-xl font-semibold mb-4">Post New Job</h2>
             <div className="space-y-4">

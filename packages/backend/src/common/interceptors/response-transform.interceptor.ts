@@ -37,6 +37,22 @@ export class ResponseTransformInterceptor<T> implements NestInterceptor<T, Stand
 
     return next.handle().pipe(
       map((data) => {
+        // A handler holding @Res() writes the reply itself, and the idiom for
+        // that is `return res.status(404).json(...)` — which hands the Express
+        // Response BACK as the handler's value. Wrapping it put the Response
+        // object in `data`, and serialising that walks the socket and parser
+        // internals: "TypeError: this.removeListener is not a function". The
+        // connection is left wedged, and it does not recover — a single
+        // authenticated GET to /updates/download/:version stopped the API
+        // answering anything at all, for every user of the hospital. Twelve
+        // handlers across five controllers use that idiom.
+        //
+        // If the reply is already committed, or the value IS the reply, there
+        // is nothing left to wrap and nothing safe to serialise.
+        if (response.headersSent || data === response) {
+          return undefined as unknown as StandardResponse<T>;
+        }
+
         // If the response already has our envelope shape, pass through
         if (data && typeof data === 'object' && 'statusCode' in data && 'data' in data) {
           return data;

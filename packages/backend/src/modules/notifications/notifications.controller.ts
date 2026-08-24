@@ -23,6 +23,7 @@ import {
   SendBulkNotificationDto,
 } from './dto/notification.dto';
 import { NotificationType } from '../../database/entities/notification-config.entity';
+import { FacilityId } from '../../common/decorators/facility-id.decorator';
 
 @ApiTags('Notifications')
 @ApiBearerAuth()
@@ -37,7 +38,7 @@ export class NotificationsController {
   @ApiQuery({ name: 'facilityId', required: true })
   @ApiQuery({ name: 'type', required: false, enum: NotificationType })
   async getConfig(
-    @Query('facilityId') facilityId: string,
+    @FacilityId() facilityId: string,
     @Query('type') type?: NotificationType,
     @Request() req?: any,
   ) {
@@ -63,7 +64,7 @@ export class NotificationsController {
   @ApiOperation({ summary: 'Send immediate reminder to patient' })
   async sendReminder(
     @Body() dto: SendReminderDto,
-    @Query('facilityId') facilityId: string,
+    @FacilityId() facilityId: string,
     @CurrentUser() user: any,
     @Request() req: any,
   ) {
@@ -80,7 +81,7 @@ export class NotificationsController {
   @ApiOperation({ summary: 'Schedule a reminder for later' })
   async scheduleReminder(
     @Body() dto: ScheduleReminderDto,
-    @Query('facilityId') facilityId: string,
+    @FacilityId() facilityId: string,
     @CurrentUser() user: any,
     @Request() req: any,
   ) {
@@ -99,7 +100,7 @@ export class NotificationsController {
   @ApiQuery({ name: 'patientId', required: false })
   @ApiQuery({ name: 'limit', required: false })
   async getHistory(
-    @Query('facilityId') facilityId: string,
+    @FacilityId() facilityId: string,
     @Query('patientId') patientId?: string,
     @Query('limit') limit?: number,
     @Request() req?: any,
@@ -132,29 +133,29 @@ export class NotificationsController {
   @AuthWithPermissions('notifications.read')
   @ApiOperation({ summary: 'Get message templates' })
   @ApiQuery({ name: 'facilityId', required: true })
-  async getTemplates(@Query('facilityId') facilityId: string) {
-    return this.notificationsService.getTemplates(facilityId);
+  async getTemplates(@FacilityId() facilityId: string, @Request() req: any) {
+    return this.notificationsService.getTemplates(facilityId, req.user?.tenantId);
   }
 
   @Post('templates')
   @AuthWithPermissions('notifications.create')
   @ApiOperation({ summary: 'Create a message template' })
-  async createTemplate(@Body() dto: any) {
-    return this.notificationsService.createTemplate(dto);
+  async createTemplate(@Body() dto: any, @Request() req: any) {
+    return this.notificationsService.createTemplate(dto, req.user?.tenantId);
   }
 
   @Put('templates/:id')
   @AuthWithPermissions('notifications.update')
   @ApiOperation({ summary: 'Update a message template' })
-  async updateTemplate(@Param('id') id: string, @Body() dto: any) {
-    return this.notificationsService.updateTemplate(id, dto);
+  async updateTemplate(@Param('id') id: string, @Body() dto: any, @Request() req: any) {
+    return this.notificationsService.updateTemplate(id, dto, req.user?.tenantId);
   }
 
   @Delete('templates/:id')
   @AuthWithPermissions('notifications.delete')
   @ApiOperation({ summary: 'Delete a message template' })
-  async deleteTemplate(@Param('id') id: string) {
-    return this.notificationsService.deleteTemplate(id);
+  async deleteTemplate(@Param('id') id: string, @Request() req: any) {
+    return this.notificationsService.deleteTemplate(id, req.user?.tenantId);
   }
 
   // Bulk messaging

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
@@ -32,6 +33,13 @@ export default function AssetDepreciationPage() {
   const [year, setYear] = useState<number>(new Date().getFullYear());
   const [showRunModal, setShowRunModal] = useState(false);
   const [runPeriod, setRunPeriod] = useState('');
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showRunModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showRunModal,
+    onClose: () => setShowRunModal(false),
+  });
 
   const { data: assets = [], isLoading: assetsLoading } = useQuery({
     queryKey: ['assets-depreciation', facilityId],
@@ -344,7 +352,12 @@ export default function AssetDepreciationPage() {
 
       {/* Run Depreciation Modal */}
       {showRunModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showRunModalDialogRef}
+        >
           <div className="bg-white rounded-xl w-full max-w-md">
             <div className="p-6 border-b">
               <h2 className="text-xl font-bold text-gray-900">Run Depreciation</h2>

@@ -44,8 +44,18 @@ export class DeteriorationMonitorService {
     try {
       const { patientId, newsScore, tenantId, facilityId } = payload;
       const tid = requireTenantId(tenantId);
+      if (newsScore < 5) return;
 
-      // Find the patient's active queue entry
+      // The patient's OPD queue entry, IF they have one. This whole handler
+      // used to return here when they did not — and the notification lived
+      // inside that branch. So a NEWS score only ever reached anybody for an
+      // outpatient holding a queue ticket: every inpatient, every woman in
+      // labour and every patient in the emergency department was invisible to
+      // it. A ward patient charted at RR 25, SpO2 92 on oxygen scores NEWS 7 —
+      // "high risk, emergency assessment" — with no single value abnormal
+      // enough to trip the critical-vital alert either, so nobody was told at
+      // all. Escalating the queue is now one optional consequence; telling
+      // somebody is unconditional.
       const activeQueue = await this.queueRepo.findOne({
         where: {
           patientId,
@@ -55,68 +65,103 @@ export class DeteriorationMonitorService {
         order: { createdAt: 'DESC' },
       });
 
-      if (!activeQueue) return;
-
-      // Determine target priority based on NEWS score
-      let targetPriority: QueuePriority;
-      if (newsScore >= 7) {
-        targetPriority = QueuePriority.EMERGENCY;
-      } else if (newsScore >= 5) {
-        targetPriority = QueuePriority.URGENT;
-      } else {
-        return; // No escalation needed
-      }
+      const targetPriority =
+        newsScore >= 7 ? QueuePriority.EMERGENCY : QueuePriority.URGENT;
+      let escalated = false;
+      let oldPriority: QueuePriority | undefined;
 
       // Only escalate if current priority is lower (higher number = lower priority)
-      if (activeQueue.priority <= targetPriority) return;
+      if (activeQueue && activeQueue.priority > targetPriority) {
+        oldPriority = activeQueue.priority;
+        activeQueue.priority = targetPriority;
+        activeQueue.priorityReason = `Auto-escalated: NEWS score ${newsScore} (${payload.clinicalRiskLevel} risk)`;
+        activeQueue.lastEscalatedAt = new Date();
+        activeQueue.escalationCount = (activeQueue.escalationCount || 0) + 1;
+        await this.queueRepo.save(activeQueue);
+        escalated = true;
 
-      const oldPriority = activeQueue.priority;
-      activeQueue.priority = targetPriority;
-      activeQueue.priorityReason = `Auto-escalated: NEWS score ${newsScore} (${payload.clinicalRiskLevel} risk)`;
-      activeQueue.lastEscalatedAt = new Date();
-      activeQueue.escalationCount = (activeQueue.escalationCount || 0) + 1;
-
-      await this.queueRepo.save(activeQueue);
-
-      this.logger.warn(
-        `Patient ${patientId} escalated from priority ${oldPriority} to ${targetPriority} (NEWS=${newsScore})`,
-      );
-
-      // Notify charge nurse via in-app notification
-      try {
-        const nurseIds = await this.notifications
-          .getUserIdsByRole(
-            ['charge_nurse', 'nurse_supervisor', 'nurse'],
-            activeQueue.facilityId,
-            tenantId,
-          )
-          .catch(() => [] as string[]);
-        const targets = [...new Set(nurseIds)].filter(Boolean);
-        if (targets.length > 0) {
-          await this.notifications.notifyMany(
-            targets,
-            {
-              type: InAppNotificationType.GENERAL,
-              title: 'Patient Deterioration Alert',
-              message: `Patient in queue ${activeQueue.ticketNumber} has NEWS score ${newsScore} (${payload.clinicalRiskLevel} risk). Priority auto-escalated to ${targetPriority === QueuePriority.EMERGENCY ? 'EMERGENCY' : 'URGENT'}.`,
-              metadata: {
-                kind: 'deterioration_escalation',
-                queueId: activeQueue.id,
-                patientId,
-                newsScore,
-                clinicalRiskLevel: payload.clinicalRiskLevel,
-                previousPriority: oldPriority,
-                newPriority: targetPriority,
-              },
-            },
-            tenantId,
-          );
-        }
-      } catch (e: any) {
-        this.logger.warn(`Notification failed for deterioration: ${e?.message}`);
+        this.logger.warn(
+          `Patient ${patientId} escalated from priority ${oldPriority} to ${targetPriority} (NEWS=${newsScore})`,
+        );
       }
+
+      await this.notifyDeterioration(payload, tid, activeQueue, escalated, oldPriority);
     } catch (err: any) {
       this.logger.error(`Deterioration handler failed: ${err?.message}`, err?.stack);
+    }
+  }
+
+  /** Tell the ward. Never throws — an alert that cannot be delivered must not
+   *  roll back the observation that triggered it. */
+  private async notifyDeterioration(
+    payload: DeteriorationEvent,
+    tenantId: string,
+    activeQueue: Queue | null,
+    escalated: boolean,
+    oldPriority?: QueuePriority,
+  ): Promise<void> {
+    const { patientId, newsScore, encounterId } = payload;
+    try {
+      const facilityId = activeQueue?.facilityId || payload.facilityId;
+
+      // A NEWS of 7 or more is "urgent or emergency response" in NEWS2 terms —
+      // a nurse alone cannot provide that, so doctors are told as well.
+      const roles =
+        newsScore >= 7
+          ? ['charge_nurse', 'nurse_supervisor', 'nurse', 'doctor', 'medical_officer']
+          : ['charge_nurse', 'nurse_supervisor', 'nurse'];
+
+      const targets = new Set<string>(
+        await this.notifications
+          .getUserIdsByRole(roles, facilityId, tenantId)
+          .catch(() => [] as string[]),
+      );
+
+      // Whoever is actually looking after this patient, wherever they are.
+      if (encounterId) {
+        const encounter = await this.encounterRepo
+          .findOne({ where: { id: encounterId }, select: ['id', 'attendingProviderId'] })
+          .catch(() => null);
+        if (encounter?.attendingProviderId) targets.add(encounter.attendingProviderId);
+      }
+
+      const recipients = [...targets].filter(Boolean);
+      if (recipients.length === 0) {
+        this.logger.warn(
+          `NEWS ${newsScore} for patient ${patientId} but no recipient could be resolved`,
+        );
+        return;
+      }
+
+      const where = activeQueue
+        ? `in queue ${activeQueue.ticketNumber}`
+        : 'on the ward';
+      const escalation = escalated
+        ? ` Priority auto-escalated to ${payload.newsScore >= 7 ? 'EMERGENCY' : 'URGENT'}.`
+        : '';
+
+      await this.notifications.notifyMany(
+        recipients,
+        {
+          type: InAppNotificationType.GENERAL,
+          title: newsScore >= 7 ? 'URGENT: Patient Deterioration' : 'Patient Deterioration Alert',
+          message: `Patient ${where} has NEWS score ${newsScore} (${payload.clinicalRiskLevel} risk).${escalation}`,
+          facilityId,
+          metadata: {
+            kind: 'deterioration_escalation',
+            queueId: activeQueue?.id ?? null,
+            patientId,
+            encounterId: encounterId ?? null,
+            newsScore,
+            clinicalRiskLevel: payload.clinicalRiskLevel,
+            previousPriority: oldPriority ?? null,
+            newPriority: escalated ? (newsScore >= 7 ? QueuePriority.EMERGENCY : QueuePriority.URGENT) : null,
+          },
+        },
+        tenantId,
+      );
+    } catch (e: any) {
+      this.logger.warn(`Notification failed for deterioration: ${e?.message}`);
     }
   }
 
@@ -146,8 +191,10 @@ export class DeteriorationMonitorService {
 
       for (const queue of staleQueues) {
         // Check if last vital for this patient had NEWS >= 3
+        // Scoped to the queue's own tenant: this cron runs cross-tenant in
+        // system context, where an unscoped read is not held back by RLS.
         const lastVital = await this.vitalRepo.findOne({
-          where: { patientId: queue.patientId },
+          where: { patientId: queue.patientId, tenantId: queue.tenantId },
           order: { recordedAt: 'DESC' },
         });
 

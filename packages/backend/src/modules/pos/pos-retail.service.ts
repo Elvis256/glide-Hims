@@ -105,6 +105,7 @@ export class PosRetailService {
 
     let savedReturn!: PharmacyReturn;
     let totalRefund = 0;
+    let glReversalFacilityId: string | null = null;
 
     await this.dataSource.transaction(async (manager) => {
       // Lock the sale row and validate INSIDE the txn: two concurrent
@@ -141,18 +142,29 @@ export class PosRetailService {
         restockable: boolean;
       }> = [];
 
+      // Quantities claimed by EARLIER LINES OF THIS SAME REQUEST. The map above
+      // only knows about previously-committed returns, so each line was checked
+      // against the untouched balance and a repeated line passed every time:
+      // returning 5 and 5 of a quantity of 5 was accepted, refunding 100,000 on
+      // a 50,000 sale and restocking ten of five. The prior-returns check, the
+      // row lock and the concurrent-return guard were all correct — the
+      // duplicate simply never met them. Charged against the same balance now.
+      const claimedInThisRequest = new Map<string, number>();
+
       for (const line of dto.items) {
         const saleItem = sale.items.find((i) => i.id === line.saleItemId);
         if (!saleItem) {
           throw new BadRequestException(`Sale item ${line.saleItemId} not found in sale`);
         }
         const alreadyReturned = returnedQtyMap.get(saleItem.id) || 0;
-        const returnable = saleItem.quantity - alreadyReturned;
+        const claimed = claimedInThisRequest.get(saleItem.id) || 0;
+        const returnable = saleItem.quantity - alreadyReturned - claimed;
         if (line.qtyReturned <= 0 || line.qtyReturned > returnable) {
           throw new BadRequestException(
             `Cannot return ${line.qtyReturned} of "${saleItem.itemName}" — returnable qty is ${returnable}`,
           );
         }
+        claimedInThisRequest.set(saleItem.id, claimed + line.qtyReturned);
         const lineGross = (Number(saleItem.grossAmount) / saleItem.quantity) * line.qtyReturned;
         totalRefund += lineGross;
         returnItemsData.push({
@@ -243,26 +255,14 @@ export class PosRetailService {
         }
       }
 
-      // GL reversal (best-effort)
-      if (facilityId) {
-        try {
-          await this.financeService.autoPostPharmacySaleJournal(
-            {
-              facilityId,
-              saleNumber: `RETURN:${savedReturn.returnNumber}`,
-              totalAmount: -totalRefund,
-              paymentMethod: savedReturn.paymentMethod,
-              userId,
-            },
-            tenantId,
-          );
-        } catch (err) {
-          this.logger.warn(`GL reversal post failed for return ${savedReturn.id}: ${err.message}`);
-        }
-      }
+      // GL reversal is posted after this transaction commits — see below.
+      glReversalFacilityId = facilityId || null;
 
       // EFRIS credit note (best-effort)
       try {
+        // txn-connection-ok: a single findOne on the tenant's EFRIS settings,
+        // which this return does not write. The enqueue below takes the
+        // manager so the outbox row commits with the return.
         const cfg = await this.efrisService.getConfig(tenantId);
         if (cfg?.isEnabled) {
           const idempKey = `return:${savedReturn.id}:credit_note`;
@@ -287,6 +287,29 @@ export class PosRetailService {
         this.logger.warn(`EFRIS credit note enqueue failed: ${err.message}`);
       }
     });
+
+    // Post the GL reversal after the commit.
+    //
+    // It ran inside the transaction on FinanceService's own connection, so
+    // the reversing journal committed the moment it was written while the
+    // return beside it could still roll back — leaving the ledger showing a
+    // refund that never happened. Best-effort, as before.
+    if (glReversalFacilityId) {
+      try {
+        await this.financeService.autoPostPharmacySaleJournal(
+          {
+            facilityId: glReversalFacilityId,
+            saleNumber: `RETURN:${savedReturn.returnNumber}`,
+            totalAmount: -totalRefund,
+            paymentMethod: savedReturn.paymentMethod,
+            userId,
+          },
+          tenantId,
+        );
+      } catch (err: any) {
+        this.logger.warn(`GL reversal post failed for return ${savedReturn.id}: ${err.message}`);
+      }
+    }
 
     this.eventEmitter.emit('pharmacy.return.completed', {
       returnId: savedReturn.id,
@@ -387,7 +410,7 @@ export class PosRetailService {
 
     const facilityId = sale.store?.facilityId;
 
-    await this.dataSource.transaction(async (manager) => {
+    const { voidGlFacilityId, voidGl } = await this.dataSource.transaction(async (manager) => {
       // Lock + re-validate inside the txn (concurrent void/void and
       // void/return raced the checks and double-restocked)
       const lockedSale = await manager.findOne(PharmacySale, {
@@ -431,6 +454,8 @@ export class PosRetailService {
 
       // EFRIS credit note (full void)
       try {
+        // txn-connection-ok: reads the tenant's EFRIS settings, which the
+        // void does not write. enqueueDocument below is given the manager.
         const cfg = await this.efrisService.getConfig(tenantId);
         if (cfg?.isEnabled) {
           await this.efrisService.enqueueDocument(
@@ -448,24 +473,37 @@ export class PosRetailService {
         this.logger.warn(`EFRIS void enqueue failed: ${err.message}`);
       }
 
-      // GL reversal (best-effort)
-      if (facilityId) {
-        try {
-          await this.financeService.autoPostPharmacySaleJournal(
-            {
-              facilityId,
-              saleNumber: `VOID:${sale.saleNumber}`,
-              totalAmount: -Number(sale.totalAmount),
-              paymentMethod: sale.paymentMethod,
-              userId,
-            },
-            tenantId,
-          );
-        } catch (err) {
-          this.logger.warn(`GL void reversal failed: ${err.message}`);
-        }
-      }
+      // GL reversal is posted after this transaction commits — see below.
+      return {
+        voidGlFacilityId: facilityId || null,
+        voidGl: {
+          saleNumber: sale.saleNumber,
+          totalAmount: Number(sale.totalAmount),
+          paymentMethod: sale.paymentMethod,
+        },
+      };
     });
+
+    // Post the GL reversal after the commit. It ran inside the transaction on
+    // FinanceService's own connection, so the reversing journal committed the
+    // moment it was written while the void beside it could still roll back —
+    // leaving the ledger showing a sale reversed that is still live.
+    if (voidGlFacilityId && voidGl) {
+      try {
+        await this.financeService.autoPostPharmacySaleJournal(
+          {
+            facilityId: voidGlFacilityId,
+            saleNumber: `VOID:${voidGl.saleNumber}`,
+            totalAmount: -voidGl.totalAmount,
+            paymentMethod: voidGl.paymentMethod,
+            userId,
+          },
+          tenantId,
+        );
+      } catch (err: any) {
+        this.logger.warn(`GL void reversal failed: ${err.message}`);
+      }
+    }
 
     this.eventEmitter.emit('pharmacy.sale.voided', { saleId, tenantId, userId });
     return this.saleRepo.findOne({
@@ -702,7 +740,12 @@ export class PosRetailService {
       .leftJoinAndSelect('s.store', 'store')
       .where('s.tenant_id = :tenantId', { tenantId })
       .andWhere('s.status = :status', { status: SaleStatus.COMPLETED })
-      .orderBy('s.created_at', 'DESC')
+      // Property name, not column: take() alongside leftJoinAndSelect sends
+      // TypeORM through its DISTINCT-subquery path, where an unresolvable
+      // orderBy throws "Cannot read properties of undefined (reading
+      // 'databaseName')" — the same fault that made
+      // /clinical-notes/patient/:id/history 500 for every patient.
+      .orderBy('s.createdAt', 'DESC')
       .take(200);
 
     if (query.from) qb.andWhere('s.created_at >= :from', { from: new Date(query.from) });

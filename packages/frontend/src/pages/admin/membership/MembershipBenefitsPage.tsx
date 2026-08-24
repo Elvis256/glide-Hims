@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useId } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { toast } from 'sonner';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, getApiErrorMessage } from '../../../services/api';
@@ -124,6 +125,7 @@ const emptyFormData: BenefitFormData = {
 };
 
 export default function MembershipBenefitsPage() {
+  const fid = useId();
   const queryClient = useQueryClient();
   const facilityId = useFacilityId();
   const [searchTerm, setSearchTerm] = useState('');
@@ -131,6 +133,13 @@ export default function MembershipBenefitsPage() {
   const [showModal, setShowModal] = useState(false);
   const [editingBenefit, setEditingBenefit] = useState<BenefitWithScheme | null>(null);
   const [formData, setFormData] = useState<BenefitFormData>(emptyFormData);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showModal,
+    onClose: () => setShowModal(false),
+  });
 
   const { data: schemes = [], isLoading: loading } = useQuery({
     queryKey: ['membership-schemes', facilityId],
@@ -331,7 +340,12 @@ export default function MembershipBenefitsPage() {
     <div className="h-[calc(100vh-120px)] flex flex-col bg-gray-50">
       {/* Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showModalDialogRef}
+        >
           <div className="bg-white rounded-lg shadow-xl w-full max-w-lg mx-4">
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <h2 className="text-lg font-semibold">
@@ -346,10 +360,10 @@ export default function MembershipBenefitsPage() {
             </div>
             <div className="px-6 py-4 space-y-4 max-h-[60vh] overflow-y-auto">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor={`${fid}-scheme`} className="block text-sm font-medium text-gray-700 mb-1">
                   Scheme *
                 </label>
-                <select
+                <select id={`${fid}-scheme`}
                   value={formData.schemeId}
                   onChange={(e) => setFormData(prev => ({ ...prev, schemeId: e.target.value }))}
                   className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -361,10 +375,10 @@ export default function MembershipBenefitsPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor={`${fid}-benefit-name`} className="block text-sm font-medium text-gray-700 mb-1">
                   Benefit Name *
                 </label>
-                <input
+                <input id={`${fid}-benefit-name`}
                   type="text"
                   value={formData.name}
                   onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
@@ -374,10 +388,10 @@ export default function MembershipBenefitsPage() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label htmlFor={`${fid}-description`} className="block text-sm font-medium text-gray-700 mb-1">
                     Description
                   </label>
-                  <input
+                  <input id={`${fid}-description`}
                     type="text"
                     value={formData.description}
                     onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
@@ -386,10 +400,10 @@ export default function MembershipBenefitsPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label htmlFor={`${fid}-category`} className="block text-sm font-medium text-gray-700 mb-1">
                     Category
                   </label>
-                  <input
+                  <input id={`${fid}-category`}
                     type="text"
                     value={formData.category}
                     onChange={(e) => setFormData(prev => ({ ...prev, category: e.target.value }))}
@@ -399,10 +413,10 @@ export default function MembershipBenefitsPage() {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor={`${fid}-type`} className="block text-sm font-medium text-gray-700 mb-1">
                   Type *
                 </label>
-                <select
+                <select id={`${fid}-type`}
                   value={formData.type}
                   onChange={(e) => setFormData(prev => ({ ...prev, type: e.target.value as Benefit['type'] }))}
                   className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -437,10 +451,10 @@ export default function MembershipBenefitsPage() {
               {(formData.type === 'discount' || formData.type === 'cashback' || formData.type === 'free_service') && (
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor={`${fid}-value`} className="block text-sm font-medium text-gray-700 mb-1">
                       Value
                     </label>
-                    <input
+                    <input id={`${fid}-value`}
                       type="number"
                       value={formData.discountValue}
                       onChange={(e) => setFormData(prev => ({ ...prev, discountValue: e.target.value }))}
@@ -449,10 +463,10 @@ export default function MembershipBenefitsPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor={`${fid}-value-type`} className="block text-sm font-medium text-gray-700 mb-1">
                       Value Type
                     </label>
-                    <select
+                    <select id={`${fid}-value-type`}
                       value={formData.isPercentage ? 'percentage' : 'fixed'}
                       onChange={(e) => setFormData(prev => ({ ...prev, isPercentage: e.target.value === 'percentage' }))}
                       className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -465,10 +479,10 @@ export default function MembershipBenefitsPage() {
               )}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label htmlFor={`${fid}-usage-limit`} className="block text-sm font-medium text-gray-700 mb-1">
                     Usage Limit
                   </label>
-                  <input
+                  <input id={`${fid}-usage-limit`}
                     type="number"
                     value={formData.usageLimit}
                     onChange={(e) => setFormData(prev => ({ ...prev, usageLimit: e.target.value }))}
@@ -477,10 +491,10 @@ export default function MembershipBenefitsPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label htmlFor={`${fid}-validity-days`} className="block text-sm font-medium text-gray-700 mb-1">
                     Validity (Days)
                   </label>
-                  <input
+                  <input id={`${fid}-validity-days`}
                     type="number"
                     value={formData.validityDays}
                     onChange={(e) => setFormData(prev => ({ ...prev, validityDays: e.target.value }))}

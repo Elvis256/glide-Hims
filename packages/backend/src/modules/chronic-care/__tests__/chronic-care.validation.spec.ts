@@ -17,6 +17,7 @@ import {
 } from '../../../database/entities/patient-chronic-condition.entity';
 import { Patient } from '../../../database/entities/patient.entity';
 import { Diagnosis } from '../../../database/entities/diagnosis.entity';
+import { PatientReminder } from '../../../database/entities/patient-reminder.entity';
 import { NotificationsService } from '../../notifications/notifications.service';
 
 /**
@@ -159,6 +160,7 @@ describe('ChronicCare validation', () => {
     let chronicRepo: any;
     let patientRepo: any;
     let diagnosisRepo: any;
+    let reminderRepo: any;
     let notifications: any;
 
     beforeEach(async () => {
@@ -172,6 +174,7 @@ describe('ChronicCare validation', () => {
       };
       patientRepo = { findOne: jest.fn(), find: jest.fn() };
       diagnosisRepo = { findOne: jest.fn(), find: jest.fn() };
+      reminderRepo = { find: jest.fn().mockResolvedValue([]) };
       notifications = {
         sendImmediateReminder: jest.fn(),
         scheduleReminder: jest.fn(),
@@ -182,6 +185,7 @@ describe('ChronicCare validation', () => {
           { provide: getRepositoryToken(PatientChronicCondition), useValue: chronicRepo },
           { provide: getRepositoryToken(Patient), useValue: patientRepo },
           { provide: getRepositoryToken(Diagnosis), useValue: diagnosisRepo },
+          { provide: getRepositoryToken(PatientReminder), useValue: reminderRepo },
           { provide: NotificationsService, useValue: notifications },
         ],
       }).compile();
@@ -291,6 +295,126 @@ describe('ChronicCare validation', () => {
       await service.getOverduePatients(FACILITY, 99999, TENANT);
       const args = chronicRepo.find.mock.calls[0][0];
       expect(args.take).toBe(500);
+    });
+  });
+
+  describe('follow-up recall', () => {
+    let service: ChronicCareService;
+    let chronicRepo: any;
+    let patientRepo: any;
+    let diagnosisRepo: any;
+    let reminderRepo: any;
+    let notifications: any;
+
+    // next_follow_up is a `date` column, so TypeORM returns the string
+    // '2026-08-31' rather than a Date — the shape that used to crash the sweep.
+    const conditionRow = (overrides: Record<string, unknown> = {}) => ({
+      id: CONDITION,
+      patientId: PATIENT,
+      reminderDaysBefore: 3,
+      nextFollowUp: '2026-08-31',
+      patient: { fullName: 'Wasswa Ronald' },
+      diagnosis: { name: 'Essential (primary) hypertension' },
+      ...overrides,
+    });
+
+    beforeEach(async () => {
+      chronicRepo = {
+        findOne: jest.fn(),
+        find: jest.fn(),
+        create: jest.fn((x) => x),
+        save: jest.fn(async (x) => ({ id: CONDITION, ...x })),
+        count: jest.fn().mockResolvedValue(0),
+        createQueryBuilder: jest.fn(),
+      };
+      patientRepo = { findOne: jest.fn(), find: jest.fn() };
+      diagnosisRepo = { findOne: jest.fn(), find: jest.fn() };
+      reminderRepo = { find: jest.fn().mockResolvedValue([]) };
+      notifications = {
+        sendImmediateReminder: jest.fn(),
+        scheduleReminder: jest.fn().mockResolvedValue({}),
+      };
+      const module: TestingModule = await Test.createTestingModule({
+        providers: [
+          ChronicCareService,
+          { provide: getRepositoryToken(PatientChronicCondition), useValue: chronicRepo },
+          { provide: getRepositoryToken(Patient), useValue: patientRepo },
+          { provide: getRepositoryToken(Diagnosis), useValue: diagnosisRepo },
+          { provide: getRepositoryToken(PatientReminder), useValue: reminderRepo },
+          { provide: NotificationsService, useValue: notifications },
+        ],
+      }).compile();
+      service = module.get(ChronicCareService);
+    });
+
+    const mockSweep = (rows: any[]) => {
+      chronicRepo.createQueryBuilder.mockReturnValue({
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue(rows),
+      });
+    };
+
+    it('schedules a reminder for a date-typed follow-up instead of throwing', async () => {
+      mockSweep([conditionRow()]);
+      await expect(service.scheduleUpcomingReminders(FACILITY, TENANT)).resolves.toBe(1);
+      const [, dto] = notifications.scheduleReminder.mock.calls[0];
+      expect(dto.message).toContain('2026-08-31');
+      expect(dto.message).not.toContain('Invalid Date');
+    });
+
+    it('sends now when the reminder window has already passed', async () => {
+      // Due tomorrow, three-day reminder window — the reminder date is behind
+      // us, and this patient used to get nothing at all.
+      const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      mockSweep([conditionRow({ nextFollowUp: tomorrow })]);
+
+      await expect(service.scheduleUpcomingReminders(FACILITY, TENANT)).resolves.toBe(1);
+      const [, dto] = notifications.scheduleReminder.mock.calls[0];
+      expect(dto.scheduledFor.getTime()).toBeLessThanOrEqual(Date.now() + 1000);
+    });
+
+    it('does not queue a second reminder for a patient who already has one waiting', async () => {
+      mockSweep([conditionRow()]);
+      reminderRepo.find.mockResolvedValue([{ referenceId: CONDITION }]);
+
+      await expect(service.scheduleUpcomingReminders(FACILITY, TENANT)).resolves.toBe(0);
+      expect(notifications.scheduleReminder).not.toHaveBeenCalled();
+    });
+
+    it('keeps going when one patient fails', async () => {
+      mockSweep([conditionRow({ id: 'cond-a' }), conditionRow({ id: 'cond-b' })]);
+      notifications.scheduleReminder
+        .mockRejectedValueOnce(new Error('no phone number'))
+        .mockResolvedValueOnce({});
+
+      await expect(service.scheduleUpcomingReminders(FACILITY, TENANT)).resolves.toBe(1);
+      expect(notifications.scheduleReminder).toHaveBeenCalledTimes(2);
+    });
+
+    it('registration puts the patient on the recall list', async () => {
+      patientRepo.findOne.mockResolvedValue({ id: PATIENT });
+      diagnosisRepo.findOne.mockResolvedValue({ id: 'dx-1', isChronic: true });
+
+      const saved = await service.registerCondition(
+        FACILITY,
+        {
+          patientId: PATIENT,
+          diagnosisId: 'dx-1',
+          diagnosedDate: new Date('2025-03-14'),
+          followUpIntervalDays: 90,
+        } as any,
+        'user-1',
+        TENANT,
+      );
+
+      expect(saved.nextFollowUp).toBeInstanceOf(Date);
+      const days = Math.round(
+        (saved.nextFollowUp!.getTime() - Date.now()) / (24 * 60 * 60 * 1000),
+      );
+      expect(days).toBeGreaterThanOrEqual(89);
+      expect(days).toBeLessThanOrEqual(90);
     });
   });
 });

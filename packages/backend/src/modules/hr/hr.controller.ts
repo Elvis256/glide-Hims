@@ -15,11 +15,13 @@ import {
   UploadedFile,
   BadRequestException,
   UseGuards,
+  SerializeOptions,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiConsumes } from '@nestjs/swagger';
 import { isUUID } from 'class-validator';
 import { HrService } from './hr.service';
+import { HR_SERIALIZE_GROUP } from '../../database/entities/user.entity';
 
 function requireUUID(value: string | undefined, field: string): string {
   if (!value || !isUUID(value)) {
@@ -152,6 +154,11 @@ export class HrController {
     deprecated: true,
     summary: 'Get staff member by ID (deprecated — use GET /hr/employees/:id)',
   })
+  // Returns the raw User row, which is where staff payroll lives. Everything
+  // else on this controller reads Employee (its own salary columns), so the
+  // opt-in is scoped to this route rather than the whole class — leave and
+  // attendance routes must not carry salary just because they sit here.
+  @SerializeOptions({ groups: [HR_SERIALIZE_GROUP] })
   async getStaffById(@Param('id') id: string, @Request() req: any) {
     return this.hrService.getStaffById(id, req.user?.tenantId);
   }

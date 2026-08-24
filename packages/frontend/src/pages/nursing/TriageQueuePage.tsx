@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -306,6 +307,17 @@ export default function TriageQueuePage() {
   const latestVitals = patientVitals?.[0];
   const earlierVitals = (patientVitals || []).slice(1, 4);
   const [showVitalsHistory, setShowVitalsHistory] = useState(false);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showQuickTriageModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showQuickTriageModal,
+    onClose: () => setShowQuickTriageModal(false),
+  });
+  const showTriageModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showTriageModal,
+    onClose: () => setShowTriageModal(false),
+  });
 
   // Start triage mutation - first call, then start service
   const startTriageMutation = useMutation({
@@ -1027,7 +1039,12 @@ export default function TriageQueuePage() {
 
       {/* Quick Triage Modal */}
       {showQuickTriageModal && selectedPatient && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={showQuickTriageModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="p-4 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white">
               <h3 className="text-lg font-semibold">Quick Triage</h3>
@@ -1150,7 +1167,12 @@ export default function TriageQueuePage() {
 
       {/* Full Triage Form Modal */}
       {showTriageModal && selectedPatient && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          role="dialog"
+          aria-modal="true"
+          ref={showTriageModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
             <div className="p-4 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white z-10">
               <div className="flex items-center gap-3">

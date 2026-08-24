@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Ruler,
@@ -61,6 +62,13 @@ export default function UnitOfMeasurePage() {
   const [editingUnit, setEditingUnit] = useState<UnitOfMeasure | null>(null);
   const [formData, setFormData] = useState<UnitFormData>(defaultFormData);
   const [mutationError, setMutationError] = useState<string | null>(null);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const isModalOpenDialogRef = useDialogA11y<HTMLDivElement>({
+    open: isModalOpen,
+    onClose: () => handleCloseModal(),
+  });
 
   const { data: units = [], isLoading, error: fetchError } = useQuery<UnitOfMeasure[]>({
     queryKey: ['units-of-measure', facilityId],
@@ -326,7 +334,12 @@ export default function UnitOfMeasurePage() {
 
       {/* Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={isModalOpenDialogRef}
+        >
           <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
             <div className="flex items-center justify-between p-4 border-b">
               <h2 className="text-lg font-semibold">

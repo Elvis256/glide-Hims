@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { getApiErrorMessage } from '../../services/api';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { formatCurrency } from '../../lib/currency';
@@ -42,6 +44,21 @@ export default function SupplierCreditNotesPage() {
   const [applyVoucherId, setApplyVoucherId] = useState('');
   const [applyAmount, setApplyAmount] = useState('');
 
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const viewingNoteDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!viewingNote,
+    onClose: () => setViewingNote(null),
+  });
+  const showApplyModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showApplyModal,
+    onClose: () => setShowApplyModal(false),
+  });
+  const showAddModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showAddModal,
+    onClose: () => setShowAddModal(false),
+  });
+
   const facilityId = useFacilityId();
 
   const { data: creditNotes, isLoading } = useQuery({
@@ -55,7 +72,11 @@ export default function SupplierCreditNotesPage() {
     mutationFn: (id: string) => supplierFinanceService.creditNotes.approve(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['credit-notes'] });
+      toast.success('Note approved');
     },
+    // Approval refuses when the creator tries to approve their own note —
+    // worth a specific fallback if the server ever sends no message.
+    onError: (err: any) => toast.error(getApiErrorMessage(err, 'Failed to approve note')),
   });
 
   // Payment vouchers this note can be applied against — same supplier, and the
@@ -81,16 +102,25 @@ export default function SupplierCreditNotesPage() {
       setApplyVoucherId('');
       setApplyAmount('');
     },
-    onError: (e: any) => toast.error(e.response?.data?.message || 'Failed to apply credit note'),
+    onError: (err: any) => toast.error(getApiErrorMessage(err, 'Failed to apply credit note')),
   });
 
   const createMutation = useMutation({
     mutationFn: (data: Partial<CreditNote>) => supplierFinanceService.creditNotes.create(data as any),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['credit-notes'] });
+      toast.success('Note created');
       setShowAddModal(false);
     },
+    onError: (err: any) => toast.error(getApiErrorMessage(err, 'Failed to create note')),
   });
+
+  // Only vouchers that can still take a deduction. A paid or cancelled
+  // voucher is refused by the endpoint — offering it in the list only invites
+  // the error.
+  const applicableVouchers = vouchers.filter(
+    (v) => v.status !== 'paid' && v.status !== 'cancelled',
+  );
 
   const items = creditNotes || [];
 
@@ -322,7 +352,12 @@ export default function SupplierCreditNotesPage() {
                         Approve
                       </button>
                     )}
-                    {note.status === 'approved' && note.noteType === 'credit_note' && (
+                    {/* Debit notes apply too — they are the rejected-goods
+                        recovery this screen exists for, and the backend
+                        accepts either type. Gating on credit_note alone left
+                        an approved debit note counted as "Ready to Apply"
+                        with no way to apply it. */}
+                    {note.status === 'approved' && (
                       <button
                         onClick={() => {
                           setApplyingNote(note);
@@ -350,7 +385,12 @@ export default function SupplierCreditNotesPage() {
 
       {/* View Modal */}
       {viewingNote && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={viewingNoteDialogRef}
+        >
           <div className="bg-white rounded-xl p-6 w-full max-w-lg">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-bold text-gray-900">{viewingNote.noteNumber}</h2>
@@ -411,7 +451,12 @@ export default function SupplierCreditNotesPage() {
 
       {/* Apply Modal */}
       {showApplyModal && applyingNote && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showApplyModalDialogRef}
+        >
           <div className="bg-white rounded-xl p-6 w-full max-w-md">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-bold text-gray-900">Apply Credit Note</h2>
@@ -439,15 +484,17 @@ export default function SupplierCreditNotesPage() {
                   className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">Select voucher</option>
-                  {vouchers.map((v) => (
+                  {applicableVouchers.map((v) => (
                     <option key={v.id} value={v.id}>
-                      {v.voucherNumber} — {formatCurrency(num(v.netAmount))}
+                      {v.voucherNumber} — {formatCurrency(num(v.netAmount))} still payable
                     </option>
                   ))}
                 </select>
-                {vouchers.length === 0 && (
+                {applicableVouchers.length === 0 && (
                   <p className="text-xs text-gray-500 mt-1">
-                    No payment vouchers for this supplier.
+                    {vouchers.length === 0
+                      ? 'No payment vouchers for this supplier.'
+                      : 'This supplier has no unpaid voucher to apply a note against.'}
                   </p>
                 )}
               </div>
@@ -501,7 +548,12 @@ export default function SupplierCreditNotesPage() {
 
       {/* Create Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showAddModalDialogRef}
+        >
           <div className="bg-white rounded-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-bold text-gray-900">Create Note</h2>

@@ -600,9 +600,20 @@ export class UpdateJobPostingDto {
 }
 
 export class CreateJobApplicationDto {
-  @ApiProperty()
+  /**
+   * Optional because the public careers route takes it from the path —
+   * POST /careers/jobs/:id/apply — and the controller overrides whatever the
+   * body carried. Required on the body it was rejecting every application a
+   * careers page could plausibly send: the field was mandatory, the path was
+   * the documented way to name the job, and the two never met, so the public
+   * endpoint answered 400 unless the caller happened to repeat the id. The
+   * staff route (POST /hr/recruitment/applications) still supplies it here,
+   * and the service refuses a request that resolves no posting at all.
+   */
+  @ApiProperty({ required: false })
+  @IsOptional()
   @IsUUID()
-  jobPostingId: string;
+  jobPostingId?: string;
 
   @ApiProperty()
   @IsString()

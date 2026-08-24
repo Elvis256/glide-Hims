@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { useDialogA11y } from '../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -115,6 +116,33 @@ export default function InvoicesPage() {
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'mobile_money'>('cash');
   const [paymentReference, setPaymentReference] = useState('');
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const viewingInvoiceDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!viewingInvoice,
+    onClose: () => setViewingInvoice(null),
+  });
+  const cancellingInvoiceDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!cancellingInvoice,
+    onClose: () => setCancellingInvoice(null),
+  });
+  const returnDoctorInvoiceDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!returnDoctorInvoice,
+    onClose: () => setReturnDoctorInvoice(null),
+  });
+  const returnLabInvoiceDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!returnLabInvoice,
+    onClose: () => setReturnLabInvoice(null),
+  });
+  const returnPharmacyInvoiceDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!returnPharmacyInvoice,
+    onClose: () => setReturnPharmacyInvoice(null),
+  });
+  const payingInvoiceDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!payingInvoice,
+    onClose: () => setPayingInvoice(null),
+  });
 
   // Cancel invoice mutation
   const cancelMutation = useMutation({
@@ -642,7 +670,12 @@ export default function InvoicesPage() {
 
       {/* Quick View Modal */}
       {viewingInvoice && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={viewingInvoiceDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden">
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <div>
@@ -741,7 +774,12 @@ export default function InvoicesPage() {
 
       {/* Cancel Invoice Modal */}
       {cancellingInvoice && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          role="dialog"
+          aria-modal="true"
+          ref={cancellingInvoiceDialogRef}
+        >
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <h2 className="text-lg font-bold text-gray-900">Cancel Invoice</h2>
@@ -786,7 +824,12 @@ export default function InvoicesPage() {
 
       {/* Return to Doctor Modal */}
       {returnDoctorInvoice && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          role="dialog"
+          aria-modal="true"
+          ref={returnDoctorInvoiceDialogRef}
+        >
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
@@ -841,7 +884,12 @@ export default function InvoicesPage() {
 
       {/* Return to Lab Modal */}
       {returnLabInvoice && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          role="dialog"
+          aria-modal="true"
+          ref={returnLabInvoiceDialogRef}
+        >
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
@@ -896,7 +944,12 @@ export default function InvoicesPage() {
 
       {/* Return to Pharmacy Modal */}
       {returnPharmacyInvoice && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          role="dialog"
+          aria-modal="true"
+          ref={returnPharmacyInvoiceDialogRef}
+        >
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
@@ -951,7 +1004,12 @@ export default function InvoicesPage() {
 
       {/* Collect Payment Modal */}
       {payingInvoice && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          role="dialog"
+          aria-modal="true"
+          ref={payingInvoiceDialogRef}
+        >
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <div>

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Query, UseGuards } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ApiTags } from '@nestjs/swagger';
@@ -6,9 +6,11 @@ import { ComplianceRecord, ComplianceRecordType } from './compliance-record.enti
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequireModule } from '../auth/decorators/module.decorator';
+import { ModuleGuard } from '../auth/guards/module.guard';
 
 @ApiTags('Compliance')
 @RequireModule('finance')
+@UseGuards(ModuleGuard)
 @Controller('compliance')
 export class ComplianceController {
   constructor(

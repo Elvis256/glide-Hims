@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useId } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Search,
@@ -45,12 +46,24 @@ interface PaymentMethod {
 const paymentMethodsData: PaymentMethod[] = [];
 
 export default function PaymentMethodsPage() {
+  const fid = useId();
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [filterType, setFilterType] = useState<string>('all');
   const [showAddModal, setShowAddModal] = useState(false);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showAddModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showAddModal,
+    onClose: () => setShowAddModal(false),
+  });
+  const editingIdDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!editingId,
+    onClose: () => setEditingId(null),
+  });
   const [newMethodForm, setNewMethodForm] = useState({
     name: '', type: 'cash' as PaymentMethodSlug,
     processingFee: 0, feeType: 'percentage' as 'percentage' | 'fixed',
@@ -436,7 +449,12 @@ export default function PaymentMethodsPage() {
 
       {/* Add Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showAddModalDialogRef}
+        >
           <div className="bg-white rounded-lg shadow-xl w-full max-w-lg">
             <div className="flex items-center justify-between p-4 border-b">
               <h3 className="text-lg font-semibold text-gray-900">Add Payment Method</h3>
@@ -449,8 +467,8 @@ export default function PaymentMethodsPage() {
             </div>
             <div className="p-4 space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Method Name</label>
-                <input
+                <label htmlFor={`${fid}-method-name`} className="block text-sm font-medium text-gray-700 mb-1">Method Name</label>
+                <input id={`${fid}-method-name`}
                   type="text"
                   value={newMethodForm.name}
                   onChange={(e) => setNewMethodForm(p => ({ ...p, name: e.target.value }))}
@@ -459,8 +477,8 @@ export default function PaymentMethodsPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
-                <select
+                <label htmlFor={`${fid}-type`} className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+                <select id={`${fid}-type`}
                   value={newMethodForm.type}
                   onChange={(e) => setNewMethodForm(p => ({ ...p, type: e.target.value as PaymentMethodSlug }))}
                   className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -472,8 +490,8 @@ export default function PaymentMethodsPage() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Processing Fee</label>
-                  <input
+                  <label htmlFor={`${fid}-processing-fee`} className="block text-sm font-medium text-gray-700 mb-1">Processing Fee</label>
+                  <input id={`${fid}-processing-fee`}
                     type="number"
                     step="0.1"
                     value={newMethodForm.processingFee}
@@ -482,8 +500,8 @@ export default function PaymentMethodsPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Fee Type</label>
-                  <select
+                  <label htmlFor={`${fid}-fee-type`} className="block text-sm font-medium text-gray-700 mb-1">Fee Type</label>
+                  <select id={`${fid}-fee-type`}
                     value={newMethodForm.feeType}
                     onChange={(e) => setNewMethodForm(p => ({ ...p, feeType: e.target.value as 'percentage' | 'fixed' }))}
                     className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -494,8 +512,8 @@ export default function PaymentMethodsPage() {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Settlement Account</label>
-                <input
+                <label htmlFor={`${fid}-settlement-account`} className="block text-sm font-medium text-gray-700 mb-1">Settlement Account</label>
+                <input id={`${fid}-settlement-account`}
                   type="text"
                   value={newMethodForm.settlementAccount}
                   onChange={(e) => setNewMethodForm(p => ({ ...p, settlementAccount: e.target.value }))}
@@ -504,8 +522,8 @@ export default function PaymentMethodsPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Settlement Days</label>
-                <input
+                <label htmlFor={`${fid}-settlement-days`} className="block text-sm font-medium text-gray-700 mb-1">Settlement Days</label>
+                <input id={`${fid}-settlement-days`}
                   type="number"
                   value={newMethodForm.settlementDays}
                   onChange={(e) => setNewMethodForm(p => ({ ...p, settlementDays: parseInt(e.target.value) || 0 }))}
@@ -539,7 +557,12 @@ export default function PaymentMethodsPage() {
 
       {/* Edit Modal */}
       {editingId && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={editingIdDialogRef}
+        >
           <div className="bg-white rounded-lg shadow-xl w-full max-w-lg">
             <div className="flex items-center justify-between p-4 border-b">
               <h3 className="text-lg font-semibold text-gray-900">Edit Payment Method</h3>
@@ -558,8 +581,8 @@ export default function PaymentMethodsPage() {
                 return (
                   <>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Method Name</label>
-                      <input
+                      <label htmlFor={`${fid}-method-name-2`} className="block text-sm font-medium text-gray-700 mb-1">Method Name</label>
+                      <input id={`${fid}-method-name-2`}
                         type="text"
                         defaultValue={method.name}
                         className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -567,8 +590,8 @@ export default function PaymentMethodsPage() {
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Processing Fee</label>
-                        <input
+                        <label htmlFor={`${fid}-processing-fee-2`} className="block text-sm font-medium text-gray-700 mb-1">Processing Fee</label>
+                        <input id={`${fid}-processing-fee-2`}
                           type="number"
                           step="0.1"
                           defaultValue={method.processingFee}
@@ -576,8 +599,8 @@ export default function PaymentMethodsPage() {
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Fee Type</label>
-                        <select 
+                        <label htmlFor={`${fid}-fee-type-2`} className="block text-sm font-medium text-gray-700 mb-1">Fee Type</label>
+                        <select id={`${fid}-fee-type-2`} 
                           defaultValue={method.feeType}
                           className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                         >
@@ -587,16 +610,16 @@ export default function PaymentMethodsPage() {
                       </div>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Settlement Account</label>
-                      <input
+                      <label htmlFor={`${fid}-settlement-account-2`} className="block text-sm font-medium text-gray-700 mb-1">Settlement Account</label>
+                      <input id={`${fid}-settlement-account-2`}
                         type="text"
                         defaultValue={method.settlementAccount}
                         className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Settlement Days</label>
-                      <input
+                      <label htmlFor={`${fid}-settlement-days-2`} className="block text-sm font-medium text-gray-700 mb-1">Settlement Days</label>
+                      <input id={`${fid}-settlement-days-2`}
                         type="number"
                         defaultValue={method.settlementDays}
                         className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"

@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import api from '../../../services/api';
@@ -61,6 +62,13 @@ export default function OPDOrderingPage() {
   const [serviceSearch, setServiceSearch] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
   const [cart, setCart] = useState<OrderItem[]>([]);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showSuccessDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showSuccess,
+    onClose: () => setSelectedPatient(null),
+  });
 
   // Patient search query
   const { data: patients = [] } = useQuery({
@@ -252,7 +260,12 @@ export default function OPDOrderingPage() {
       </div>
 
       {showSuccess && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showSuccessDialogRef}
+        >
           <div className="bg-white rounded-xl p-6 text-center">
             <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <CheckCircle className="w-10 h-10 text-green-600" />

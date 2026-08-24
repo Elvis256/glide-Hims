@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../../../services/api';
 import {
@@ -109,6 +110,13 @@ export default function IntegrationsPage() {
   const [showGenerateModal, setShowGenerateModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState('');
   const [newKeyPerms, setNewKeyPerms] = useState('read');
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showGenerateModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showGenerateModal,
+    onClose: () => setShowGenerateModal(false),
+  });
 
   // Fetch API keys from settings
   const { data: apiKeysData } = useQuery({
@@ -530,7 +538,12 @@ export default function IntegrationsPage() {
 
       {/* Generate API Key Modal */}
       {showGenerateModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showGenerateModalDialogRef}
+        >
           <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-gray-900">Generate API Key</h2>

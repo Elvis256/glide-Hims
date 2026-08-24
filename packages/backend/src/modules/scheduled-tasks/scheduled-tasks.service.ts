@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { localDayStart } from '../../common/utils/timezone.util';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, LessThanOrEqual, MoreThanOrEqual, MoreThan } from 'typeorm';
@@ -428,10 +429,11 @@ export class ScheduledTasksService {
   async dailyHealthSummary() {
     this.logger.log('Generating daily health summary...');
     try {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const tomorrow = new Date(today);
-      tomorrow.setDate(tomorrow.getDate() + 1);
+      // Reminders go out for the hospital's day. Built on the server clock
+      // this window ran 03:00 to 03:00 locally, so the first appointments of
+      // each morning were reminded against the day before.
+      const today = localDayStart(0);
+      const tomorrow = localDayStart(1);
 
       const appointmentCount = await this.appointmentRepo.count({
         where: {
@@ -607,11 +609,8 @@ export class ScheduledTasksService {
     this.logger.log('Running appointment reminder job...');
 
     try {
-      const tomorrow = new Date();
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      tomorrow.setHours(0, 0, 0, 0);
-      const dayAfterTomorrow = new Date(tomorrow);
-      dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 1);
+      const tomorrow = localDayStart(1);
+      const dayAfterTomorrow = localDayStart(2);
 
       const appointments = await this.appointmentRepo.find({
         where: [
@@ -741,10 +740,8 @@ export class ScheduledTasksService {
       const lower = new Date(now.getTime() + 90 * 60 * 1000); // +90m
       const upper = new Date(now.getTime() + 150 * 60 * 1000); // +150m
       // appointmentDate is a date column; we filter by date == today/tomorrow then by startTime.
-      const todayStart = new Date(now);
-      todayStart.setHours(0, 0, 0, 0);
-      const tomorrowEnd = new Date(todayStart);
-      tomorrowEnd.setDate(tomorrowEnd.getDate() + 2);
+      const todayStart = localDayStart(0);
+      const tomorrowEnd = localDayStart(2);
 
       const appointments = await this.appointmentRepo.find({
         where: [

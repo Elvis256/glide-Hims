@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useDialogA11y } from '../../../hooks/useDialogA11y';
 import { useQuery } from '@tanstack/react-query';
 import api from '../../../services/api';
 import { formatCurrency } from '../../../lib/currency';
@@ -95,6 +96,21 @@ export default function FinancialReportsPage() {
   const [generatedReports, setGeneratedReports] = useState<Report[]>([]);
   const [shouldFetchReport, setShouldFetchReport] = useState(false);
   const [reportParams, setReportParams] = useState<{ type: ReportType; dateFrom: string; dateTo: string } | null>(null);
+
+  // Escape closes these, Tab stays within them, and focus returns to
+  // whatever opened them.
+  const showGenerateModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showGenerateModal,
+    onClose: () => setShowGenerateModal(false),
+  });
+  const previewReportDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!previewReport,
+    onClose: () => setPreviewReport(null),
+  });
+  const showScheduleModalDialogRef = useDialogA11y<HTMLDivElement>({
+    open: !!showScheduleModal,
+    onClose: () => setShowScheduleModal(false),
+  });
 
   // Trial Balance Query
   const trialBalanceQuery = useQuery({
@@ -884,7 +900,12 @@ export default function FinancialReportsPage() {
 
       {/* Generate Report Modal */}
       {showGenerateModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showGenerateModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <h2 className="text-lg font-bold text-gray-900">Generate Financial Report</h2>
@@ -975,7 +996,12 @@ export default function FinancialReportsPage() {
 
       {/* Preview Report Modal */}
       {previewReport && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={previewReportDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden">
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <div>
@@ -1043,7 +1069,12 @@ export default function FinancialReportsPage() {
 
       {/* Scheduled Reports Modal */}
       {showScheduleModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          role="dialog"
+          aria-modal="true"
+          ref={showScheduleModalDialogRef}
+        >
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden">
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <h2 className="text-lg font-bold text-gray-900">Scheduled Reports</h2>

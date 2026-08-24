@@ -427,95 +427,84 @@ describe('PrescriptionsService', () => {
   });
 
   // =========================================================================
-  // 4. dispenseItem — happy path
+  // 4. dispenseItem — delegates to the batch path
   // =========================================================================
-  describe('dispenseItem — happy path', () => {
-    it('should create a dispensation record and update the prescription item quantity', async () => {
-      const pItem = mockPrescriptionItem({
-        prescription: mockPrescription(),
-      });
-      (pItem.prescription as any).encounter = mockEncounter();
-
+  describe('dispenseItem', () => {
+    it('dispenses through the batch path rather than its own', async () => {
+      // It used to be a second implementation that skipped the transaction,
+      // the row lock, the prescription status check and — most expensively —
+      // any stock movement at all. It is now a wrapper.
+      const pItem = mockPrescriptionItem({ prescription: mockPrescription() });
       itemRepo.findOne.mockResolvedValue(pItem);
-      inventoryRepo.findOne.mockResolvedValue({
-        id: 'inv-001',
-        code: 'AMX500',
-        name: 'Amoxicillin 500mg',
-        retailPrice: 50,
-        sellingPrice: 45,
-        unitCost: 30,
-      } as any);
 
-      const createdDispensation = {
-        id: 'disp-001',
-        prescriptionId: PRESCRIPTION_ID,
-        prescriptionItemId: ITEM_ID,
-        quantity: 5,
-        unitPrice: 50,
-        totalPrice: 250,
-        dispensedById: USER_ID,
-      };
-      dispensationRepo.create.mockReturnValue(createdDispensation as any);
-      dispensationRepo.save.mockResolvedValue(createdDispensation as any);
+      const batchSpy = jest
+        .spyOn(service, 'dispenseBatch')
+        .mockResolvedValue(mockPrescription() as any);
 
-      // For updatePrescriptionStatus
-      prescriptionRepo.findOne.mockResolvedValue(
-        mockPrescription({
-          items: [mockPrescriptionItem({ quantityDispensed: 5 })],
-        }),
+      const created = { id: 'disp-001', prescriptionItemId: ITEM_ID, quantity: 5 };
+      dispensationRepo.findOne.mockResolvedValue(created as any);
+
+      const result = await service.dispenseItem(
+        { prescriptionItemId: ITEM_ID, quantity: 5, batchNumber: 'BATCH-001' },
+        USER_ID,
+        TENANT_ID,
       );
 
-      const dto = {
-        prescriptionItemId: ITEM_ID,
-        quantity: 5,
-        batchNumber: 'BATCH-001',
-      };
-
-      const result = await service.dispenseItem(dto, USER_ID, TENANT_ID);
-
-      expect(result).toEqual(createdDispensation);
-
-      // Verify dispensation was created with server-derived price
-      expect(dispensationRepo.create).toHaveBeenCalledWith(
+      expect(batchSpy).toHaveBeenCalledTimes(1);
+      expect(batchSpy).toHaveBeenCalledWith(
         expect.objectContaining({
-          prescriptionId: PRESCRIPTION_ID,
-          prescriptionItemId: ITEM_ID,
-          quantity: 5,
-          unitPrice: 50,
-          totalPrice: 250,
+          prescriptionId: pItem.prescriptionId,
+          items: [
+            expect.objectContaining({
+              prescriptionItemId: ITEM_ID,
+              quantity: 5,
+              batchNumber: 'BATCH-001',
+            }),
+          ],
         }),
+        USER_ID,
+        TENANT_ID,
       );
-
-      // Verify item quantity updated
-      expect(itemRepo.save).toHaveBeenCalledWith(expect.objectContaining({ quantityDispensed: 5 }));
+      expect(result).toEqual(created);
     });
-  });
 
-  // =========================================================================
-  // 5. dispenseItem — exceeds remaining quantity
-  // =========================================================================
-  describe('dispenseItem — exceeds remaining quantity', () => {
-    it('should throw BadRequestException when dispensing more than the remaining quantity', async () => {
-      const pItem = mockPrescriptionItem({
-        quantity: 15,
-        quantityDispensed: 12,
-        prescription: mockPrescription(),
-      });
-      (pItem.prescription as any).encounter = mockEncounter();
-
-      itemRepo.findOne.mockResolvedValue(pItem);
-
-      const dto = {
-        prescriptionItemId: ITEM_ID,
-        quantity: 5, // only 3 remaining (15 - 12)
-      };
-
-      await expect(service.dispenseItem(dto, USER_ID, TENANT_ID)).rejects.toThrow(
-        BadRequestException,
+    it('never writes the dispensation or the item itself', async () => {
+      // The old path saved the dispensation and the item as two untransacted
+      // writes, so they could diverge and the same units be handed out twice.
+      // This fails if anyone reintroduces a direct write here.
+      itemRepo.findOne.mockResolvedValue(
+        mockPrescriptionItem({ prescription: mockPrescription() }),
       );
-      await expect(service.dispenseItem(dto, USER_ID, TENANT_ID)).rejects.toThrow(
-        /Cannot dispense more than 3 units/,
+      jest.spyOn(service, 'dispenseBatch').mockResolvedValue(mockPrescription() as any);
+      dispensationRepo.findOne.mockResolvedValue({ id: 'disp-002' } as any);
+
+      await service.dispenseItem({ prescriptionItemId: ITEM_ID, quantity: 1 }, USER_ID, TENANT_ID);
+
+      expect(dispensationRepo.save).not.toHaveBeenCalled();
+      expect(itemRepo.save).not.toHaveBeenCalled();
+    });
+
+    it("surfaces the batch path's rejection instead of swallowing it", async () => {
+      itemRepo.findOne.mockResolvedValue(
+        mockPrescriptionItem({ quantity: 15, quantityDispensed: 12 }),
       );
+      jest
+        .spyOn(service, 'dispenseBatch')
+        .mockRejectedValue(new BadRequestException('Cannot dispense more than 3 units'));
+
+      await expect(
+        service.dispenseItem({ prescriptionItemId: ITEM_ID, quantity: 5 }, USER_ID, TENANT_ID),
+      ).rejects.toThrow(/Cannot dispense more than 3 units/);
+    });
+
+    it('rejects an unknown prescription item before reaching the batch path', async () => {
+      itemRepo.findOne.mockResolvedValue(null);
+      const batchSpy = jest.spyOn(service, 'dispenseBatch');
+
+      await expect(
+        service.dispenseItem({ prescriptionItemId: ITEM_ID, quantity: 1 }, USER_ID, TENANT_ID),
+      ).rejects.toThrow(NotFoundException);
+      expect(batchSpy).not.toHaveBeenCalled();
     });
   });
 
