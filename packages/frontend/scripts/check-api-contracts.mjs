@@ -143,9 +143,45 @@ async function firstId(path) {
   }
 }
 
+/**
+ * Pick an id whose dependent endpoint actually returns rows.
+ *
+ * Taking simply the first admitted admission is a coin flip: only 3 of the 6
+ * carry medication administrations, so the probe kept landing on an empty one
+ * and reporting MedicationAdministration as EMPTY — which reads as "no data
+ * to seed" when the table in fact holds 23 rows. Try each candidate against
+ * the endpoint that needs it and keep the first that proves something.
+ */
+async function idThatPopulates(listPath, dependentPath, limit = 8) {
+  const rows = await allRows(listPath);
+  for (const row of rows.slice(0, limit)) {
+    if (!row?.id) continue;
+    const probe = await allRows(dependentPath.replace('<id>', row.id));
+    if (probe.length) return row.id;
+  }
+  return rows[0]?.id ?? null;
+}
+
+async function allRows(path) {
+  try {
+    const r = await fetch(`${API}/${path}`, { headers: { cookie } });
+    if (!r.ok) return [];
+    const b = await r.json();
+    const rows = Array.isArray(b?.data) ? b.data : b?.data?.data;
+    return Array.isArray(rows) ? rows : [];
+  } catch {
+    return [];
+  }
+}
+
 const resolved = {
   '{{FAC}}': process.env.FACILITY_ID || (await firstId('facilities')),
-  '{{ADMISSION}}': process.env.ADMISSION_ID || (await firstId('ipd/admissions?status=admitted')),
+  '{{ADMISSION}}':
+    process.env.ADMISSION_ID ||
+    (await idThatPopulates(
+      'ipd/admissions?status=admitted',
+      'ipd/admissions/<id>/medications',
+    )),
 };
 for (const [token, value] of Object.entries(resolved)) {
   if (!value) console.log(`  note: could not resolve ${token} — probes needing it will be skipped`);

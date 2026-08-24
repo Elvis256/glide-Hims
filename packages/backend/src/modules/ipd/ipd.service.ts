@@ -179,15 +179,21 @@ export class IpdService {
     return saved;
   }
 
+  /**
+   * wardId is a filter, not a requirement. This used to `return []` whenever
+   * it was omitted, so an unfiltered call answered "this hospital has no beds"
+   * — indistinguishable from the truth — while 18 beds sat in the table. The
+   * frontend service types wardId as optional and the sibling
+   * getAvailableBeds already treats it as one, so the empty answer was a trap
+   * waiting for the first caller that left it off.
+   */
   async getBeds(wardId?: string, tenantId?: string): Promise<Bed[]> {
     const tid = requireTenantId(tenantId);
-    if (!wardId) {
-      return [];
-    }
-    const where: any = { wardId };
-    where.tenantId = tid;
+    const where: any = { tenantId: tid };
+    if (wardId) where.wardId = wardId;
     return this.bedRepo.find({
       where,
+      relations: ['ward'],
       order: { bedNumber: 'ASC' },
     });
   }
@@ -1171,8 +1177,15 @@ export class IpdService {
     tenantId?: string,
   ): Promise<MedicationAdministration[]> {
     const tid = requireTenantId(tenantId);
+    // administeredBy is a ManyToOne on the entity but was never joined, so the
+    // three screens that show who gave a dose — the MAR chart, the nursing
+    // medication schedule and the IPD notes tab — all read
+    // administeredBy.fullName off undefined and rendered nothing. On a drug
+    // chart the administering nurse is the point of the record, not a
+    // decoration.
     const qb = this.medAdminRepo
       .createQueryBuilder('med')
+      .leftJoinAndSelect('med.administeredBy', 'administeredBy')
       .where('med.admissionId = :admissionId', { admissionId });
     qb.andWhere('med.tenant_id = :tenantId', { tenantId: tid });
 
