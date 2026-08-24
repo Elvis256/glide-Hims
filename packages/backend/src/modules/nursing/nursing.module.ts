@@ -8,6 +8,8 @@ import { CarePlan } from '../../database/entities/care-plan.entity';
 import { CarePlanGoal } from '../../database/entities/care-plan-goal.entity';
 import { CarePlanIntervention } from '../../database/entities/care-plan-intervention.entity';
 import { WoundAssessment } from '../../database/entities/wound-assessment.entity';
+import { Admission } from '../../database/entities/admission.entity';
+import { InAppNotificationsModule } from '../in-app-notifications/in-app-notifications.module';
 import { NursingController } from './nursing.controller';
 import { IntakeOutputService } from './intake-output.service';
 import { BloodGlucoseService } from './blood-glucose.service';
@@ -27,7 +29,9 @@ import { WoundAssessmentService } from './wound-assessment.service';
       CarePlanGoal,
       CarePlanIntervention,
       WoundAssessment,
+      Admission,
     ]),
+    InAppNotificationsModule,
   ],
   controllers: [NursingController],
   providers: [
