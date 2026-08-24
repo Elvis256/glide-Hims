@@ -9,7 +9,7 @@ import {
   Heart, Loader2, ChevronDown, Save, Send, FileText, ArrowLeft
 } from 'lucide-react';
 import { storesService, type Drug } from '../../../services/stores';
-import { patientsService } from '../../../services/patients';
+import { patientsService, patientWeight } from '../../../services/patients';
 import { prescriptionsService, type CreatePrescriptionDto, type Prescription } from '../../../services/prescriptions';
 import { pharmacyService } from '../../../services/pharmacy';
 import { queueService } from '../../../services/queue';
@@ -394,7 +394,7 @@ export default function WritePrescriptionPage() {
                 <p className="font-medium">{patient.fullName}</p>
                 <p className="text-gray-600">
                   {patientAge ? `${patientAge}yo` : ''} {patient.gender} 
-                  {patient.weight && <> • <Weight className="w-3 h-3 inline" /> {patient.weight}kg</>}
+                  {patientWeight(patient) && <> • <Weight className="w-3 h-3 inline" /> {patient.weight}kg</>}
                 </p>
                 <p className="text-xs text-gray-500">MRN: {patient.mrn}</p>
                 

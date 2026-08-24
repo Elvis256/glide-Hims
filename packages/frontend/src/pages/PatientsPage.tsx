@@ -42,6 +42,7 @@ import {
   Check,
   UserPlus,
 } from 'lucide-react';
+import { patientPaymentType } from '../services/patients';
 
 type ViewMode = 'table' | 'card';
 type SortField = 'mrn' | 'fullName' | 'dateOfBirth' | 'phone' | 'createdAt' | 'paymentType';
@@ -193,8 +194,8 @@ export default function PatientsPage() {
     return {
       total: patientsResponse?.total || patients.length,
       todayRegistrations: patients.filter((p) => p.createdAt?.startsWith(today)).length,
-      insurancePatients: patients.filter((p) => p.paymentType === 'insurance').length,
-      corporatePatients: patients.filter((p) => p.paymentType === 'corporate').length,
+      insurancePatients: patients.filter((p) => patientPaymentType(p) === 'insurance').length,
+      corporatePatients: patients.filter((p) => patientPaymentType(p) === 'corporate').length,
     };
   }, [patientsResponse]);
 
@@ -281,7 +282,7 @@ export default function PatientsPage() {
       formatDate(p.dateOfBirth),
       calculateAge(p.dateOfBirth),
       p.phone || '',
-      p.paymentType || 'cash',
+      patientPaymentType(p),
       p.nationalId || '',
       p.address || '',
     ]);
@@ -642,7 +643,7 @@ export default function PatientsPage() {
               </thead>
               <tbody className="divide-y">
                 {sortedPatients.map((patient) => {
-                  const paymentType = patient.paymentType || 'cash';
+                  const paymentType = patientPaymentType(patient);
                   const badge = paymentTypeBadges[paymentType] || paymentTypeBadges.cash;
                   const status = patient.status || 'active';
                   const lastVisit = patient.lastVisit;
@@ -840,7 +841,7 @@ export default function PatientsPage() {
         /* Card View */
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {sortedPatients.map((patient) => {
-            const paymentType = patient.paymentType || 'cash';
+            const paymentType = patientPaymentType(patient);
             const badge = paymentTypeBadges[paymentType] || paymentTypeBadges.cash;
 
             return (
