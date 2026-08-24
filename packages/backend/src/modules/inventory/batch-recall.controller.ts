@@ -3,6 +3,7 @@ import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { RequireModule } from '../auth/decorators/module.decorator';
 import { ModuleGuard } from '../auth/guards/module.guard';
 import { BatchRecallService } from './batch-recall.service';
+import { InitiateRecallDto } from './dto/inventory-ops.dto';
 
 @UseGuards(ModuleGuard)
 @RequireModule('stores')
@@ -12,7 +13,7 @@ export class BatchRecallController {
 
   @Post()
   @AuthWithPermissions('inventory.create')
-  async initiateRecall(@Body() dto: any, @Request() req: any) {
+  async initiateRecall(@Body() dto: InitiateRecallDto, @Request() req: any) {
     return this.batchRecallService.initiateRecall(dto, req.user?.id, req.user?.tenantId);
   }
 

@@ -347,10 +347,22 @@ export class DischargeService {
   ): Promise<DischargeSummary> {
     const tid = requireTenantId(tenantId);
     return this.dataSource.transaction(async (manager) => {
-      const summary = await manager.findOne(DischargeSummary, {
-        where: { id, tenantId: tid },
-        lock: { mode: 'pessimistic_write' },
-      });
+      // A QueryBuilder, not findOne. DischargeSummary carries
+      // @ManyToOne(() => Patient, { eager: true }), so findOne LEFT JOINs the
+      // patient automatically and Postgres then refuses the lock outright:
+      //
+      //   FOR UPDATE cannot be applied to the nullable side of an outer join
+      //
+      // That is not a rare race — it fires on every call, for every id, so
+      // finalising a discharge summary has never once succeeded. A
+      // QueryBuilder does not auto-load eager relations, which is why the 27
+      // other .setLock() sites in this codebase were unaffected.
+      const summary = await manager
+        .createQueryBuilder(DischargeSummary, 'ds')
+        .setLock('pessimistic_write')
+        .where('ds.id = :id', { id })
+        .andWhere('ds.tenant_id = :tid', { tid })
+        .getOne();
       if (!summary) throw new NotFoundException('Discharge summary not found');
       if (summary.documentStatus !== DischargeDocumentStatus.DRAFT) {
         throw new BadRequestException(
@@ -395,10 +407,14 @@ export class DischargeService {
   async signSummary(id: string, userId: string, tenantId?: string): Promise<DischargeSummary> {
     const tid = requireTenantId(tenantId);
     return this.dataSource.transaction(async (manager) => {
-      const summary = await manager.findOne(DischargeSummary, {
-        where: { id, tenantId: tid },
-        lock: { mode: 'pessimistic_write' },
-      });
+      // Same eager-relation trap as finalizeSummary above — signing a
+      // discharge summary has never succeeded either.
+      const summary = await manager
+        .createQueryBuilder(DischargeSummary, 'ds')
+        .setLock('pessimistic_write')
+        .where('ds.id = :id', { id })
+        .andWhere('ds.tenant_id = :tid', { tid })
+        .getOne();
       if (!summary) throw new NotFoundException('Discharge summary not found');
       if (summary.documentStatus === DischargeDocumentStatus.SIGNED) {
         throw new BadRequestException('Summary is already signed');

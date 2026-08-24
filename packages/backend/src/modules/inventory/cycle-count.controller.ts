@@ -3,6 +3,7 @@ import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { RequireModule } from '../auth/decorators/module.decorator';
 import { ModuleGuard } from '../auth/guards/module.guard';
 import { CycleCountService } from './cycle-count.service';
+import { CreateCycleCountDto } from './dto/inventory-ops.dto';
 
 @UseGuards(ModuleGuard)
 @RequireModule('stores')
@@ -12,7 +13,7 @@ export class CycleCountController {
 
   @Post()
   @AuthWithPermissions('inventory.create')
-  async createCycleCount(@Body() dto: any, @Request() req: any) {
+  async createCycleCount(@Body() dto: CreateCycleCountDto, @Request() req: any) {
     return this.cycleCountService.createCycleCount(dto, req.user?.id, req.user?.tenantId);
   }
 

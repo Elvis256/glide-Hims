@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThan, In, DeepPartial } from 'typeorm';
 import {
@@ -30,7 +30,7 @@ export class UpdateDistributionService {
     });
 
     if (!rollout) {
-      throw new Error('Rollout not found');
+      throw new NotFoundException('Rollout not found');
     }
 
     // Get total deployments for this rollout
@@ -63,7 +63,7 @@ export class UpdateDistributionService {
     });
 
     if (!rollout) {
-      throw new Error('Rollout not found');
+      throw new NotFoundException('Rollout not found');
     }
 
     return {
@@ -85,7 +85,7 @@ export class UpdateDistributionService {
     });
 
     if (!rollout) {
-      throw new Error('Rollout not found');
+      throw new NotFoundException('Rollout not found');
     }
 
     let nextPhase: UpdateRolloutPhase;
@@ -116,7 +116,7 @@ export class UpdateDistributionService {
     });
 
     if (!rollout) {
-      throw new Error('Rollout not found');
+      throw new NotFoundException('Rollout not found');
     }
 
     rollout.status = UpdateRolloutStatus.PAUSED;
@@ -132,7 +132,7 @@ export class UpdateDistributionService {
     });
 
     if (!rollout) {
-      throw new Error('Rollout not found');
+      throw new NotFoundException('Rollout not found');
     }
 
     if (rollout.status !== UpdateRolloutStatus.PAUSED) {
@@ -152,7 +152,7 @@ export class UpdateDistributionService {
     });
 
     if (!rollout) {
-      throw new Error('Rollout not found');
+      throw new NotFoundException('Rollout not found');
     }
 
     rollout.status = UpdateRolloutStatus.FAILED;

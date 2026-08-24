@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
@@ -384,7 +384,7 @@ export class LicenseService implements OnModuleInit {
   ): Promise<License> {
     const license = await this.licenseRepository.findOne({ where: { licenseKey } });
     if (!license) {
-      throw new Error('License not found');
+      throw new NotFoundException('License not found');
     }
 
     let signedFieldsChanged = false;
@@ -450,7 +450,7 @@ export class LicenseService implements OnModuleInit {
    */
   async suspendLicense(licenseKey: string): Promise<License> {
     const license = await this.licenseRepository.findOne({ where: { licenseKey } });
-    if (!license) throw new Error('License not found');
+    if (!license) throw new NotFoundException('License not found');
     if (license.status === 'revoked') {
       throw new Error('Cannot suspend a revoked license. Issue a new one instead.');
     }
@@ -466,7 +466,7 @@ export class LicenseService implements OnModuleInit {
    */
   async reactivateLicense(licenseKey: string): Promise<License> {
     const license = await this.licenseRepository.findOne({ where: { licenseKey } });
-    if (!license) throw new Error('License not found');
+    if (!license) throw new NotFoundException('License not found');
     if (license.status === 'revoked') {
       throw new Error('Cannot reactivate a revoked license. Issue a new one instead.');
     }
@@ -489,7 +489,7 @@ export class LicenseService implements OnModuleInit {
     });
 
     if (!license) {
-      throw new Error('License not found');
+      throw new NotFoundException('License not found');
     }
 
     license.status = 'revoked';
@@ -515,7 +515,7 @@ export class LicenseService implements OnModuleInit {
     });
 
     if (!license) {
-      throw new Error('License not found');
+      throw new NotFoundException('License not found');
     }
 
     const newExpiry = new Date(license.expiresAt);
@@ -541,7 +541,7 @@ export class LicenseService implements OnModuleInit {
     });
 
     if (!license) {
-      throw new Error('License not found');
+      throw new NotFoundException('License not found');
     }
 
     if (license.hardwareId && license.hardwareId !== hardwareId) {
@@ -935,7 +935,7 @@ export class LicenseService implements OnModuleInit {
     });
 
     if (!oldLicense) {
-      throw new Error('License not found');
+      throw new NotFoundException('License not found');
     }
 
     if (oldLicense.status === 'revoked') {
