@@ -14,7 +14,9 @@ import { AuditLog } from '../../database/entities/audit-log.entity';
 import { Invoice } from '../../database/entities/invoice.entity';
 import { Appointment } from '../appointments/entities/appointment.entity';
 import { LabSample, SampleStatus } from '../../database/entities/lab-sample.entity';
+import { ResultStatus } from '../../database/entities/lab-result.entity';
 import { Prescription } from '../../database/entities/prescription.entity';
+import { Encounter } from '../../database/entities/encounter.entity';
 import {
   DischargeSummary,
   DischargeDocumentStatus,
@@ -55,6 +57,7 @@ export class PatientPortalService {
     @InjectRepository(Prescription) private readonly prescriptions: Repository<Prescription>,
     @InjectRepository(DischargeSummary)
     private readonly dischargeSummaries: Repository<DischargeSummary>,
+    @InjectRepository(Encounter) private readonly encounters: Repository<Encounter>,
     private readonly cache: CacheService,
     private readonly jwt: JwtService,
     private readonly notifications: NotificationsService,
@@ -94,15 +97,31 @@ export class PatientPortalService {
     await this.cache.set(this.otpKey(phoneHash), entry, OTP_TTL_SECONDS);
 
     const message = `Your patient portal verification code is ${code}. It expires in 5 minutes. Do not share this code.`;
-    await this.notifications
+    const facilityId = await this.resolveFacilityId(patient.id);
+    const sent = await this.notifications
       .sendSmsToPatient({
         patient: { phone: patient.phone, smsOptOut: patient.smsOptOut, fullName: patient.fullName },
-        facilityId: String((patient.metadata as Record<string, unknown>)?.facilityId || ''),
+        facilityId,
         message,
         tenantId: patient.tenantId,
         transactional: true, // OTPs bypass opt-out
       })
-      .catch((err) => this.logger.error(`Portal OTP SMS failed: ${err.message}`));
+      .catch((err) => {
+        this.logger.error(`Portal OTP SMS failed: ${err.message}`);
+        return false;
+      });
+
+    // The response is deliberately identical whether or not the number is
+    // known, so the caller cannot learn who is a patient here. That silence
+    // hid a total failure: nothing distinguished "code sent" from "no code
+    // will ever arrive". The patient still sees the same reply; the operator
+    // now sees this line.
+    if (!sent) {
+      this.logger.warn(
+        `Portal OTP for patient ${patient.id} was NOT delivered ` +
+          `(facility=${facilityId || 'unresolved'}). The patient cannot sign in.`,
+      );
+    }
 
     return { ok: true, expiresInSeconds: OTP_TTL_SECONDS };
   }
@@ -144,6 +163,33 @@ export class PatientPortalService {
 
   private otpKey(phoneHash: string) {
     return `portal:otp:${phoneHash}`;
+  }
+
+  /**
+   * Which facility's SMS credentials send this patient their code.
+   *
+   * This used to read `patient.metadata.facilityId`. Nothing writes that key —
+   * patient metadata is empty for every patient in the system — so the value
+   * was always the empty string, which `getConfig` then compared against a uuid
+   * column: `invalid input syntax for type uuid: ""`. sendSmsToPatient caught
+   * it and returned false, the portal ignored the return, and the endpoint
+   * answered `{ok: true, expiresInSeconds: 300}`. **No patient has ever
+   * received a portal OTP**, and the request that failed to send one reported
+   * success.
+   *
+   * A patient is not tied to a facility, but an encounter is, so use the one
+   * they were most recently seen at. Returns '' only when they have never been
+   * seen anywhere, and the caller logs that.
+   */
+  private async resolveFacilityId(patientId: string): Promise<string> {
+    const encounter = await this.encounters
+      .findOne({
+        where: { patientId },
+        select: ['id', 'facilityId'],
+        order: { createdAt: 'DESC' },
+      })
+      .catch(() => null);
+    return encounter?.facilityId || '';
   }
 
   // ─── Authenticated reads (called after PatientPortalGuard sets req.patientId) ──
@@ -200,11 +246,25 @@ export class PatientPortalService {
     const rows = await this.labSamples
       .createQueryBuilder('s')
       .leftJoinAndSelect('s.results', 'r')
-      .leftJoinAndSelect('s.test', 't')
+      // The relation is `labTest`; there is no `test` on LabSample. TypeORM
+      // rejects the join outright — "Relation with property path test in entity
+      // was not found" — so this endpoint threw on every call. It was invisible
+      // because the global staff guard was returning 401 before the handler ran.
+      .leftJoinAndSelect('s.labTest', 't')
       .where('s.patientId = :patientId', { patientId })
       // NB: enum value is lowercase — the old uppercase literal matched
       // nothing, so patients always saw an empty results list
       .andWhere('s.status = :status', { status: SampleStatus.COMPLETED })
+      // Gate on the RESULT's status too, not the sample's alone. A sample turns
+      // COMPLETED only once every result on it is released — but enterResult
+      // deliberately accepts a new result onto an already-completed sample, and
+      // that one starts at 'entered'. The sample stays COMPLETED, so the
+      // patient would have seen an unvalidated, unreleased value that a
+      // clinician without labqc.view is not allowed to see. Same rule as the
+      // staff endpoint: released or amended, nothing else.
+      .andWhere('r.status IN (:...released)', {
+        released: [ResultStatus.RELEASED, ResultStatus.AMENDED],
+      })
       .orderBy('s.updatedAt', 'DESC')
       .limit(100)
       .getMany();
@@ -212,7 +272,7 @@ export class PatientPortalService {
     return rows.map((s: any) => ({
       id: s.id,
       sampleNumber: s.sampleNumber,
-      testName: s.test?.name,
+      testName: s.labTest?.name,
       status: s.status,
       collectedAt: s.collectedAt,
       releasedAt: s.updatedAt,
@@ -222,7 +282,10 @@ export class PatientPortalService {
         value: r.value,
         unit: r.unit,
         referenceRange: r.referenceRange,
-        flag: r.flag,
+        // The column is abnormalFlag. `r.flag` does not exist on LabResult, so
+        // every result the portal has ever rendered carried flag: undefined —
+        // the one field that tells a patient whether the number is out of range.
+        flag: r.abnormalFlag,
       })),
     }));
   }
