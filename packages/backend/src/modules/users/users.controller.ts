@@ -39,6 +39,7 @@ import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { AuthService } from '../auth/auth.service';
 import { AdminResetPasswordDto } from '../auth/dto/auth.dto';
 import { RateLimitGuard } from '../auth/guards/rate-limit.guard';
+import { BulkForcePasswordResetDto } from './dto/bulk-users.dto';
 
 @ApiTags('users')
 @Controller('users')
@@ -191,7 +192,7 @@ export class UsersController {
   @Post('bulk-force-password-reset')
   @AuthWithPermissions('users.update')
   @ApiOperation({ summary: 'Force password reset for multiple users (next-login)' })
-  async bulkForcePasswordReset(@Body() body: { userIds: string[] }, @Request() req: any) {
+  async bulkForcePasswordReset(@Body() body: BulkForcePasswordResetDto, @Request() req: any) {
     const result = await this.usersService.bulkForcePasswordReset(
       body?.userIds || [],
       req.user?.tenantId,

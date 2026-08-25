@@ -10,6 +10,7 @@ import {
   IsDateString,
   IsIn,
   IsNotEmpty,
+  MaxLength,
 } from 'class-validator';
 import { ApiProperty, PartialType } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
@@ -47,6 +48,15 @@ export class CreateTransferDto {
   @ApiProperty() @IsUUID() fromStoreId: string;
   @ApiProperty() @IsUUID() toStoreId: string;
   @ApiProperty({ required: false }) @IsOptional() @IsString() reason?: string;
+
+  // stock_transfers.notes exists; only this DTO refused it, which rejects the
+  // whole transfer rather than dropping the field.
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  notes?: string;
+
   @ApiProperty({ type: [TransferItemDto] })
   @IsArray()
   @ValidateNested({ each: true })

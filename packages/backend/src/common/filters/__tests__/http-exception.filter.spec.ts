@@ -67,6 +67,31 @@ describe('GlobalExceptionFilter', () => {
     );
   });
 
+  it('passes validation details through so the client can name the bad field', () => {
+    // main.ts's ValidationPipe builds this shape. The filter used to read only
+    // `message`, so every form in the product failed with a bare "Validation
+    // failed" and the client's field-level error rendering — which already
+    // expects {field, errors} — never had anything to render.
+    const details = [{ field: 'name', errors: ['name should not be empty'] }];
+    const exception = new HttpException(
+      { message: 'Validation failed', details },
+      HttpStatus.BAD_REQUEST,
+    );
+
+    filter.catch(exception, mockHost);
+
+    expect(mockResponse.json).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'Validation failed', details }),
+    );
+  });
+
+  it('omits the details key entirely when the exception carries none', () => {
+    filter.catch(new HttpException('Not found', HttpStatus.NOT_FOUND), mockHost);
+
+    const body = (mockResponse.json as jest.Mock).mock.calls[0][0];
+    expect(body).not.toHaveProperty('details');
+  });
+
   it('should return 500 with generic message for unknown exceptions (no stack leak)', () => {
     const exception = new Error('Database connection failed - secret info');
 

@@ -22,7 +22,7 @@ import {
   ShoppingBag,
   Sparkles,
 } from 'lucide-react';
-import { setupService, type InitializeSetupData, type FacilityPreset, type PublicPlan } from '../services/setup';
+import { setupService, type RegisterTenantData, type FacilityPreset, type PublicPlan } from '../services/setup';
 import { api } from '../services/api';
 import Logo from '../components/Logo';
 
@@ -332,7 +332,7 @@ export default function RegisterOrganizationPage() {
       .catch(() => {});
   }, []);
 
-  const [formData, setFormData] = useState<InitializeSetupData>({
+  const [formData, setFormData] = useState<RegisterTenantData>({
     organization: { name: '', slug: '', type: 'hospital', country: 'Uganda' },
     facility: { name: '', type: 'hospital' },
     admin: { fullName: '', email: '', username: '', password: '' },
@@ -370,7 +370,7 @@ export default function RegisterOrganizationPage() {
     }
   };
 
-  const updateFormData = (section: keyof InitializeSetupData, field: string, value: any) => {
+  const updateFormData = (section: keyof RegisterTenantData, field: string, value: any) => {
     setFormData(prev => {
       const updated = {
         ...prev,

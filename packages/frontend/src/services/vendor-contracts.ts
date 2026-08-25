@@ -45,18 +45,25 @@ export interface ContractStats {
 }
 
 // DTOs
+/**
+ * Mirrors the API's CreateVendorContractDto. It previously declared title,
+ * totalValue, paymentTerms, deliveryTerms and termsAndConditions — none of
+ * which vendor_contracts has. The real columns are `value` and `terms`, and
+ * one undeclared property rejects the whole contract under
+ * forbidNonWhitelisted.
+ */
 export interface CreateVendorContractDto {
   contractNumber: string;
-  title: string;
   supplierId: string;
   facilityId: string;
   startDate: string;
   endDate: string;
-  totalValue: number;
-  paymentTerms?: string;
-  deliveryTerms?: string;
-  termsAndConditions?: string;
+  value: number;
+  terms?: string;
+  autoRenew?: boolean;
+  renewalNoticeDays?: number;
   documents?: Record<string, string>;
+  notes?: string;
 }
 
 export interface UpdateVendorContractDto {

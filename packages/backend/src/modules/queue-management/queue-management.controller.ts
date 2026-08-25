@@ -27,6 +27,7 @@ import {
 import { RequireFacilityAccess } from '../auth/decorators/facility-access.decorator';
 import { RequireModule } from '../auth/decorators/module.decorator';
 import { ModuleGuard } from '../auth/guards/module.guard';
+import { TriageDispositionDto, SaveTriageDataDto } from './dto/triage-bodies.dto';
 
 @RequireModule('registration')
 @Controller('queue')
@@ -275,7 +276,7 @@ export class QueueManagementController {
   @AuthWithPermissions('queue.update')
   async triageDisposition(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() body: { disposition?: string; triageData?: Record<string, any> },
+    @Body() body: TriageDispositionDto,
     @Request() req: any,
   ) {
     const disposition = body?.disposition;
@@ -295,7 +296,7 @@ export class QueueManagementController {
   @AuthWithPermissions('queue.update')
   async saveTriageData(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() body: { triageData: Record<string, any> },
+    @Body() body: SaveTriageDataDto,
     @Request() req: any,
   ) {
     if (!body?.triageData || typeof body.triageData !== 'object') {

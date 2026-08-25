@@ -26,6 +26,7 @@ import { hashPii } from '../../common/crypto/pii-crypto';
 import { checkDuplicates, DuplicateMatch } from './duplicate-detector.util';
 import { PatientConsentService } from './patient-consent.service';
 import { requireTenantId } from '../../common/utils/tenant.util';
+import { IsIn, IsString, MinLength, MaxLength } from 'class-validator';
 
 export interface UploadDocumentDto {
   category: DocumentCategory;
@@ -35,8 +36,22 @@ export interface UploadDocumentDto {
   tags?: string[];
 }
 
-export interface CreateNoteDto {
+/**
+ * A class, not an interface. TypeScript interfaces do not exist at runtime, so
+ * `@Body() dto: CreateNoteDto` gave ValidationPipe no metatype to work
+ * against: validation was skipped entirely and POST /patients/:id/notes
+ * accepted and persisted any body at all, arbitrary properties included. It
+ * looked validated — it names a DTO in the signature — while validating
+ * nothing.
+ */
+export class CreateNoteDto {
+  // NoteType is a string-literal union, not an enum — @IsIn, not @IsEnum.
+  @IsIn(['clinical', 'administrative'])
   type: NoteType;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(4000)
   content: string;
 }
 

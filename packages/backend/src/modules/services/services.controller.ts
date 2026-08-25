@@ -22,6 +22,7 @@ import {
   CreateServicePackageDto,
   CreateServiceConsumableDto,
   UpdateServiceConsumableDto,
+  UpdateServicePackageDto,
 } from './services.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { RequireModule } from '../auth/decorators/module.decorator';
@@ -89,7 +90,7 @@ export class ServicesController {
   @ApiOperation({ summary: 'Update service package' })
   updatePackage(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: Partial<CreateServicePackageDto>,
+    @Body() dto: UpdateServicePackageDto,
     @Request() req: any,
   ) {
     return this.service.updatePackage(id, dto, req.user?.tenantId);

@@ -26,6 +26,15 @@ import { EmployeeGoal, GoalStatus } from '../../database/entities/employee-goal.
 import { LetterTemplate, LetterTemplateType } from '../../database/entities/letter-template.entity';
 import { Employee } from '../../database/entities/employee.entity';
 import { requireTenantId } from '../../common/utils/tenant.util';
+import {
+  CreatePipDto,
+  UpdatePipDto,
+  CreateGoalDto,
+  UpdateGoalDto,
+  CreateLetterTemplateDto,
+  UpdateLetterTemplateDto,
+} from './dto/hr-extras.dto';
+import { RenderLetterDto } from './dto/hr-documents.dto';
 
 @ApiTags('HR - PIP / Goals / Letters')
 @ApiBearerAuth()
@@ -48,7 +57,7 @@ export class HrExtrasController {
   @Post('pips')
   @AuthWithPermissions('hr.create')
   @ApiOperation({ summary: 'Create PIP' })
-  async createPip(@Body() dto: any, @Request() req: any) {
+  async createPip(@Body() dto: CreatePipDto, @Request() req: any) {
     const tid = requireTenantId(req.user?.tenantId);
     const pip = this.pipRepo.create({
       ...dto,
@@ -76,7 +85,7 @@ export class HrExtrasController {
   @Patch('pips/:id')
   @AuthWithPermissions('hr.update')
   @ApiOperation({ summary: 'Update PIP' })
-  async updatePip(@Param('id') id: string, @Body() dto: any, @Request() req: any) {
+  async updatePip(@Param('id') id: string, @Body() dto: UpdatePipDto, @Request() req: any) {
     const tid = requireTenantId(req.user?.tenantId);
     const where: any = { id, tenantId: tid };
     const pip = await this.pipRepo.findOne({ where });
@@ -101,7 +110,7 @@ export class HrExtrasController {
   @Post('goals')
   @AuthWithPermissions('hr.create')
   @ApiOperation({ summary: 'Create employee goal' })
-  async createGoal(@Body() dto: any, @Request() req: any) {
+  async createGoal(@Body() dto: CreateGoalDto, @Request() req: any) {
     const tid = requireTenantId(req.user?.tenantId);
     const goal = this.goalRepo.create({
       ...dto,
@@ -140,7 +149,7 @@ export class HrExtrasController {
   @Patch('goals/:id')
   @AuthWithPermissions('hr.update')
   @ApiOperation({ summary: 'Update goal' })
-  async updateGoal(@Param('id') id: string, @Body() dto: any, @Request() req: any) {
+  async updateGoal(@Param('id') id: string, @Body() dto: UpdateGoalDto, @Request() req: any) {
     const tid = requireTenantId(req.user?.tenantId);
     const where: any = { id, tenantId: tid };
     const goal = await this.goalRepo.findOne({ where });
@@ -165,7 +174,7 @@ export class HrExtrasController {
   @Post('letter-templates')
   @AuthWithPermissions('hr.create')
   @ApiOperation({ summary: 'Create letter template' })
-  async createLetter(@Body() dto: any, @Request() req: any) {
+  async createLetter(@Body() dto: CreateLetterTemplateDto, @Request() req: any) {
     const tid = requireTenantId(req.user?.tenantId);
     const tpl = this.letterRepo.create({ ...dto, tenantId: tid });
     return this.letterRepo.save(tpl);
@@ -184,7 +193,7 @@ export class HrExtrasController {
   @Patch('letter-templates/:id')
   @AuthWithPermissions('hr.update')
   @ApiOperation({ summary: 'Update letter template' })
-  async updateLetter(@Param('id') id: string, @Body() dto: any, @Request() req: any) {
+  async updateLetter(@Param('id') id: string, @Body() dto: UpdateLetterTemplateDto, @Request() req: any) {
     const tid = requireTenantId(req.user?.tenantId);
     const where: any = { id, tenantId: tid };
     const tpl = await this.letterRepo.findOne({ where });
@@ -210,7 +219,7 @@ export class HrExtrasController {
   @ApiOperation({ summary: 'Render letter against employee data (returns text)' })
   async renderLetter(
     @Param('id') id: string,
-    @Body() body: { employeeId?: string; variables?: Record<string, any> },
+    @Body() body: RenderLetterDto,
     @Request() req: any,
     @Res() res: any,
   ) {

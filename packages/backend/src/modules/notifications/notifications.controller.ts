@@ -24,6 +24,10 @@ import {
 } from './dto/notification.dto';
 import { NotificationType } from '../../database/entities/notification-config.entity';
 import { FacilityId } from '../../common/decorators/facility-id.decorator';
+import {
+  CreateNotificationTemplateDto,
+  UpdateNotificationTemplateDto,
+} from './dto/notification-template.dto';
 
 @ApiTags('Notifications')
 @ApiBearerAuth()
@@ -140,14 +144,14 @@ export class NotificationsController {
   @Post('templates')
   @AuthWithPermissions('notifications.create')
   @ApiOperation({ summary: 'Create a message template' })
-  async createTemplate(@Body() dto: any, @Request() req: any) {
+  async createTemplate(@Body() dto: CreateNotificationTemplateDto, @Request() req: any) {
     return this.notificationsService.createTemplate(dto, req.user?.tenantId);
   }
 
   @Put('templates/:id')
   @AuthWithPermissions('notifications.update')
   @ApiOperation({ summary: 'Update a message template' })
-  async updateTemplate(@Param('id') id: string, @Body() dto: any, @Request() req: any) {
+  async updateTemplate(@Param('id') id: string, @Body() dto: UpdateNotificationTemplateDto, @Request() req: any) {
     return this.notificationsService.updateTemplate(id, dto, req.user?.tenantId);
   }
 

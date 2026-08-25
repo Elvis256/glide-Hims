@@ -17,6 +17,7 @@ import { PhoneHomeService, PhoneHomePayload } from './phone-home.service';
 import { Auth } from '../auth/decorators/auth.decorator';
 import { Public } from '../auth/decorators/public.decorator';
 import { withSystemContext } from '../../common/context/tenant-context';
+import { PhoneHomePayloadDto } from './dto/licensing.dto';
 
 @ApiTags('Phone Home')
 @Controller('phone-home')
@@ -36,7 +37,7 @@ export class PhoneHomeController {
   @Public()
   @Throttle({ default: { ttl: 60000, limit: 5 } })
   @ApiOperation({ summary: 'Receive phone home heartbeat' })
-  async receiveHeartbeat(@Body() payload: PhoneHomePayload, @Req() req: ExpressRequest) {
+  async receiveHeartbeat(@Body() payload: PhoneHomePayloadDto, @Req() req: ExpressRequest) {
     const ipAddress =
       (req.headers['x-forwarded-for'] as string)?.split(',')[0] ||
       req.socket.remoteAddress ||

@@ -22,7 +22,11 @@ export default function ConsumablesSection({ caseId }: Props) {
 
   const { data: consumables = [] } = useQuery({
     queryKey: ['surgery-consumables', caseId],
-    queryFn: async () => (await surgeryService.consumables.list(caseId)).data,
+    // The endpoint returns a costed summary, not a bare array — the
+    // consumables are under `items`. Reading the object straight into
+    // `consumables` meant the `= []` default never applied and the
+    // `.reduce` below threw on every render of this section.
+    queryFn: async () => (await surgeryService.consumables.list(caseId)).data?.items ?? [],
   });
 
   const { data: items = [] } = useQuery({

@@ -32,6 +32,7 @@ import { RequireModule } from '../auth/decorators/module.decorator';
 import { ModuleGuard } from '../auth/guards/module.guard';
 import { RequireFacilityAccess } from '../auth/decorators/facility-access.decorator';
 import { CancelSaleDto } from './dto/cancel-sale.dto';
+import { InteractionOverrideDto, ReconcileControlledDto } from './dto/pharmacy-bodies.dto';
 
 @ApiTags('Pharmacy POS')
 @ApiBearerAuth()
@@ -430,14 +431,7 @@ export class PharmacyController {
   @AuthWithPermissions('pos.interaction.override')
   @ApiOperation({ summary: 'Record a drug-interaction override after manager PIN confirmation' })
   recordInteractionOverride(
-    @Body()
-    body: {
-      saleId?: string;
-      patientId?: string;
-      warnings: any[];
-      reason: string;
-      managerApproverId?: string;
-    },
+    @Body() body: InteractionOverrideDto,
     @Request() req: any,
   ) {
     return this.service.recordInteractionOverride({
@@ -479,7 +473,7 @@ export class PharmacyController {
     summary: 'Submit a physical count for controlled substances and receive a variance report',
   })
   reconcileControlledSubstances(
-    @Body() body: { counts: { itemId: string; physicalCount: number }[]; notes?: string },
+    @Body() body: ReconcileControlledDto,
     @Request() req: any,
   ) {
     return this.service.reconcileControlledSubstances({
