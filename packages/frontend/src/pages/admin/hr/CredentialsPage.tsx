@@ -125,6 +125,11 @@ export default function CredentialsPage() {
             docs.map((d: any) => ({
               id: d.id,
               staffName: s.fullName || `${s.firstName} ${s.lastName}`,
+              // `employeeCode` is sent by no endpoint, so this always
+              // resolves to s.id. Deliberately left that way: the same
+              // expression is used to look credentials back up, so it is
+              // self-consistent, and switching to employeeNumber would re-key
+              // every credential already stored against a uuid.
               staffId: s.employeeCode || s.id,
               department: s.department || 'N/A',
               credentialType: d.documentType || 'Other',

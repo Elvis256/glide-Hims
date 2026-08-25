@@ -22,6 +22,7 @@ import {
   SetParentRoleDto,
 } from './dto/role.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
+import { CloneRoleDto } from './dto/clone-role.dto';
 
 @ApiTags('roles')
 @Controller('roles')
@@ -82,7 +83,7 @@ export class RolesController {
   @ApiOperation({ summary: 'Duplicate a role with all its direct permissions' })
   async cloneRole(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() body: { name: string; description?: string },
+    @Body() body: CloneRoleDto,
     @Request() req: any,
   ) {
     const role = await this.rolesService.cloneRole(

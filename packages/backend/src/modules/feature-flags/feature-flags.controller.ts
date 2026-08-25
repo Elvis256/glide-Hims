@@ -12,6 +12,8 @@ import {
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { FeatureFlagsService } from './feature-flags.service';
 import { Auth } from '../auth/decorators/auth.decorator';
+import { CheckFeaturesDto, UpsertSystemFeatureDto } from './feature-flags.dto';
+import { SetFeatureFlagDto } from './set-flag.dto';
 
 @ApiTags('Feature Flags')
 @Controller('features')
@@ -37,7 +39,7 @@ export class FeatureFlagsController {
   @Post('check-batch')
   @Auth()
   @ApiOperation({ summary: 'Check multiple features at once' })
-  async checkFeatures(@Body() body: { featureKeys: string[] }, @Request() req: any) {
+  async checkFeatures(@Body() body: CheckFeaturesDto, @Request() req: any) {
     const tid = req.user?.tenantId;
     if (!tid) throw new BadRequestException('Tenant context required');
     return this.featureFlagsService.checkFeatures(body.featureKeys, tid);
@@ -77,12 +79,7 @@ export class FeatureFlagsController {
   @ApiOperation({ summary: 'Set a feature flag' })
   async setFlag(
     @Param('featureKey') featureKey: string,
-    @Body()
-    body: {
-      enabled: boolean;
-      value?: any;
-      metadata?: Record<string, any>;
-    },
+    @Body() body: SetFeatureFlagDto,
     @Request() req: any,
   ) {
     const tid = req.user?.tenantId ?? null;
@@ -124,18 +121,7 @@ export class FeatureFlagsController {
   @Post('system/definitions')
   @Auth('Administrator')
   @ApiOperation({ summary: 'Create or update system feature' })
-  async upsertSystemFeature(
-    @Body()
-    body: {
-      featureKey: string;
-      name: string;
-      description?: string;
-      category: string;
-      defaultEnabled?: boolean;
-      minLicenseType?: string;
-      dependencies?: string[];
-    },
-  ) {
+  async upsertSystemFeature(@Body() body: UpsertSystemFeatureDto) {
     return this.featureFlagsService.upsertSystemFeature(body as any);
   }
 }

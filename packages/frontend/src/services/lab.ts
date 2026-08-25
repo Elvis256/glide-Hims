@@ -9,13 +9,19 @@ export interface LabTest {
   name: string;
   category: string;
   sampleType?: string;
-  normalRange?: string;
-  unit?: string;
-  turnaroundTime?: string;
+  /**
+   * `normalRange`, `unit`, `turnaroundTime` and `isActive` are NOT declared
+   * here, because no endpoint sends them and no such columns exist. The
+   * catalogue rendered {test.normalRange} and {test.turnaroundTime} directly,
+   * so its Normal Range and Turnaround columns were blank for every test and
+   * the doctor's ordering screen never showed a turnaround at all. What the
+   * API sends is `referenceRanges[]` — unit, normalMin and normalMax per
+   * parameter — plus `turnaroundTimeMinutes` and `status`. Derive the rest
+   * with the helpers below.
+   */
   turnaroundTimeMinutes?: number;
   price: number;
   cost?: number;
-  isActive?: boolean;
   status?: string;
   description?: string;
   requiresFasting?: boolean;
@@ -32,6 +38,43 @@ export interface LabTest {
     gender?: 'male' | 'female' | 'all';
   }>;
 }
+
+/**
+ * A lab test's normal range, built from the reference ranges the API sends.
+ *
+ * A single-parameter test reads as "12–16 g/dL". A panel has one range per
+ * parameter and cannot be summarised in a cell, so it says how many it has —
+ * which is honest, where the previous blank was not.
+ */
+export function labTestNormalRange(t?: Pick<LabTest, 'referenceRanges'> | null): string {
+  const ranges = t?.referenceRanges ?? [];
+  if (ranges.length === 0) return '—';
+  if (ranges.length === 1) {
+    const r = ranges[0];
+    const lo = r.normalMin ?? null;
+    const hi = r.normalMax ?? null;
+    if (lo === null && hi === null) return r.unit || '—';
+    const span = lo !== null && hi !== null ? `${lo}–${hi}` : lo !== null ? `≥ ${lo}` : `≤ ${hi}`;
+    return r.unit ? `${span} ${r.unit}` : span;
+  }
+  return `${ranges.length} parameters`;
+}
+
+
+/** Turnaround as something a person reads, from turnaroundTimeMinutes. */
+export function labTestTurnaround(t?: Pick<LabTest, 'turnaroundTimeMinutes'> | null): string {
+  const m = t?.turnaroundTimeMinutes;
+  if (m == null) return '—';
+  if (m < 60) return `${m} min`;
+  if (m < 1440) {
+    const h = m / 60;
+    return `${Number.isInteger(h) ? h : h.toFixed(1)} h`;
+  }
+  const d = m / 1440;
+  return `${Number.isInteger(d) ? d : d.toFixed(1)} d`;
+}
+
+
 
 export interface LabSample {
   id: string;

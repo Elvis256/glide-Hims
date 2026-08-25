@@ -1,4 +1,4 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { Injectable, Logger, Optional, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, LessThan, Repository } from 'typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
@@ -615,7 +615,7 @@ export class SystemHealthService {
   async acknowledgeAlert(alertId: string, userId: string): Promise<SystemAlert> {
     const alert = await this.alertRepo.findOne({ where: { id: alertId } });
     if (!alert) {
-      throw new Error('Alert not found');
+      throw new NotFoundException('Alert not found');
     }
     if (alert.status === 'resolved') {
       throw new Error('Alert is already resolved');
@@ -630,7 +630,7 @@ export class SystemHealthService {
   async resolveAlert(alertId: string, userId: string): Promise<SystemAlert> {
     const alert = await this.alertRepo.findOne({ where: { id: alertId } });
     if (!alert) {
-      throw new Error('Alert not found');
+      throw new NotFoundException('Alert not found');
     }
     if (alert.status === 'resolved') {
       throw new Error('Alert is already resolved');
@@ -660,7 +660,7 @@ export class SystemHealthService {
   async updateAlertRule(id: string, data: Partial<AlertRule>): Promise<AlertRule> {
     const rule = await this.alertRuleRepo.findOne({ where: { id } });
     if (!rule) {
-      throw new Error('Alert rule not found');
+      throw new NotFoundException('Alert rule not found');
     }
     Object.assign(rule, data);
     return this.alertRuleRepo.save(rule);
@@ -669,7 +669,7 @@ export class SystemHealthService {
   async deleteAlertRule(id: string): Promise<void> {
     const rule = await this.alertRuleRepo.findOne({ where: { id } });
     if (!rule) {
-      throw new Error('Alert rule not found');
+      throw new NotFoundException('Alert rule not found');
     }
     await this.alertRuleRepo.softRemove(rule);
   }

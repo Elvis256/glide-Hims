@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import * as nodemailer from 'nodemailer';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -257,7 +257,7 @@ export class SaasMailerService {
     opts: { tenantId?: string; actorId?: string } = {},
   ) {
     const stored = await this.getStoredTemplate(key, opts.tenantId);
-    if (!stored?.history || !stored.history[versionIndex]) throw new Error('Version not found');
+    if (!stored?.history || !stored.history[versionIndex]) throw new NotFoundException('Version not found');
     const target = stored.history[versionIndex];
     return this.setTemplate(key, { subject: target.subject, body: target.body }, opts);
   }

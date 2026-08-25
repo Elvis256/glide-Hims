@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ChangeSet } from '../../database/entities/changeset.entity';
@@ -94,7 +94,7 @@ export class MasterDataSyncService {
     });
 
     if (!deployment) {
-      throw new Error('Deployment not found');
+      throw new NotFoundException('Deployment not found');
     }
 
     const lastSync = await this.replicationLogRepository.findOne({

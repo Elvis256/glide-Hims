@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { OnboardingService } from './onboarding.service';
+import { CreateOnboardingDto, UpdateOnboardingItemDto } from './dto/saas-ops.dto';
 
 @ApiTags('SaaS Onboarding')
 @Controller('saas-revenue/onboardings')
@@ -30,7 +31,7 @@ export class OnboardingController {
 
   @Post()
   @ApiOperation({ summary: 'Create an onboarding' })
-  async create(@Req() req: any, @Body() dto: any) {
+  async create(@Req() req: any, @Body() dto: CreateOnboardingDto) {
     this.assertAdmin(req);
     return this.service.createOnboarding(dto);
   }
@@ -48,7 +49,7 @@ export class OnboardingController {
     @Req() req: any,
     @Param('id') id: string,
     @Param('itemId') itemId: string,
-    @Body() dto: any,
+    @Body() dto: UpdateOnboardingItemDto,
   ) {
     this.assertAdmin(req);
     return this.service.updateItem(id, itemId, dto);
