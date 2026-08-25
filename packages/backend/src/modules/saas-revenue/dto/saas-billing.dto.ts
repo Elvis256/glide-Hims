@@ -12,6 +12,8 @@ import {
   MaxLength,
   Min,
   ValidateNested,
+  IsObject,
+  Matches,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -284,4 +286,165 @@ export class PreviewEmailTemplateDto {
   @IsString()
   @MaxLength(50000)
   body?: string;
+}
+
+/** The remaining eight bodies in this controller: three `any`, five inline. */
+export class UpdateCurrencyRatesDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(8)
+  base?: string;
+
+  /**
+   * Rate map, base unit to target. Values are checked as numbers; the pipe
+   * cannot check the keys of a Record, so the service remains responsible for
+   * the currency codes themselves.
+   */
+  @ApiPropertyOptional({ type: Object })
+  @IsOptional()
+  @IsObject()
+  rates?: Record<string, number>;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  updatedAt?: string | null;
+}
+
+export class RefreshCurrencyRatesDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(2048)
+  providerUrl?: string;
+}
+
+export class SetPayerTenantDto {
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  payerTenantId?: string | null;
+}
+
+export class AddPaymentMethodDto {
+  @ApiPropertyOptional({ enum: ['card', 'mobile_money', 'bank', 'other'] })
+  @IsOptional()
+  @IsIn(['card', 'mobile_money', 'bank', 'other'])
+  kind?: 'card' | 'mobile_money' | 'bank' | 'other';
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  label?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  brand?: string;
+
+  /** Exactly four digits, and never more: this is displayed as a card tail. */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Matches(/^\d{4}$/, { message: 'last4 must be four digits' })
+  last4?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(12)
+  expMonth?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsInt()
+  @Min(2000)
+  @Max(2200)
+  expYear?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  holderName?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  isDefault?: boolean;
+}
+
+export class CreateWebhookDto {
+  @ApiProperty()
+  @IsString()
+  @MaxLength(2048)
+  url: string;
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  events?: string[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  description?: string;
+}
+
+export class UpdateWebhookDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(2048)
+  url?: string;
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  events?: string[];
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  description?: string | null;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  enabled?: boolean;
+}
+
+export class PayInvoiceDto {
+  @ApiProperty()
+  @IsString()
+  @MaxLength(64)
+  invoiceId: string;
+
+  @ApiProperty()
+  @IsString()
+  @MaxLength(64)
+  paymentMethodId: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(2048)
+  redirectUrl?: string;
+}
+
+
+/** A send that names no recipient is not a send; `to` is required here. */
+export class SendInvoiceEmailRequiredDto {
+  @ApiProperty()
+  @IsEmail()
+  to: string;
 }

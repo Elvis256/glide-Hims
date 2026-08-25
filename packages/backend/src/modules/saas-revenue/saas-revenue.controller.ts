@@ -49,6 +49,14 @@ import {
   UpdateEmailTemplateDto,
   RevertEmailTemplateDto,
   PreviewEmailTemplateDto,
+  UpdateCurrencyRatesDto,
+  RefreshCurrencyRatesDto,
+  SetPayerTenantDto,
+  AddPaymentMethodDto,
+  CreateWebhookDto,
+  UpdateWebhookDto,
+  PayInvoiceDto,
+  SendInvoiceEmailRequiredDto,
 } from './dto/saas-billing.dto';
 
 function ensureAdmin(req: any) {
@@ -487,7 +495,7 @@ export class SaasRevenueController {
   async testEmailTemplate(
     @Req() req: any,
     @Param('key') key: string,
-    @Body() body: { to: string },
+    @Body() body: SendInvoiceEmailRequiredDto,
     @Query('tenantId') tenantId?: string,
   ) {
     ensureAdmin(req);
@@ -573,13 +581,13 @@ export class SaasRevenueController {
   }
 
   @Put('currency-rates')
-  updateCurrencyRates(@Req() req: any, @Body() dto: any) {
+  updateCurrencyRates(@Req() req: any, @Body() dto: UpdateCurrencyRatesDto) {
     ensureAdmin(req);
     return this.svc.updateCurrencyRates(dto || {});
   }
 
   @Post('currency-rates/refresh')
-  refreshCurrencyRates(@Req() req: any, @Body() dto: any) {
+  refreshCurrencyRates(@Req() req: any, @Body() dto: RefreshCurrencyRatesDto) {
     ensureAdmin(req);
     return this.svc.refreshCurrencyRatesFromProvider({ providerUrl: dto?.providerUrl });
   }
@@ -696,7 +704,7 @@ export class SaasRevenueController {
   setSubscriptionPayer(
     @Req() req: any,
     @Param('id') id: string,
-    @Body() dto: { payerTenantId?: string | null },
+    @Body() dto: SetPayerTenantDto,
   ) {
     if (!req.user?.isSystemAdmin) throw new ForbiddenException('System admin required');
     const v = dto?.payerTenantId ?? null;
@@ -717,7 +725,7 @@ export class SaasRevenueController {
   }
 
   @Post('portal/payment-methods')
-  myAddPaymentMethod(@Req() req: any, @Body() dto: any) {
+  myAddPaymentMethod(@Req() req: any, @Body() dto: AddPaymentMethodDto) {
     const tenantId =
       req.user?.isSystemAdmin && req.body?.tenantId ? String(req.body.tenantId) : ensureTenant(req);
     return this.svc.addMyPaymentMethod(tenantId, dto || {});
@@ -759,7 +767,7 @@ export class SaasRevenueController {
   @Post('portal/webhooks')
   myCreateWebhook(
     @Req() req: any,
-    @Body() dto: { url: string; events?: string[]; description?: string },
+    @Body() dto: CreateWebhookDto,
   ) {
     const tenantId =
       req.user?.isSystemAdmin && req.query?.tenantId
@@ -772,8 +780,7 @@ export class SaasRevenueController {
   myUpdateWebhook(
     @Req() req: any,
     @Param('id') id: string,
-    @Body()
-    dto: { url?: string; events?: string[]; description?: string | null; enabled?: boolean },
+    @Body() dto: UpdateWebhookDto,
   ) {
     const tenantId =
       req.user?.isSystemAdmin && req.query?.tenantId
@@ -861,7 +868,7 @@ export class SaasRevenueController {
   @Post('portal/charge-saved')
   async myChargeSaved(
     @Req() req: any,
-    @Body() dto: { invoiceId: string; paymentMethodId: string; redirectUrl?: string },
+    @Body() dto: PayInvoiceDto,
   ) {
     const tenantId = req.user?.isSystemAdmin ? undefined : ensureTenant(req);
     const redirectUrl =
