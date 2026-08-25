@@ -21,6 +21,10 @@ import {
   UpdatePricingRuleDto,
   ResolvePriceDto,
   PriceQueryDto,
+  CreateTaxRateDto,
+  UpdateTaxRateDto,
+  CreateTaxExemptionDto,
+  UpdateTaxExemptionDto,
 } from './pricing-engine.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { RequireModule } from '../auth/decorators/module.decorator';
@@ -147,7 +151,7 @@ export class PricingEngineController {
   @Post('tax-rates')
   @AuthWithPermissions('services.create')
   @ApiOperation({ summary: 'Create tax rate' })
-  createTaxRate(@Body() dto: any, @Request() req: any) {
+  createTaxRate(@Body() dto: CreateTaxRateDto, @Request() req: any) {
     return this.pricingService.createTaxRate(dto, req.user?.tenantId);
   }
 
@@ -161,7 +165,11 @@ export class PricingEngineController {
   @Patch('tax-rates/:id')
   @AuthWithPermissions('services.update')
   @ApiOperation({ summary: 'Update tax rate' })
-  updateTaxRate(@Param('id', ParseUUIDPipe) id: string, @Body() dto: any, @Request() req: any) {
+  updateTaxRate(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateTaxRateDto,
+    @Request() req: any,
+  ) {
     return this.pricingService.updateTaxRate(id, dto, req.user?.tenantId);
   }
 
@@ -176,7 +184,7 @@ export class PricingEngineController {
   @Post('tax-exemptions')
   @AuthWithPermissions('services.create')
   @ApiOperation({ summary: 'Create tax exemption' })
-  createTaxExemption(@Body() dto: any, @Request() req: any) {
+  createTaxExemption(@Body() dto: CreateTaxExemptionDto, @Request() req: any) {
     return this.pricingService.createTaxExemption(dto, req.user?.tenantId);
   }
 
@@ -192,7 +200,7 @@ export class PricingEngineController {
   @ApiOperation({ summary: 'Update tax exemption' })
   updateTaxExemption(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: any,
+    @Body() dto: UpdateTaxExemptionDto,
     @Request() req: any,
   ) {
     return this.pricingService.updateTaxExemption(id, dto, req.user?.tenantId);
