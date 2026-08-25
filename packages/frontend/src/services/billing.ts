@@ -82,14 +82,19 @@ export interface CreateInvoiceDto {
   discountAmount?: number;
 }
 
+/**
+ * Mirrors the API's AddInvoiceItemDto exactly. It previously declared
+ * serviceId, discount and tax; the endpoint accepts none of them and
+ * forbidNonWhitelisted rejects the whole line rather than ignoring the extras.
+ * There is no service_id column at all, and discount/tax are stored as
+ * discount_percent/tax_percent set elsewhere — not through this call.
+ */
 export interface AddInvoiceItemDto {
-  serviceId?: string;
   serviceCode: string;
   description: string;
+  chargeType?: string;
   quantity: number;
   unitPrice: number;
-  discount?: number;
-  tax?: number;
 }
 
 // Payment

@@ -91,12 +91,19 @@ for (const file of readdirSync(SERVICES).filter((f) => f.endsWith('.ts'))) {
       const ident = /^([A-Za-z_$][\w$]*)/.exec(src.slice(after))?.[1];
       if (ident) {
         const before = src.slice(Math.max(0, m.index - 700), m.index);
-        // The `\??` matters: without it an optional parameter (data?: Dto)
-        // does not match and the search silently falls back to the PREVIOUS
-        // method's parameter — which attributed TriageDto's eleven fields to
-        // startTreatment and reported every one of them as rejected.
+        // Only look inside the CURRENT method. `before` runs back 700 chars,
+        // which crosses into earlier methods, and the identifier is almost
+        // always `data` — so a call whose parameter is inline-typed silently
+        // adopted the previous method's DTO. That is how EnterResultDto's nine
+        // fields were attributed to a legacy lab-results call, and how two
+        // different nursing endpoints reported the same five. The method
+        // starts at the last `: async (` / `: (` before the call.
+        const startPat = /:\s*(?:async\s*)?\(/g;
+        let methodStart = 0;
+        for (const mm of before.matchAll(startPat)) methodStart = mm.index;
+        const scope = before.slice(methodStart);
         const decl = [
-          ...before.matchAll(new RegExp(`\\b${ident}\\s*\\??\\s*:\\s*(\\w+)`, 'g')),
+          ...scope.matchAll(new RegExp(`\\b${ident}\\s*\\??\\s*:\\s*(\\w+)`, 'g')),
         ].pop();
         if (decl && interfaceFields.has(decl[1])) fields = interfaceFields.get(decl[1]);
       }

@@ -17,9 +17,12 @@ export interface InsuranceProvider {
 }
 
 export interface CreateProviderDto {
+  /** Required by the API; omitting it fails validation. */
+  facilityId: string;
   name: string;
   code: string;
-  type: 'private' | 'government' | 'corporate';
+  /** Server field is providerType. Sending `type` rejected the whole create. */
+  providerType?: 'private' | 'government' | 'corporate';
   contactPerson?: string;
   phone?: string;
   email?: string;

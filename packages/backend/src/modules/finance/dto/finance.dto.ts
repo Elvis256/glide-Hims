@@ -284,6 +284,17 @@ export class CreateExchangeRateDto {
   @IsOptional()
   @IsDateString()
   effectiveDate?: string;
+
+  /**
+   * The ExchangeRate shape the frontend reads back carries expiryDate, and the
+   * create form sends it; this DTO refused it, which rejects the whole rate.
+   * Rates persist into a settings blob, not a table, so accepting it needs no
+   * migration.
+   */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  expiryDate?: string;
 }
 
 export class UpdateExchangeRateDto {
