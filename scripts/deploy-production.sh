@@ -37,11 +37,27 @@ PM2_APP="${PM2_APP:-glide-hims-backend}"
 # cannot fail is worse than none.
 HEALTH_URL="${HEALTH_URL:-}"
 CHECK_ONLY=0
-[ "${1:-}" = "--check" ] && CHECK_ONLY=1
+IF_CHANGED=0
+case "${1:-}" in
+  --check)      CHECK_ONLY=1 ;;
+  --if-changed) IF_CHANGED=1; QUIET_UNTIL_DECIDED=1 ;;
+esac
 
-log()  { echo "[$(date +%H:%M:%S)] $*"; }
-die()  { echo "[$(date +%H:%M:%S)] FAILED: $*" >&2; exit 1; }
-step() { echo; echo "── $* ──"; }
+# Deploy window. --if-changed runs unattended from cron, and this system is a
+# hospital's: an automatic restart in the middle of a clinic is a worse outcome
+# than a deploy landing a few hours later. Outside the window the poller notices
+# the change, says so, and waits. DEPLOY_ANYTIME=1 overrides for a deliberate
+# out-of-hours push.
+DEPLOY_WINDOW_START="${DEPLOY_WINDOW_START:-1}"
+DEPLOY_WINDOW_END="${DEPLOY_WINDOW_END:-5}"
+
+# In --if-changed the common case is "nothing moved", and that runs every few
+# minutes from cron. Preflight chatter on every quiet run buries the one line
+# that matters, so output stays suppressed until there is something to report.
+log()   { [ "${QUIET_UNTIL_DECIDED:-0}" = "1" ] && return 0; echo "[$(date +%H:%M:%S)] $*"; }
+speak() { QUIET_UNTIL_DECIDED=0; }
+die()  { QUIET_UNTIL_DECIDED=0; echo "[$(date +%H:%M:%S)] FAILED: $*" >&2; exit 1; }
+step()  { [ "${QUIET_UNTIL_DECIDED:-0}" = "1" ] && return 0; echo; echo "── $* ──"; }
 
 trap 'echo; echo "Stopped at line $LINENO. Nothing further was attempted."; echo "The pre-deploy backup, if it was taken, is under $REPO/../backups/predeploy/."' ERR
 
@@ -94,7 +110,24 @@ TARGET=$(git rev-parse "origin/$BRANCH")
 ALREADY_AT_TARGET=0
 if [ "$BEFORE" = "$TARGET" ]; then
   ALREADY_AT_TARGET=1
+  # Unattended: nothing moved, so there is nothing to do and nothing to say.
+  # A poller that logs on every quiet run buries the one line that matters.
+  if [ "$IF_CHANGED" = "1" ]; then
+    exit 0
+  fi
   log "already at origin/$BRANCH ($(git rev-parse --short HEAD)) — still rebuilding, migrating and restarting"
+fi
+
+if [ "$IF_CHANGED" = "1" ] && [ "$ALREADY_AT_TARGET" = "0" ]; then
+  HOUR=$(date +%-H)
+  if [ "${DEPLOY_ANYTIME:-0}" != "1" ] \
+     && ! { [ "$HOUR" -ge "$DEPLOY_WINDOW_START" ] && [ "$HOUR" -lt "$DEPLOY_WINDOW_END" ]; }; then
+    speak
+    log "origin/$BRANCH moved to $(git rev-parse --short "$TARGET") but it is ${HOUR}:00, outside the ${DEPLOY_WINDOW_START}-${DEPLOY_WINDOW_END} deploy window — waiting"
+    exit 0
+  fi
+  speak
+  log "origin/$BRANCH moved: $(git rev-parse --short "$BEFORE") -> $(git rev-parse --short "$TARGET"); deploying"
 fi
 
 if [ "$ALREADY_AT_TARGET" = "0" ]; then
