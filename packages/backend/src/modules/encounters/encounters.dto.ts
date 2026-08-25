@@ -24,6 +24,15 @@ import {
   PayerType,
 } from '../../database/entities/encounter.entity';
 
+/**
+ * Declared here rather than mid-file: it sat below CreateEncounterDto, so the
+ * create path could not reference it and its free-text fields went unsanitised
+ * while the update path stripped tags. Same input, two treatments, decided by
+ * declaration order.
+ */
+const StripHtml = () =>
+  Transform(({ value }) => (typeof value === 'string' ? value.replace(/<[^>]*>/g, '') : value));
+
 export class CreateEncounterDto {
   @IsUUID()
   patientId: string;
@@ -42,7 +51,21 @@ export class CreateEncounterDto {
   @IsString()
   @MaxLength(2000)
   @IsOptional()
+  @StripHtml()
   chiefComplaint?: string;
+
+  /**
+   * encounters.notes exists, UpdateEncounterDto already accepts it and
+   * PatientHistoryPage reads it back — only create refused it, and under
+   * forbidNonWhitelisted that rejects the whole encounter rather than dropping
+   * the field. No caller sends it yet; the frontend DTO has declared it all
+   * along, so the next one would have found out the hard way.
+   */
+  @IsString()
+  @MaxLength(4000)
+  @IsOptional()
+  @StripHtml()
+  notes?: string;
 
   @IsEnum(PayerType)
   @IsOptional()
@@ -70,8 +93,6 @@ export class CreateEncounterDto {
 }
 
 /** Strip HTML tags from a string value (defense-in-depth for stored XSS). */
-const StripHtml = () =>
-  Transform(({ value }) => (typeof value === 'string' ? value.replace(/<[^>]*>/g, '') : value));
 
 export class UpdateEncounterDto {
   // Note: status is intentionally excluded — use PATCH :id/status endpoint

@@ -15,6 +15,21 @@ import { RequireModule } from '../auth/decorators/module.decorator';
 import { ModuleGuard } from '../auth/guards/module.guard';
 import { OrgAdminService } from './org-admin.service';
 import { OrgApprovalResolverService } from './org-approval-resolver.service';
+import {
+  SetDepartmentHeadDto,
+  SetDepartmentParentDto,
+  SetEmployeeManagerDto,
+  SetEmployeePositionDto,
+  CreatePositionDto,
+  UpdatePositionDto,
+  CreateApproverGroupDto,
+  UpdateApproverGroupDto,
+  CreateApprovalPolicyDto,
+  UpdateApprovalPolicyDto,
+  CreateApprovalDelegationDto,
+  UpdateApprovalDelegationDto,
+  PreviewApprovalChainDto,
+} from './dto/org-admin.dto';
 
 @UseGuards(ModuleGuard)
 @RequireModule('procurement')
@@ -36,7 +51,7 @@ export class OrgAdminController {
   @AuthWithPermissions('procurement.manage')
   setDepartmentHead(
     @Param('id') id: string,
-    @Body() body: { headUserId: string | null },
+    @Body() body: SetDepartmentHeadDto,
     @Request() req: any,
   ) {
     return this.orgAdmin.setDepartmentHead(id, body.headUserId, req.user?.tenantId);
@@ -46,7 +61,7 @@ export class OrgAdminController {
   @AuthWithPermissions('procurement.manage')
   setDepartmentParent(
     @Param('id') id: string,
-    @Body() body: { parentId: string | null },
+    @Body() body: SetDepartmentParentDto,
     @Request() req: any,
   ) {
     return this.orgAdmin.setDepartmentParent(id, body.parentId, req.user?.tenantId);
@@ -63,7 +78,7 @@ export class OrgAdminController {
   @AuthWithPermissions('procurement.manage')
   setEmployeeManager(
     @Param('id') id: string,
-    @Body() body: { managerId: string | null },
+    @Body() body: SetEmployeeManagerDto,
     @Request() req: any,
   ) {
     return this.orgAdmin.setEmployeeManager(id, body.managerId, req.user?.tenantId);
@@ -73,7 +88,7 @@ export class OrgAdminController {
   @AuthWithPermissions('procurement.manage')
   setEmployeePosition(
     @Param('id') id: string,
-    @Body() body: { positionId: string | null },
+    @Body() body: SetEmployeePositionDto,
     @Request() req: any,
   ) {
     return this.orgAdmin.setEmployeePosition(id, body.positionId, req.user?.tenantId);
@@ -88,13 +103,13 @@ export class OrgAdminController {
 
   @Post('positions')
   @AuthWithPermissions('procurement.manage')
-  createPosition(@Body() body: any, @Request() req: any) {
+  createPosition(@Body() body: CreatePositionDto, @Request() req: any) {
     return this.orgAdmin.createPosition(body, req.user?.tenantId);
   }
 
   @Put('positions/:id')
   @AuthWithPermissions('procurement.manage')
-  updatePosition(@Param('id') id: string, @Body() body: any, @Request() req: any) {
+  updatePosition(@Param('id') id: string, @Body() body: UpdatePositionDto, @Request() req: any) {
     return this.orgAdmin.updatePosition(id, body, req.user?.tenantId);
   }
 
@@ -119,13 +134,13 @@ export class OrgAdminController {
 
   @Post('groups')
   @AuthWithPermissions('procurement.manage')
-  createGroup(@Body() body: any, @Request() req: any) {
+  createGroup(@Body() body: CreateApproverGroupDto, @Request() req: any) {
     return this.orgAdmin.createGroup(body, req.user?.tenantId);
   }
 
   @Put('groups/:id')
   @AuthWithPermissions('procurement.manage')
-  updateGroup(@Param('id') id: string, @Body() body: any, @Request() req: any) {
+  updateGroup(@Param('id') id: string, @Body() body: UpdateApproverGroupDto, @Request() req: any) {
     return this.orgAdmin.updateGroup(id, body, req.user?.tenantId);
   }
 
@@ -150,13 +165,13 @@ export class OrgAdminController {
 
   @Post('policies')
   @AuthWithPermissions('procurement.manage')
-  createPolicy(@Body() body: any, @Request() req: any) {
+  createPolicy(@Body() body: CreateApprovalPolicyDto, @Request() req: any) {
     return this.orgAdmin.createPolicy(body, req.user?.tenantId);
   }
 
   @Put('policies/:id')
   @AuthWithPermissions('procurement.manage')
-  updatePolicy(@Param('id') id: string, @Body() body: any, @Request() req: any) {
+  updatePolicy(@Param('id') id: string, @Body() body: UpdateApprovalPolicyDto, @Request() req: any) {
     return this.orgAdmin.updatePolicy(id, body, req.user?.tenantId);
   }
 
@@ -175,13 +190,13 @@ export class OrgAdminController {
 
   @Post('delegations')
   @AuthWithPermissions('procurement.manage')
-  createDelegation(@Body() body: any, @Request() req: any) {
+  createDelegation(@Body() body: CreateApprovalDelegationDto, @Request() req: any) {
     return this.orgAdmin.createDelegation(body, req.user?.tenantId);
   }
 
   @Put('delegations/:id')
   @AuthWithPermissions('procurement.manage')
-  updateDelegation(@Param('id') id: string, @Body() body: any, @Request() req: any) {
+  updateDelegation(@Param('id') id: string, @Body() body: UpdateApprovalDelegationDto, @Request() req: any) {
     return this.orgAdmin.updateDelegation(id, body, req.user?.tenantId);
   }
 
@@ -194,7 +209,7 @@ export class OrgAdminController {
   // -------- Preview / debug --------
   @Post('approval/preview')
   @AuthWithPermissions('procurement.read')
-  async previewApprovalChain(@Body() body: any, @Request() req: any) {
+  async previewApprovalChain(@Body() body: PreviewApprovalChainDto, @Request() req: any) {
     const tenantId = req.user?.tenantId;
     const preview = await this.resolver.resolveStepsWithMetadata({
       documentId: 'preview',

@@ -13,7 +13,7 @@ import {
   IsNumber,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import {
   SurgeryStatus,
   SurgeryPriority,
@@ -351,3 +351,10 @@ export class DischargeRecoveryDto {
   @IsString()
   recoveryNotes?: string;
 }
+
+/**
+ * `Partial<RecordConsumableDto>` is a mapped type: it does not exist at runtime, so a @Body()
+ * declared with it gave the ValidationPipe nothing to check. PartialType()
+ * builds a real class with the same optional fields.
+ */
+export class UpdateConsumableDto extends PartialType(RecordConsumableDto) {}

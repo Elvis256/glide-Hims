@@ -17,6 +17,7 @@ import {
 import { ApiTags, ApiOperation, ApiQuery, ApiBearerAuth } from '@nestjs/swagger';
 import { AdminGuard } from '../../../common/guards/admin.guard';
 import { SystemHealthService } from '../services/system-health.service';
+import { CreateAlertRuleDto, UpdateAlertRuleDto } from '../dto/admin-bodies.dto';
 
 @ApiTags('Admin - System Health & Monitoring')
 @ApiBearerAuth()
@@ -185,7 +186,7 @@ export class SystemHealthController {
   @Post('alert-rules')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Create a new alert rule' })
-  async createAlertRule(@Body() body: any) {
+  async createAlertRule(@Body() body: CreateAlertRuleDto) {
     this.validateAlertRuleBody(body);
     const data = await this.systemHealthService.createAlertRule({
       name: body.name,
@@ -202,7 +203,7 @@ export class SystemHealthController {
 
   @Patch('alert-rules/:id')
   @ApiOperation({ summary: 'Update an alert rule' })
-  async updateAlertRule(@Param('id') id: string, @Body() body: any) {
+  async updateAlertRule(@Param('id') id: string, @Body() body: UpdateAlertRuleDto) {
     try {
       const data = await this.systemHealthService.updateAlertRule(id, body);
       return { statusCode: 200, data, message: 'Alert rule updated' };

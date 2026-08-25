@@ -22,7 +22,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { CURRENCY_SYMBOL } from '../../lib/currency';
-import { storesService } from '../../services/stores';
+import { storesService, movementActor } from '../../services/stores';
 import { useFacilityId } from '../../lib/facility';
 
 const adjustmentReasons = [
@@ -56,7 +56,7 @@ export default function StockAdjustmentsPage() {
     staleTime: 30000,
   });
 
-  const adjustments = useMemo(() => movements.filter(m => m.type === 'adjustment'), [movements]);
+  const adjustments = useMemo(() => movements.filter(m => m.movementType === 'adjustment'), [movements]);
 
   const { data: inventoryData } = useQuery({
     queryKey: ['inventory-search', adjustForm.itemSearch],
@@ -81,7 +81,7 @@ export default function StockAdjustmentsPage() {
     return adjustments.filter((adj) => {
       const matchesSearch =
         adj.itemId.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (adj.reference || '').toLowerCase().includes(searchTerm.toLowerCase());
+        (adj.referenceId || '').toLowerCase().includes(searchTerm.toLowerCase());
       return matchesSearch;
     });
   }, [searchTerm, adjustments]);
@@ -235,7 +235,7 @@ export default function StockAdjustmentsPage() {
               {filteredAdjustments.map((adj) => (
                 <tr key={adj.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3">
-                    <span className="font-mono text-blue-600">{adj.reference || adj.id.slice(0, 8)}</span>
+                    <span className="font-mono text-blue-600">{adj.referenceId || adj.id.slice(0, 8)}</span>
                   </td>
                   <td className="px-4 py-3">
                     <p className="font-medium text-gray-900">{adj.itemId}</p>
@@ -246,9 +246,9 @@ export default function StockAdjustmentsPage() {
                     </span>
                   </td>
                   <td className="px-4 py-3">
-                    <p className="text-sm text-gray-600 max-w-xs truncate">{adj.reason || '—'}</p>
+                    <p className="text-sm text-gray-600 max-w-xs truncate">{adj.notes || '—'}</p>
                   </td>
-                  <td className="px-4 py-3 text-gray-600">{adj.performedBy}</td>
+                  <td className="px-4 py-3 text-gray-600">{movementActor(adj) || '—'}</td>
                   <td className="px-4 py-3 text-gray-600">{new Date(adj.createdAt).toLocaleDateString()}</td>
                   <td className="px-4 py-3">
                     <button className="p-1 hover:bg-gray-100 rounded" title="View">

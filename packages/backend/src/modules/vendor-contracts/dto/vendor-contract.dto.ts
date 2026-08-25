@@ -8,6 +8,7 @@ import {
   Min,
   IsObject,
   IsBoolean,
+  MaxLength,
 } from 'class-validator';
 import { ContractStatus } from '../../../database/entities/vendor-contract.entity';
 
@@ -46,6 +47,14 @@ export class CreateVendorContractDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  /**
+   * vendor_contracts.documents exists — a map of label to stored path — and
+   * the frontend sends it; only this DTO refused it.
+   */
+  @IsOptional()
+  @IsObject()
+  documents?: Record<string, string>;
 }
 
 export class UpdateVendorContractDto {
@@ -89,6 +98,14 @@ export class CreateAmendmentDto {
 
   @IsString()
   description: string;
+
+  /**
+   * contract_amendments.amendment_number exists and the frontend sends it;
+   * this DTO refused it, which rejects the whole amendment.
+   */
+  @IsString()
+  @MaxLength(64)
+  amendmentNumber: string;
 
   @IsOptional()
   @IsObject()

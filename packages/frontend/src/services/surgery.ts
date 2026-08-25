@@ -242,6 +242,21 @@ export interface WhoChecklist {
   signOutCompletedAt?: string | null;
 }
 
+
+/**
+ * GET /surgery/cases/:id/consumables returns a costed summary, not the bare
+ * list its type promised: the consumables themselves are under `items`, with
+ * totals already rolled up. Nothing consumes it yet — the same wrong-list-type
+ * shape that left the pharmacy returns screen filtering on a missing field.
+ */
+export interface SurgeryConsumableSummary {
+  items: SurgeryConsumable[];
+  totalCost: number;
+  billableTotal: number;
+  byCategory: Record<string, number>;
+  byPhase: Record<string, number>;
+}
+
 export const surgeryService = {
   // Theatres
   theatres: {
@@ -306,7 +321,7 @@ export const surgeryService = {
       api.post<SurgeryConsumable>(`/surgery/cases/${caseId}/consumables`, data),
 
     list: (caseId: string) =>
-      api.get<SurgeryConsumable[]>(`/surgery/cases/${caseId}/consumables`),
+      api.get<SurgeryConsumableSummary>(`/surgery/cases/${caseId}/consumables`),
 
     remove: (id: string) =>
       api.delete(`/surgery/consumables/${id}`),

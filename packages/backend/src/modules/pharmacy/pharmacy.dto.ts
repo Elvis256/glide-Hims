@@ -14,8 +14,9 @@ import {
   Max,
   MinLength,
   MaxLength,
+  IsIn,
 } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   SaleType,
@@ -23,6 +24,7 @@ import {
   TaxPricingMode,
   TaxTreatment,
 } from '../../database/entities/pharmacy-sale.entity';
+import { LabelType } from '../../database/entities/drug-label-template.entity';
 
 // Shared caps. Quantities and money fields are bounded to keep arithmetic
 // well-defined (no Infinity/NaN) and to fail closed if a UI bug or
@@ -321,14 +323,53 @@ export class ReceiveBatchDto {
 }
 
 // Drug Label DTOs
+/**
+ * Mirrors DrugLabelTemplate, which is what createTemplate actually persists.
+ * This DTO declared `content` and `format` — neither is a column — and omitted
+ * labelType, headerTemplate, bodyTemplate, footerTemplate and isDefault, which
+ * all are. LabelManagementPage sends the real five, so under
+ * forbidNonWhitelisted every "Create Label Template" was rejected whole. The
+ * frontend was right; the contract in front of the service was not.
+ */
 export class CreateLabelTemplateDto {
-  @ApiProperty() @IsString() @MinLength(1) @MaxLength(200) name: string;
-  // Templates may contain large HTML/ZPL/EPL bodies; 64KB cap is well
-  // above any realistic prescription label while preventing arbitrary
-  // megabyte uploads.
-  @ApiProperty() @IsString() @MaxLength(64_000) content: string;
-  @ApiProperty({ required: false }) @IsOptional() @IsString() @MaxLength(16) language?: string;
-  @ApiProperty({ required: false }) @IsOptional() @IsString() @MaxLength(16) format?: string;
+  @ApiProperty()
+  @IsString()
+  @MaxLength(128)
+  name: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(16)
+  language?: string;
+
+  @ApiPropertyOptional({ enum: ['prescription', 'otc', 'controlled', 'external_use'] })
+  @IsOptional()
+  @IsEnum(LabelType)
+  labelType?: LabelType;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  headerTemplate?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  bodyTemplate?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  footerTemplate?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  isDefault?: boolean;
 }
 
 export class CreateDrugTranslationDto {

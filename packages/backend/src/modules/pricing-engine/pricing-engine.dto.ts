@@ -8,6 +8,10 @@ import {
   IsDateString,
   IsArray,
   ValidateNested,
+  MaxLength,
+  Min,
+  Max,
+  IsDate,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import {
@@ -15,6 +19,9 @@ import {
   DiscountType,
   AppliesTo,
 } from '../../database/entities/pricing-rule.entity';
+import { PartialType } from '@nestjs/swagger';
+import { TaxType } from '../../database/entities/tax-rate.entity';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 // ========== Insurance Price List DTOs ==========
 
@@ -117,6 +124,15 @@ export class BulkCreateInsurancePriceListDto {
   @IsDateString()
   @IsOptional()
   effectiveFrom?: string;
+
+  /**
+   * The single-create DTO accepts effectiveTo and the column exists; only the
+   * bulk path refused it, so a bulk price list carrying an end date was
+   * rejected whole while the same field saved fine one row at a time.
+   */
+  @IsDateString()
+  @IsOptional()
+  effectiveTo?: string;
 }
 
 // ========== Pricing Rule DTOs ==========
@@ -353,3 +369,81 @@ export interface PriceComparisonItem {
   effectivePrice: number;
   savings: number;
 }
+
+/**
+ * Tax rates and exemptions were the last @Body() `any` handlers in this
+ * module: four routes that write straight into tax_rates / tax_exemptions with
+ * `create({...dto})`. With no metatype the ValidationPipe had nothing to check,
+ * so an unknown property was persisted as-is and a malformed `rate` reached
+ * Postgres as a numeric error — a 500 where a 400 naming the field is the
+ * honest answer. Tax rates decide what a patient is charged, so this is not a
+ * cosmetic gap.
+ */
+export class CreateTaxRateDto {
+  @ApiProperty()
+  @IsString()
+  @MaxLength(100)
+  name: string;
+
+  @ApiProperty()
+  @IsString()
+  @MaxLength(20)
+  code: string;
+
+  /** Percentage, matching the entity's numeric(5,2). */
+  @ApiProperty()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(100)
+  rate: number;
+
+  @ApiPropertyOptional({ enum: TaxType })
+  @IsOptional()
+  @IsEnum(TaxType)
+  type?: TaxType;
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  applicableServices?: string[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+
+  /** The column is a date; @Type converts the ISO string the client sends. */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Type(() => Date)
+  @IsDate()
+  effectiveFrom?: Date;
+}
+
+export class UpdateTaxRateDto extends PartialType(CreateTaxRateDto) {}
+
+export class CreateTaxExemptionDto {
+  @ApiProperty()
+  @IsString()
+  @MaxLength(128)
+  category: string;
+
+  @ApiProperty()
+  @IsString()
+  @MaxLength(2000)
+  reason: string;
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  applicableTaxes?: string[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+}
+
+export class UpdateTaxExemptionDto extends PartialType(CreateTaxExemptionDto) {}

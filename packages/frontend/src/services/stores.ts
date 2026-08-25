@@ -42,16 +42,68 @@ export interface InventoryResponse {
   stats?: InventoryStats;
 }
 
+/**
+ * The stock ledger's real shape.
+ *
+ * This interface used to describe fields the API has never sent — `type`,
+ * `reason`, `reference`, `performedBy`, `fromLocation`, `toLocation`. Because
+ * every one of them was declared, reading them type-checked, and four screens
+ * filtered on `type === 'in' | 'out' | 'adjustment'` against a value that was
+ * always undefined. Returns, stock adjustments, consumption reports and unit
+ * issue were therefore permanently empty, with no error anywhere: the filter
+ * simply matched nothing. The server field is `movementType`, and its values
+ * are the MovementType enum below — 'in' and 'out' are not among them.
+ */
+export type StockMovementType =
+  | 'purchase'
+  | 'sale'
+  | 'adjustment'
+  | 'transfer_in'
+  | 'transfer_out'
+  | 'return'
+  | 'expired'
+  | 'damaged';
+
+/** Movements that raise stock on hand. */
+export const INBOUND_MOVEMENTS: StockMovementType[] = ['purchase', 'return', 'transfer_in'];
+/** Movements that reduce it. */
+export const OUTBOUND_MOVEMENTS: StockMovementType[] = [
+  'sale',
+  'transfer_out',
+  'expired',
+  'damaged',
+];
+
+export function isInbound(m: Pick<StockMovement, 'movementType'>): boolean {
+  return INBOUND_MOVEMENTS.includes(m.movementType);
+}
+export function isOutbound(m: Pick<StockMovement, 'movementType'>): boolean {
+  return OUTBOUND_MOVEMENTS.includes(m.movementType);
+}
+/** Display name of whoever recorded the movement, or undefined if unjoined. */
+export function movementActor(m: Pick<StockMovement, 'createdBy'>): string | undefined {
+  const n = m.createdBy?.fullName?.trim();
+  return n || undefined;
+}
+
 export interface StockMovement {
   id: string;
   itemId: string;
-  type: 'in' | 'out' | 'adjustment' | 'transfer';
+  item?: InventoryItem;
+  storeId?: string;
+  store?: Store;
+  movementType: StockMovementType;
   quantity: number;
-  reference?: string;
-  reason?: string;
-  fromLocation?: string;
-  toLocation?: string;
-  performedBy: string;
+  balanceAfter?: number;
+  unitCost?: number;
+  batchNumber?: string;
+  expiryDate?: string;
+  referenceId?: string;
+  referenceType?: string;
+  notes?: string;
+  createdById?: string;
+  createdBy?: { id: string; fullName: string };
+  facilityId?: string;
   createdAt: string;
 }
 

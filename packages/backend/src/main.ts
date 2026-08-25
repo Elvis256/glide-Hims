@@ -130,10 +130,20 @@ async function bootstrap() {
         enableImplicitConversion: true,
       },
       exceptionFactory: (errors) => {
-        const messages = errors.map((err) => ({
-          field: err.property,
-          errors: Object.values(err.constraints || {}),
-        }));
+        // Flatten nested errors. class-validator puts a failing line item's
+        // real constraints on err.children and leaves the parent's own
+        // `constraints` empty, so mapping only the top level produced
+        // { field: 'items', errors: [] } — no detail at all on exactly the
+        // forms most likely to fail, the ones with line items: prescriptions,
+        // invoices, purchase orders, RFQs. Paths read as items.0.quantity.
+        const flatten = (errs: typeof errors, prefix = ''): any[] =>
+          errs.flatMap((err) => {
+            const field = prefix ? `${prefix}.${err.property}` : err.property;
+            const own = Object.values(err.constraints || {});
+            const nested = err.children?.length ? flatten(err.children, field) : [];
+            return [...(own.length ? [{ field, errors: own }] : []), ...nested];
+          });
+        const messages = flatten(errors);
         logger.warn(`Validation failed: ${JSON.stringify(messages)}`);
         return new BadRequestException({ message: 'Validation failed', details: messages });
       },

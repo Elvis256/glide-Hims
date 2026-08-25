@@ -20,7 +20,9 @@ export interface Employee {
   firstName?: string;
   lastName?: string;
   otherNames?: string;
-  fullName: string;
+  /** /hr/staff sends this; /hr/employees/:id sends firstName+lastName
+   *  instead. Compose from those when it is absent. */
+  fullName?: string;
   dateOfBirth?: string;
   gender?: 'male' | 'female' | 'other';
   maritalStatus?: string;
@@ -222,7 +224,8 @@ export interface HRDashboard {
   presentToday: number;
   absentToday?: number;
   pendingLeaveRequests: number;
-  departmentBreakdown: Record<string, number>;
+  /** Not sent by /hr/dashboard today; every reader guards it. */
+  departmentBreakdown?: Record<string, number>;
 }
 
 export interface StaffDocument {
@@ -1017,11 +1020,15 @@ export interface CreateTrainingProgramDto {
   endDate: string;
   durationHours?: number;
   maxParticipants?: number;
-  enrolledCount?: number;
-  completedCount?: number;
   isMandatory?: boolean;
+  /**
+   * The column is provides_certification. `hasCertification` was never a
+   * server field, and enrolledCount/completedCount are derived from
+   * enrolments — no such columns exist. All three were sent on create, and
+   * under forbidNonWhitelisted one undeclared property rejects the whole
+   * body, so "Add Training Program" could not save at all.
+   */
   providesCertification?: boolean;
-  hasCertification?: boolean;
   certificationName?: string;
 }
 

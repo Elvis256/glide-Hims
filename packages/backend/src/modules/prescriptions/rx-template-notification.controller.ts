@@ -17,6 +17,7 @@ import { RxTemplateService, CreateTemplateDto, UpdateTemplateDto } from './rx-te
 import { RxNotificationService } from './rx-notification.service';
 import { RequireModule } from '../auth/decorators/module.decorator';
 import { ModuleGuard } from '../auth/guards/module.guard';
+import { CreateRxTemplateDto, UpdateRxTemplateDto } from './dto/rx-template.dto';
 
 @ApiTags('Prescription Templates & Notifications')
 @ApiBearerAuth()
@@ -76,7 +77,7 @@ export class RxTemplateNotificationController {
   @Post('templates')
   @AuthWithPermissions('prescriptions.create')
   @ApiOperation({ summary: 'Create a prescription template' })
-  createTemplate(@Body() dto: CreateTemplateDto, @Request() req: any) {
+  createTemplate(@Body() dto: CreateRxTemplateDto, @Request() req: any) {
     return this.templateService.createTemplate(dto, req.user?.id, req.user?.tenantId);
   }
 
@@ -85,7 +86,7 @@ export class RxTemplateNotificationController {
   @ApiOperation({ summary: 'Update a prescription template' })
   updateTemplate(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: UpdateTemplateDto,
+    @Body() dto: UpdateRxTemplateDto,
     @Request() req: any,
   ) {
     return this.templateService.updateTemplate(id, dto, req.user?.id, req.user?.tenantId);

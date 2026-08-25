@@ -82,14 +82,19 @@ export interface CreateInvoiceDto {
   discountAmount?: number;
 }
 
+/**
+ * Mirrors the API's AddInvoiceItemDto exactly. It previously declared
+ * serviceId, discount and tax; the endpoint accepts none of them and
+ * forbidNonWhitelisted rejects the whole line rather than ignoring the extras.
+ * There is no service_id column at all, and discount/tax are stored as
+ * discount_percent/tax_percent set elsewhere — not through this call.
+ */
 export interface AddInvoiceItemDto {
-  serviceId?: string;
   serviceCode: string;
   description: string;
+  chargeType?: string;
   quantity: number;
   unitPrice: number;
-  discount?: number;
-  tax?: number;
 }
 
 // Payment
@@ -99,8 +104,15 @@ export interface Payment {
   invoiceId: string;
   invoice?: Invoice;
   amount: number;
-  paymentMethod: string;
-  method?: string; // Alternative name from backend
+  /**
+   * The API sends `method`. `paymentMethod` was declared required and is not
+   * sent by /billing/payments at all, so PatientDetailPage's payment history
+   * rendered an empty method against every receipt. Some pages build Payment
+   * objects locally and do set paymentMethod, so both stay — read them through
+   * paymentMethodOf() rather than picking one.
+   */
+  paymentMethod?: string;
+  method?: string;
   reference?: string;
   referenceNumber?: string;
   receivedBy?: string;
@@ -133,14 +145,21 @@ export interface InvoiceQueryParams {
   limit?: number;
 }
 
+/**
+ * What /billing/revenue/daily actually returns: money collected, split by the
+ * method it came in through. The old shape — date, totalRevenue, invoiceCount,
+ * byType — was never sent by this endpoint. It has no caller today, so nothing
+ * broke; the pages showing "total revenue" read it from /analytics instead.
+ */
 export interface DailyRevenue {
-  date: string;
-  totalRevenue: number;
-  cashRevenue: number;
-  insuranceRevenue: number;
-  invoiceCount: number;
+  totalCollected: number;
+  cashAmount: number;
+  mobileMoneyAmount: number;
+  cardAmount: number;
+  bankTransferAmount: number;
+  insuranceAmount: number;
+  otherAmount: number;
   paymentCount: number;
-  byType: Record<string, number>;
   byMethod: Record<string, number>;
 }
 
@@ -284,3 +303,8 @@ export const billingService = {
 };
 
 export default billingService;
+
+/** The payment method, whichever of the two names carries it. */
+export function paymentMethodOf(p: Pick<Payment, 'method' | 'paymentMethod'>): string | undefined {
+  return p.method?.trim() || p.paymentMethod?.trim() || undefined;
+}
