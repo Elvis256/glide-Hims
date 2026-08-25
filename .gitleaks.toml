@@ -1,0 +1,75 @@
+# gitleaks configuration.
+#
+# The secret scan has never actually run: it is a GitHub Action, and Actions is
+# disabled account-wide for a billing reason. Running it locally for the first
+# time surfaced 33 findings, every one of which was triaged before anything was
+# allowlisted here. An allowlist written without reading the findings is how a
+# secret scan becomes decoration.
+#
+# What the 33 were:
+#   22  curl-auth-header  documentation examples, all literally
+#                         `Authorization: Bearer YOUR_TOKEN`. Zero real
+#                         JWT-shaped values anywhere in the docs.
+#    9  generic-api-key   a Swagger @ApiResponse example and a unit-test TOTP
+#                         fixture, plus placeholders of the same kind.
+#    2  private-key       genuine keys in history, and deliberately NOT
+#                         allowlisted — see below.
+#
+# The two private keys are real and remain flagged on purpose. They are
+# self-signed development certificates (CN=glide-hims and CN=localhost, subject
+# equal to issuer), deleted from the working tree but still reachable in a
+# public repository's history. Low impact — nothing trusts a self-signed
+# localhost cert and neither can impersonate the production site, which uses a
+# properly issued certificate. They should still be purged from history and
+# regenerated. Until that happens this job stays red, which is the correct
+# state for a repository that still contains a private key.
+
+title = "glide-HIMS"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "curl-auth-header"
+description = "Authorization header in a curl example"
+regex = '''(?i)-H\s+["']Authorization:\s*Bearer\s+([A-Za-z0-9._\-]+)["']'''
+[rules.allowlist]
+description = "Documentation placeholders, not credentials"
+regexes = [
+  '''YOUR_TOKEN''',
+  '''YOUR_[A-Z_]*TOKEN''',
+  '''<[^>]*token[^>]*>''',
+  '''\$\{?[A-Z_]*TOKEN''',
+  '''example[_-]?token''',
+  # Bare role-named placeholders used throughout the HTML docs.
+  '''^(ACCESS_TOKEN|ADMIN_TOKEN|SUPER_ADMIN_TOKEN|TOKEN)$''',
+  # A JWT *header* followed by a literal ellipsis: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+  # That prefix is the base64 of {"alg":"HS256","typ":"JWT"} and is identical in
+  # every HS256 token ever issued. With no payload and no signature there is
+  # nothing secret in it — these are truncated examples, and decoding confirmed
+  # zero of them carry claims.
+  '''eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.\.\.''',
+]
+
+[allowlist]
+description = "Triaged non-secrets"
+paths = [
+  # Swagger response examples and unit-test fixtures. Both are illustrative
+  # values for how an MFA secret is shaped, not secrets for any account.
+  '''packages/backend/src/modules/admin/__tests__/admin-mfa\.service\.spec\.ts''',
+]
+regexes = [
+  # Placeholder conventions used throughout the docs and HTML.
+  '''YOUR_[A-Z_]+''',
+  '''(?i)replace[_-]?me''',
+  '''(?i)changeme''',
+  '''(?i)example\.(com|org)''',
+  '''^(ACCESS_TOKEN|ADMIN_TOKEN|SUPER_ADMIN_TOKEN|TOKEN)$''',
+  '''eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.\.\.''',
+  '''your-refresh''',
+  # The canonical base32 TOTP example (decodes to "Hello!" + 0xDEADBEEF). It is
+  # the value Google Authenticator's own documentation uses, and it sits in a
+  # Swagger @ApiResponse example beside backupCodes ABCD-1234 / EFGH-5678.
+  '''JBSWY3DPEHPK3PXP|JBSWY3DPEBLW64TMMQ''',
+  '''(?i)your-[a-z-]*token''',
+]
