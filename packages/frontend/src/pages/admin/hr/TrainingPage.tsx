@@ -12,8 +12,6 @@ export default function TrainingPage() {
   const [formData, setFormData] = useState<Partial<CreateTrainingProgramDto>>({
     isMandatory: false,
     maxParticipants: 20,
-    enrolledCount: 0,
-    completedCount: 0,
   });
   const [enrolleeIds, setEnrolleeIds] = useState<string[]>([]);
 
@@ -83,7 +81,7 @@ export default function TrainingPage() {
       queryClient.invalidateQueries({ queryKey: ['training-programs'] });
       queryClient.invalidateQueries({ queryKey: ['training-stats'] });
       setShowModal(false);
-      setFormData({ isMandatory: false, maxParticipants: 20, enrolledCount: 0, completedCount: 0 });
+      setFormData({ isMandatory: false, maxParticipants: 20 });
     },
   });
 
@@ -390,8 +388,8 @@ export default function TrainingPage() {
                   <input 
                     type="checkbox" 
                     className="rounded border-gray-300"
-                    checked={formData.hasCertification}
-                    onChange={(e) => setFormData({ ...formData, hasCertification: e.target.checked })}
+                    checked={formData.providesCertification}
+                    onChange={(e) => setFormData({ ...formData, providesCertification: e.target.checked })}
                   />
                   <span className="text-sm">Issues certificate</span>
                 </label>

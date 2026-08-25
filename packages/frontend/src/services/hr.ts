@@ -1020,11 +1020,15 @@ export interface CreateTrainingProgramDto {
   endDate: string;
   durationHours?: number;
   maxParticipants?: number;
-  enrolledCount?: number;
-  completedCount?: number;
   isMandatory?: boolean;
+  /**
+   * The column is provides_certification. `hasCertification` was never a
+   * server field, and enrolledCount/completedCount are derived from
+   * enrolments — no such columns exist. All three were sent on create, and
+   * under forbidNonWhitelisted one undeclared property rejects the whole
+   * body, so "Add Training Program" could not save at all.
+   */
   providesCertification?: boolean;
-  hasCertification?: boolean;
   certificationName?: string;
 }
 

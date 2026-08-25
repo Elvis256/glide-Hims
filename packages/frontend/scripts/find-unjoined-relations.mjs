@@ -80,7 +80,12 @@ function isRead(field) {
 const interfaces = new Map(); // "file.ts:Name" -> [field,...]
 for (const file of readdirSync(SERVICES).filter((f) => f.endsWith('.ts'))) {
   const src = readFileSync(join(SERVICES, file), 'utf8');
-  const re = /export interface (\w+)\s*(?:extends [^{]+)?\{([\s\S]*?)\n\}/g;
+  // The `\\{\\n` is load-bearing. With a bare `\\{` an empty single-line body
+  // (`export interface UpdateEncounterDto extends Partial<X> {}`) has no
+  // `\\n}` to close on, so the match ran on and captured the NEXT interface's
+  // fields as its own — which is how a filter DTO's page/limit/dateFrom got
+  // reported as an encounter update body the API rejects.
+  const re = /export interface (\w+)\s*(?:extends [^{]+)?\{\n([\s\S]*?)\n\}/g;
   let m;
   while ((m = re.exec(src))) {
     // Only top-level members: two-space indent, not nested object literals.
