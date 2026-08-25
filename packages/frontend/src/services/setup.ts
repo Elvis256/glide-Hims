@@ -72,6 +72,16 @@ export interface InitializeSetupData {
   facility: FacilityData;
   admin: AdminUserData;
   settings?: SettingsData;
+
+}
+
+/**
+ * Mirrors RegisterTenantDto, which extends InitializeSetupDto with a plan.
+ * Both were typed as InitializeSetupData here, so the one interface had to
+ * carry `plan` — and /setup/initialize rejects it outright, since only
+ * /setup/register-tenant accepts a plan selection.
+ */
+export interface RegisterTenantData extends InitializeSetupData {
   plan?: {
     code: string;
     billingInterval?: 'monthly' | 'annual';
@@ -161,7 +171,7 @@ export const setupService = {
   /**
    * Register a new organization (self-service, post-setup)
    */
-  registerTenant: async (data: InitializeSetupData): Promise<InitializeSetupResponse> => {
+  registerTenant: async (data: RegisterTenantData): Promise<InitializeSetupResponse> => {
     const response = await api.post<InitializeSetupResponse>('/setup/register-tenant', data);
     return response.data;
   },

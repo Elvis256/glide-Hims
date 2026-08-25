@@ -426,7 +426,6 @@ const PriceListModal: React.FC<PriceListModalProps> = ({
     serviceId: item?.serviceId || undefined,
     labTestId: item?.labTestId || undefined,
     agreedPrice: item?.agreedPrice || 0,
-    currency: item?.currency || 'UGX',
     effectiveFrom: item?.effectiveFrom || '',
     effectiveTo: item?.effectiveTo || '',
     notes: item?.notes || '',

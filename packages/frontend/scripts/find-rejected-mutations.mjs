@@ -12,14 +12,19 @@
  * halves of the contract are written in different files by different hands,
  * and nothing checks that they agree.
  *
- * WHY THIS NEVER WRITES A ROW. Every probe body carries a sentinel key that no
- * DTO declares. forbidNonWhitelisted therefore rejects the request during
- * validation, before the handler is entered, so the probe cannot create,
- * update or delete anything. The response's `details` list then names every
- * unknown property it found — the sentinel, plus any real field the frontend
- * sends that the DTO does not accept, which is the finding. Any response that
- * is NOT a 4xx means validation did not run on that route, which is itself
- * reported: an unvalidated mutation endpoint is a bug on its own.
+ * WRITE SAFETY, AND ITS ONE EXCEPTION. Every probe body carries a sentinel key
+ * that no DTO declares, so on any route that validates, forbidNonWhitelisted
+ * rejects the request before the handler is entered and nothing is written.
+ *
+ * That guarantee holds ONLY for routes that actually validate. A route whose
+ * @Body() is `any`, or is typed with a TypeScript interface — which does not
+ * exist at runtime, so ValidationPipe has no metatype — accepts the probe body
+ * and may persist it. This is not hypothetical: POST /patients/:id/notes is
+ * typed `dto: CreateNoteDto` where CreateNoteDto was an interface, and it
+ * stored one sentinel row per run until that was fixed. Such routes are
+ * reported under "no whitelist ran", and a non-4xx response prints an explicit
+ * cleanup warning naming the sentinel to search for. Check that section after
+ * every run and delete what it names.
  *
  * DELETE is never probed.
  *
@@ -211,7 +216,9 @@ for (const p of probes) {
     // Validation did not reject an unknown property. Either the route has no
     // DTO, or it does not go through the global pipe. Either way the sentinel
     // may have reached the handler.
-    unvalidated.push(`${p.file} ${p.method.toUpperCase()} ${path} — HTTP ${r.status}`);
+    unvalidated.push(
+      `${p.file} ${p.method.toUpperCase()} ${path} — HTTP ${r.status} — MAY HAVE WRITTEN A ROW`,
+    );
     continue;
   }
   if (r.status === 401 || r.status === 403 || r.status === 404) {
@@ -255,7 +262,8 @@ if (rejected.length) {
 }
 
 if (unvalidated.length) {
-  console.log('\nAccepted an unknown property — no whitelist ran on these routes:');
+  console.log('\nAccepted an unknown property — no whitelist ran on these routes.');
+  console.log(`  These MAY have persisted a row. Search for "${SENTINEL}" and delete it.`);
   for (const u of unvalidated) console.log(`  ${u}`);
 }
 

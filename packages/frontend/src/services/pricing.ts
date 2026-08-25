@@ -99,7 +99,8 @@ export interface CreateInsurancePriceListDto {
   labTestId?: string;
   itemId?: string;
   agreedPrice: number;
-  currency?: string;
+  // No `currency` here: the API rejects it and there is no column. The
+  // live caller never sent it, which is the only reason this never bit.
   effectiveFrom?: string;
   effectiveTo?: string;
   notes?: string;

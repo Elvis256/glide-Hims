@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Post, Query, Request } from '@nestjs/comm
 import { ApprovalsService, DocumentRef } from './approvals.service';
 import { ApprovalsSeederService } from './approvals-seeder.service';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
+import { IsOptional, IsString, IsNumber, IsUUID, MaxLength } from 'class-validator';
 
 interface AuthedRequest {
   user?: {
@@ -30,6 +31,47 @@ function actorFrom(req: AuthedRequest) {
  * endpoints in ProcurementController and OrgAdminController are now thin
  * aliases that delegate here.
  */
+
+/**
+ * `@Body() body: any` accepted anything at all — the global ValidationPipe has
+ * no metatype to whitelist against, so unknown properties passed straight
+ * through. Harmless here because the handler reads named fields and the route
+ * persists nothing, but it is the same shape as POST /patients/:id/notes,
+ * which did persist whatever it was sent.
+ */
+export class PreviewApprovalChainDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  module?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  documentType?: string;
+
+  @IsOptional()
+  @IsNumber()
+  amount?: number;
+
+  @IsOptional()
+  @IsUUID()
+  facilityId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  departmentId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  category?: string;
+
+  @IsOptional()
+  @IsUUID()
+  requesterId?: string;
+}
+
 @Controller('approvals')
 export class ApprovalsController {
   constructor(
@@ -40,10 +82,10 @@ export class ApprovalsController {
   // ---- Preview ----
   @Post('preview')
   @AuthWithPermissions('procurement.read')
-  preview(@Body() body: any, @Request() req: AuthedRequest) {
+  preview(@Body() body: PreviewApprovalChainDto, @Request() req: AuthedRequest) {
     return this.approvals.previewEnriched({
       module: body.module || 'procurement',
-      documentType: body.documentType,
+      documentType: body.documentType || '',
       amount: Number(body.amount || 0),
       facilityId: body.facilityId || null,
       departmentId: body.departmentId || null,

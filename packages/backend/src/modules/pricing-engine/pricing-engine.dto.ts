@@ -117,6 +117,15 @@ export class BulkCreateInsurancePriceListDto {
   @IsDateString()
   @IsOptional()
   effectiveFrom?: string;
+
+  /**
+   * The single-create DTO accepts effectiveTo and the column exists; only the
+   * bulk path refused it, so a bulk price list carrying an end date was
+   * rejected whole while the same field saved fine one row at a time.
+   */
+  @IsDateString()
+  @IsOptional()
+  effectiveTo?: string;
 }
 
 // ========== Pricing Rule DTOs ==========
