@@ -71,7 +71,7 @@ rsync -az --partial --timeout=120 --ignore-existing \
 # `sha256sum -c` here tries to open a file that does not exist on this machine
 # and reports "FAILED open or read" for every single dump — which reads exactly
 # like mass corruption and is nothing of the sort.
-checked=0; bad=0; orphan=0
+checked=0; bad=0; orphan=0; encrypted=0
 while IFS= read -r sum; do
   f="${sum%.sha256}"
   # An orphaned checksum is an upstream inconsistency, not a transfer failure:
@@ -80,6 +80,16 @@ while IFS= read -r sum; do
   # it verifies the dump BEFORE writing the checksum). Report it every run so
   # it stays visible, but do not fail the job on it: a nightly that is red
   # forever over a historical artifact is a nightly nobody reads.
+  # Once encryption is enabled the plaintext is gone by design: backup.sh
+  # hashes the dump, encrypts it, then deletes the plaintext. So .sql.sha256
+  # sits beside .sql.gpg with no .sql, which is CORRECT and must not be
+  # reported as an orphan — otherwise every backup from that day on looks
+  # broken. The hash still verifies after restore.sh decrypts back to that
+  # exact filename; it simply cannot be checked here without the passphrase,
+  # which this machine deliberately does not hold.
+  if [ ! -f "$f" ] && [ -f "$f.gpg" ]; then
+    encrypted=$((encrypted+1)); continue
+  fi
   [ -f "$f" ] || { echo "  ORPHANED CHECKSUM, no dump: $(basename "$sum")"; orphan=$((orphan+1)); continue; }
   want=$(awk '{print $1}' "$sum" | head -1)
   got=$(sha256sum "$f" | awk '{print $1}')
@@ -102,7 +112,7 @@ TOTAL=$(find "$LOCAL_DIR" -type f \( -name '*.sql' -o -name '*.sql.gz' -o -name 
 NEWEST=$(find "$LOCAL_DIR" -type f -name '*.sql*' -printf '%T@ %TY-%Tm-%Td %TH:%TM %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-3)
 
 log "held locally: $TOTAL dump(s), newest $NEWEST, $(du -sh "$LOCAL_DIR" 2>/dev/null | cut -f1)"
-log "checksums verified: $checked ok, $bad bad, $orphan orphaned, $small suspiciously small"
+log "checksums: $checked verified, $bad bad, $encrypted encrypted (not checkable here), $orphan orphaned, $small suspiciously small"
 
 # ------------------------------------------------------------------ prune ---
 # Only ever prune the LOCAL copy, and only by age. Production's own retention
