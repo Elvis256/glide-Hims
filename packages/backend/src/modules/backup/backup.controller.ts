@@ -17,6 +17,12 @@ import * as fs from 'fs';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { SkipTransform } from '../../common/interceptors/response-transform.interceptor';
 import { BackupService } from './backup.service';
+import {
+  CreateBackupScheduleDto,
+  UpdateBackupScheduleDto,
+  CreateDrDrillDto,
+  UpdateDrDrillDto,
+} from './dto/backup.dto';
 
 @ApiTags('backups')
 @Controller('backups')
@@ -45,7 +51,7 @@ export class BackupController {
   @AuthWithPermissions('admin.backup')
   @ApiOperation({ summary: 'Create a backup schedule' })
   @ApiResponse({ status: 201, description: 'Backup schedule created' })
-  async createSchedule(@Body() dto: any, @Request() req: any) {
+  async createSchedule(@Body() dto: CreateBackupScheduleDto, @Request() req: any) {
     const tenantId = req.user?.tenantId;
     return this.backupService.createSchedule(dto, tenantId);
   }
@@ -56,7 +62,7 @@ export class BackupController {
   @ApiParam({ name: 'id', description: 'Schedule ID' })
   @ApiResponse({ status: 200, description: 'Schedule updated' })
   @ApiResponse({ status: 404, description: 'Schedule not found' })
-  async updateSchedule(@Param('id') id: string, @Body() dto: any, @Request() req: any) {
+  async updateSchedule(@Param('id') id: string, @Body() dto: UpdateBackupScheduleDto, @Request() req: any) {
     const tenantId = req.user?.tenantId;
     return this.backupService.updateSchedule(id, dto, tenantId);
   }
@@ -88,7 +94,7 @@ export class BackupController {
   @AuthWithPermissions('admin.backup')
   @ApiOperation({ summary: 'Create/schedule a DR drill' })
   @ApiResponse({ status: 201, description: 'DR drill created' })
-  async createDrDrill(@Body() dto: any, @Request() req: any) {
+  async createDrDrill(@Body() dto: CreateDrDrillDto, @Request() req: any) {
     const tenantId = req.user?.tenantId;
     if (!dto.conductedBy) {
       dto.conductedBy = req.user?.id;
@@ -102,7 +108,7 @@ export class BackupController {
   @ApiParam({ name: 'id', description: 'DR Drill ID' })
   @ApiResponse({ status: 200, description: 'DR drill updated' })
   @ApiResponse({ status: 404, description: 'DR drill not found' })
-  async updateDrDrill(@Param('id') id: string, @Body() dto: any) {
+  async updateDrDrill(@Param('id') id: string, @Body() dto: UpdateDrDrillDto) {
     return this.backupService.updateDrDrill(id, dto);
   }
 
