@@ -13,6 +13,11 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthWithPermissions } from '../../auth/decorators/auth.decorator';
 import { SystemRbacService } from '../services/system-rbac.service';
+import {
+  CreateSystemRoleDto,
+  UpdateSystemRoleDto,
+  AssignSystemRoleDto,
+} from '../dto/admin-bodies.dto';
 
 @ApiTags('Admin - System RBAC')
 @ApiBearerAuth()
@@ -48,7 +53,7 @@ export class SystemRbacController {
   @AuthWithPermissions('system.manage')
   @ApiOperation({ summary: 'Create system admin role' })
   async createRole(
-    @Body() dto: { name: string; description?: string; permissions: string[] },
+    @Body() dto: CreateSystemRoleDto,
     @Request() req: any,
   ) {
     this.requireSystemAdmin(req);
@@ -60,7 +65,7 @@ export class SystemRbacController {
   @ApiOperation({ summary: 'Update system admin role' })
   async updateRole(
     @Param('id') id: string,
-    @Body() dto: { name?: string; description?: string; permissions?: string[] },
+    @Body() dto: UpdateSystemRoleDto,
     @Request() req: any,
   ) {
     this.requireSystemAdmin(req);
@@ -90,7 +95,7 @@ export class SystemRbacController {
   @AuthWithPermissions('system.manage')
   @ApiOperation({ summary: 'Assign role to system admin' })
   async assignRole(
-    @Body() dto: { userId: string; roleId: string; scopedTenantId?: string },
+    @Body() dto: AssignSystemRoleDto,
     @Request() req: any,
   ) {
     this.requireSystemAdmin(req);

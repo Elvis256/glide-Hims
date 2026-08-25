@@ -110,3 +110,46 @@ export class CreateAlertRuleDto {
 }
 
 export class UpdateAlertRuleDto extends PartialType(CreateAlertRuleDto) {}
+
+/**
+ * System RBAC. Roles and their permission sets decide what every user in the
+ * system can do, and all three bodies were inline object types — the arrays of
+ * permission strings were never checked to be arrays of strings.
+ */
+export class CreateSystemRoleDto {
+  @ApiProperty()
+  @IsString()
+  @MaxLength(128)
+  name: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  description?: string;
+
+  @ApiProperty({ type: [String] })
+  @IsArray()
+  @IsString({ each: true })
+  permissions: string[];
+}
+
+export class UpdateSystemRoleDto extends PartialType(CreateSystemRoleDto) {}
+
+export class AssignSystemRoleDto {
+  @ApiProperty()
+  @IsString()
+  @MaxLength(64)
+  userId: string;
+
+  @ApiProperty()
+  @IsString()
+  @MaxLength(64)
+  roleId: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  scopedTenantId?: string;
+}

@@ -3,6 +3,11 @@ import { ApprovalsService, DocumentRef } from './approvals.service';
 import { ApprovalsSeederService } from './approvals-seeder.service';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { IsOptional, IsString, IsNumber, IsUUID, MaxLength } from 'class-validator';
+import {
+  ApproveDto,
+  RejectDto,
+  ApprovalChainLookupDto,
+} from './dto/approval-actions.dto';
 
 interface AuthedRequest {
   user?: {
@@ -132,7 +137,7 @@ export class ApprovalsController {
   @AuthWithPermissions('procurement.manage')
   approve(
     @Param('id') id: string,
-    @Body() body: { comment?: string },
+    @Body() body: ApproveDto,
     @Request() req: AuthedRequest,
   ) {
     return this.approvals.approveStep(id, actorFrom(req), body?.comment);
@@ -142,7 +147,7 @@ export class ApprovalsController {
   @AuthWithPermissions('procurement.manage')
   reject(
     @Param('id') id: string,
-    @Body() body: { comment: string },
+    @Body() body: RejectDto,
     @Request() req: AuthedRequest,
   ) {
     return this.approvals.rejectStep(id, actorFrom(req), body?.comment);
@@ -151,7 +156,7 @@ export class ApprovalsController {
   @Post('recall')
   @AuthWithPermissions('procurement.manage')
   recall(
-    @Body() body: { module: string; documentType: string; documentId: string },
+    @Body() body: ApprovalChainLookupDto,
     @Request() req: AuthedRequest,
   ) {
     return this.approvals.recall(
