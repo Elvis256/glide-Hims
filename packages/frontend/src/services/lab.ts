@@ -234,6 +234,32 @@ export interface EnterResultDto {
   comments?: string;
 }
 
+
+/** Normalise a raw /orders row into the LabOrder shape the lab screens expect. */
+function toLabOrder(order: any): LabOrder {
+  return {
+    id: order?.id,
+    orderNumber: order?.orderNumber,
+    encounterId: order?.encounterId,
+    patientId: order?.encounter?.patient?.id || '',
+    patient: order?.encounter?.patient,
+    sampleType: order?.testCodes?.[0]?.sampleType || 'blood',
+    tests: (order?.testCodes || []).map(
+      (tc: { code: string; name: string; sampleType?: string }) => ({
+        id: tc.code,
+        testId: tc.code,
+        testName: tc.name,
+        name: tc.name,
+        testCode: tc.code,
+      }),
+    ),
+    priority: order?.priority || 'routine',
+    status: order?.status || 'pending',
+    clinicalNotes: order?.clinicalNotes,
+    createdAt: order?.createdAt,
+  } as LabOrder;
+}
+
 export const labService = {
   // Test catalog - matches backend /lab/tests endpoints
   tests: {
@@ -434,29 +460,17 @@ export const labService = {
     getPending: async (params?: { facilityId?: string; limit?: number }): Promise<LabOrder[]> => {
       const response = await api.get<{ data: any[]; total: number; page: number; limit: number }>('/orders', { params: { orderType: 'lab', status: 'pending', limit: params?.limit ?? 200, ...(params?.facilityId ? { facilityId: params.facilityId } : {}) } });
       const orders = Array.isArray(response.data) ? response.data : (response.data?.data ?? []);
-      return orders.map(order => ({
-        id: order.id,
-        orderNumber: order.orderNumber,
-        encounterId: order.encounterId,
-        patientId: order.encounter?.patient?.id || '',
-        patient: order.encounter?.patient,
-        sampleType: (order.testCodes?.[0]?.sampleType) || 'blood',
-        tests: (order.testCodes || []).map((tc: { code: string; name: string; sampleType?: string }) => ({
-          id: tc.code,
-          testId: tc.code,
-          testName: tc.name,
-          name: tc.name,
-          testCode: tc.code,
-        })),
-        priority: order.priority || 'routine',
-        status: order.status || 'pending',
-        clinicalNotes: order.clinicalNotes,
-        createdAt: order.createdAt,
-      }));
+      return orders.map(toLabOrder);
     },
+    /**
+     * /orders/:id returns the raw order — testCodes, and the patient only via
+     * the encounter. getPending already normalises that into LabOrder shape;
+     * this returned it untouched, so a LabOrder from here had no patientId and
+     * no tests at all. Same mapping, one row.
+     */
     getById: async (id: string): Promise<LabOrder> => {
-      const response = await api.get<LabOrder>(`/orders/${id}`);
-      return response.data;
+      const response = await api.get<any>(`/orders/${id}`);
+      return toLabOrder(response.data);
     },
     startProcessing: async (orderId: string): Promise<LabOrder> => {
       const response = await api.post<LabOrder>(`/orders/${orderId}/start`);

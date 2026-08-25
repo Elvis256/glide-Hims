@@ -20,7 +20,9 @@ export interface Employee {
   firstName?: string;
   lastName?: string;
   otherNames?: string;
-  fullName: string;
+  /** /hr/staff sends this; /hr/employees/:id sends firstName+lastName
+   *  instead. Compose from those when it is absent. */
+  fullName?: string;
   dateOfBirth?: string;
   gender?: 'male' | 'female' | 'other';
   maritalStatus?: string;

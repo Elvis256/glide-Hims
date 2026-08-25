@@ -13,7 +13,7 @@ import {
   Briefcase, Globe, BookUser, IdCard, Droplets, X, Loader2, Send, Trash2
 } from 'lucide-react';
 import { patientsService, type Patient, type PatientDocument, type DocumentCategory, type PatientNote } from '../services/patients';
-import { billingService, type Invoice, type Payment } from '../services/billing';
+import { billingService, paymentMethodOf, type Invoice, type Payment } from '../services/billing';
 import { encountersService, type Encounter } from '../services/encounters';
 import { facilitiesService } from '../services';
 import integrationsService from '../services/integrations';
@@ -1027,7 +1027,7 @@ export default function PatientDetailPage() {
                         <div>
                           <div className="font-medium text-gray-900">{formatCurrency(payment.amount)}</div>
                           <div className="text-sm text-gray-500">
-                            {payment.paymentMethod} • {formatDateTime(payment.createdAt)}
+                            {paymentMethodOf(payment) || 'Unknown method'} • {formatDateTime(payment.createdAt)}
                           </div>
                         </div>
                         {payment.receiptNumber && (

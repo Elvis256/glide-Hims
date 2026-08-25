@@ -762,10 +762,25 @@ export class StoresService {
       where: { itemId: id, tenantId: tid },
     });
 
+    // The list endpoint maps the entity's storage names onto the names the
+    // InventoryItem interface declares — sku, minStock, maxStock, lastUpdated.
+    // This one returned the raw entity, so the same declared type described
+    // two different payloads and a detail-fetched item silently had none of
+    // those four fields. Nothing reads the detail today; that is luck, not
+    // design, and the next screen to use it would have hit exactly the
+    // undefined-comparison the stock screens already suffered.
     return {
       ...item,
       currentStock: balance?.totalQuantity || 0,
       availableStock: balance?.availableQuantity || 0,
+      sku: item.code,
+      minStock: item.reorderLevel || 0,
+      maxStock: item.maxStockLevel || 0,
+      lastUpdated:
+        balance?.lastMovementAt?.toISOString() ||
+        item.updatedAt?.toISOString() ||
+        new Date().toISOString(),
+      isLowStock: (balance?.totalQuantity || 0) <= (item.reorderLevel || 0),
     };
   }
 

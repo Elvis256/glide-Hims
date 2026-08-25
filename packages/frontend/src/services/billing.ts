@@ -99,8 +99,15 @@ export interface Payment {
   invoiceId: string;
   invoice?: Invoice;
   amount: number;
-  paymentMethod: string;
-  method?: string; // Alternative name from backend
+  /**
+   * The API sends `method`. `paymentMethod` was declared required and is not
+   * sent by /billing/payments at all, so PatientDetailPage's payment history
+   * rendered an empty method against every receipt. Some pages build Payment
+   * objects locally and do set paymentMethod, so both stay — read them through
+   * paymentMethodOf() rather than picking one.
+   */
+  paymentMethod?: string;
+  method?: string;
   reference?: string;
   referenceNumber?: string;
   receivedBy?: string;
@@ -291,3 +298,8 @@ export const billingService = {
 };
 
 export default billingService;
+
+/** The payment method, whichever of the two names carries it. */
+export function paymentMethodOf(p: Pick<Payment, 'method' | 'paymentMethod'>): string | undefined {
+  return p.method?.trim() || p.paymentMethod?.trim() || undefined;
+}

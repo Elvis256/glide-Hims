@@ -47,7 +47,12 @@ import { join } from 'node:path';
 const API = process.env.API || 'http://localhost:3001/api/v1';
 const TENANT = process.env.TENANT_ID || 'd268ddad-e283-4a67-a1e8-d3aac88d4f2f';
 const SERVICES = new URL('../src/services/', import.meta.url).pathname;
-const PAGES = new URL('../src/pages/', import.meta.url).pathname;
+// Reads live in components too, not only pages. Scanning pages alone reported
+// the surgery consumables endpoint as having no consumer, when
+// components/surgery/ConsumablesSection.tsx was crashing on it every render.
+const READ_DIRS = ['../src/pages/', '../src/components/'].map(
+  (d) => new URL(d, import.meta.url).pathname,
+);
 const SHOW_ALL = process.argv.includes('--all');
 
 /* ---------- 1. every page source, concatenated once for read-detection ---- */
@@ -61,7 +66,7 @@ function walk(dir) {
   }
   return out;
 }
-const pageFiles = walk(PAGES);
+const pageFiles = READ_DIRS.flatMap((d) => walk(d));
 const pageSource = pageFiles.map((f) => readFileSync(f, 'utf8')).join('\n');
 
 /** Does any page dereference `.field`, as `x.field.y`, `x.field?.y` or `x.field)`? */
@@ -95,7 +100,7 @@ for (const file of readdirSync(SERVICES).filter((f) => f.endsWith('.ts'))) {
 const probes = []; // {file, iface, path}
 for (const file of readdirSync(SERVICES).filter((f) => f.endsWith('.ts'))) {
   const src = readFileSync(join(SERVICES, file), 'utf8');
-  const re = /api\.get<([^>]+)>\(\s*['"`]([^'"`$]+)['"`]/g;
+  const re = /api\.get<([^>]+)>\(\s*['"`]([^'"`]+)['"`]/g;
   let m;
   while ((m = re.exec(src))) {
     let type = m[1].trim();
@@ -166,8 +171,19 @@ async function probe(path) {
 function unwrap(b) {
   if (b == null || typeof b !== 'object') return [];
   if (Array.isArray(b)) return b;
-  for (const inner of [b.data, b.data?.data, b.data?.items, b.items]) {
-    if (Array.isArray(inner)) return inner;
+  if (Array.isArray(b.data)) return b.data;
+  if (Array.isArray(b.data?.data)) return b.data.data;
+  // `items` is only an envelope when the level holding it is one. On an RFQ,
+  // a prescription or an inventory item, `items` is the line items — treating
+  // it as the row set compares the interface against its own children and
+  // reports every real field as missing. A domain object carries an id; a
+  // pagination wrapper carries a count instead.
+  for (const level of [b.data, b]) {
+    if (!level || typeof level !== 'object' || Array.isArray(level)) continue;
+    const paginated =
+      !('id' in level) &&
+      ['total', 'count', 'page', 'meta', 'totalCount', 'pageCount'].some((k) => k in level);
+    if (paginated && Array.isArray(level.items)) return level.items;
   }
   const d = b.data;
   if (d && typeof d === 'object' && !Array.isArray(d)) {
@@ -181,6 +197,57 @@ function unwrap(b) {
   return [];
 }
 
+/**
+ * Fill the ${...} holes in a template path with ids that exist.
+ *
+ * Half the typed GETs address a single resource, and skipping them left the
+ * detail endpoints unprobed — which is where an unjoined relation is most
+ * likely, since a detail view is exactly what shows a person's name.
+ *
+ * Two resolutions, in order: the parameter's own name when it identifies a
+ * collection (patientId -> /patients), otherwise the path prefix preceding it
+ * (/facilities/${id} -> /facilities). A parameter that is not an id at all,
+ * like ${therapeuticClass}, resolves to neither and the probe is skipped
+ * rather than guessed at — a guessed id returns 404 and would read as a bug.
+ */
+const BY_PARAM_NAME = {
+  patientId: 'patients',
+  facilityId: 'facilities',
+  invoiceId: 'billing/invoices',
+  itemId: 'stores/items',
+  admissionId: 'ipd/admissions?status=admitted',
+  employeeId: 'hr/staff',
+  supplierId: 'suppliers',
+  userId: 'users',
+  wardId: 'ipd/wards',
+  drugId: 'stores/items',
+  encounterId: 'encounters',
+};
+
+const idCache = new Map();
+async function cachedFirstId(path) {
+  if (!idCache.has(path)) idCache.set(path, await firstId(path));
+  return idCache.get(path);
+}
+
+async function fillParams(path) {
+  const holes = [...path.matchAll(/\$\{(\w+)\}/g)];
+  if (!holes.length) return path;
+  let out = path;
+  for (const h of holes) {
+    const name = h[1];
+    let value = null;
+    if (BY_PARAM_NAME[name]) value = await cachedFirstId(BY_PARAM_NAME[name]);
+    if (!value && /id$/i.test(name)) {
+      const prefix = out.slice(0, out.indexOf(h[0])).replace(/\/+$/, '');
+      if (prefix) value = await cachedFirstId(prefix);
+    }
+    if (!value) return null;
+    out = out.replace(h[0], value);
+  }
+  return out;
+}
+
 /* ---------- 5. compare ---------------------------------------------------- */
 
 const seen = new Set();
@@ -188,12 +255,19 @@ const defects = [];
 const possible = [];
 const context = [];
 const unproven = [];
+const unresolved = [];
 
 for (const p of probes) {
   if (seen.has(p.key + p.path)) continue;
   seen.add(p.key + p.path);
 
-  const { status, rows } = await probe(p.path);
+  const path = await fillParams(p.path);
+  if (!path) {
+    unresolved.push(`${p.file} ${p.iface}: ${p.path}`);
+    continue;
+  }
+  p.path = path;
+  const { status, rows } = await probe(path);
   if (status !== 200) {
     unproven.push(`${p.file} ${p.iface}: HTTP ${status} — ${p.path}`);
     continue;
@@ -266,6 +340,7 @@ if (SHOW_ALL) {
 }
 
 console.log(
-  `\n${defects.length} contract violations (required + read), ${possible.length} to check by hand`,
+  `\n${defects.length} contract violations (required + read), ${possible.length} to check by hand, ` +
+    `${unresolved.length} unresolvable paths`,
 );
 process.exit(defects.length ? 1 : 0);
