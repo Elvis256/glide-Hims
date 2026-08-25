@@ -33,6 +33,7 @@ import { RequireModule } from '../auth/decorators/module.decorator';
 import { ModuleGuard } from '../auth/guards/module.guard';
 import { DocumentCategory } from '../../database/entities/patient-document.entity';
 import { validateFileContent } from '../../common/file-validation';
+import { UploadPatientDocumentDto } from './dto/upload-document.dto';
 
 interface JwtUser {
   id: string;
@@ -280,7 +281,7 @@ export class PatientsController {
   async uploadDocument(
     @Param('id', ParseUUIDPipe) patientId: string,
     @UploadedFile() file: Express.Multer.File,
-    @Body() dto: UploadDocumentDto,
+    @Body() dto: UploadPatientDocumentDto,
     @Req() req: AuthenticatedRequest,
   ) {
     // Validate file content matches declared MIME type (prevent disguised executables)

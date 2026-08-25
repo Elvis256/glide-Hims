@@ -27,6 +27,7 @@ import {
   RecordConsumableDto,
   RecordMultipleConsumablesDto,
   DischargeRecoveryDto,
+  UpdateConsumableDto,
 } from './dto/surgery.dto';
 import { SurgeryStatus } from '../../database/entities/surgery-case.entity';
 import { RequireModule } from '../auth/decorators/module.decorator';
@@ -310,7 +311,7 @@ export class SurgeryController {
   @ApiOperation({ summary: 'Update a consumable record (quantity, notes)' })
   updateConsumable(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: Partial<RecordConsumableDto>,
+    @Body() dto: UpdateConsumableDto,
     @Request() req: any,
   ) {
     return this.surgeryService.updateConsumable(id, dto, req.user?.tenantId);

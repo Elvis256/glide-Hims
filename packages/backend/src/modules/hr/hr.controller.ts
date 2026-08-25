@@ -70,6 +70,7 @@ import {
   UpdateStaffDto,
   LeaveTypeConfigDto,
   HolidayConfigDto,
+  UpdateShiftDefinitionDto,
 } from './dto/hr.dto';
 import { EmploymentStatus } from '../../database/entities/employee.entity';
 import { LeaveStatus } from '../../database/entities/leave-request.entity';
@@ -981,7 +982,7 @@ export class HrController {
   @ApiOperation({ summary: 'Update shift definition' })
   updateShift(
     @Param('id') id: string,
-    @Body() dto: Partial<CreateShiftDefinitionDto>,
+    @Body() dto: UpdateShiftDefinitionDto,
     @Request() req: any,
   ) {
     return this.hrService.updateShiftDefinition(id, dto, req.user?.tenantId);

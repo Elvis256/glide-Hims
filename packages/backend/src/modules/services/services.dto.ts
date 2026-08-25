@@ -67,3 +67,10 @@ export class CreateServiceConsumableDto {
 }
 
 export class UpdateServiceConsumableDto extends PartialType(CreateServiceConsumableDto) {}
+
+/**
+ * `Partial<CreateServicePackageDto>` is a mapped type: it does not exist at runtime, so a @Body()
+ * declared with it gave the ValidationPipe nothing to check. PartialType()
+ * builds a real class with the same optional fields.
+ */
+export class UpdateServicePackageDto extends PartialType(CreateServicePackageDto) {}
