@@ -94,15 +94,19 @@ export default function MembershipPlansPage() {
   });
 
   const handleAddPlan = () => {
-    // Create a new plan with default values
+    // The API's scheme shape, not the tier/fee model this page displays.
+    // The previous payload sent tier, monthlyFee, annualFee and familyMembers
+    // — none of which membership_schemes has — and omitted the required code
+    // and type, so every click was rejected whole and no plan was ever
+    // created. `code` is uniquely constrained per tenant, so it is derived
+    // from the clock rather than a fixed string that would collide on the
+    // second click.
     const newPlan: CreatePlanDto = {
+      code: `PLAN-${Date.now().toString(36).toUpperCase()}`,
       name: 'New Plan',
-      tier: 'basic',
-      monthlyFee: 1000,
-      annualFee: 10000,
+      type: 'regular',
       discountPercent: 5,
-      familyMembers: 0,
-      benefits: ['Priority booking'],
+      isActive: true,
     };
     createMutation.mutate(newPlan);
   };

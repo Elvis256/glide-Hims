@@ -27,21 +27,41 @@ export interface Membership {
   createdAt: string;
 }
 
+/**
+ * Mirrors the API's CreatePatientMembershipDto. It previously sent `planId`
+ * where the server field is `schemeId`, plus a `paymentMethod` that
+ * patient_memberships has no column for — either alone rejects the whole
+ * create under forbidNonWhitelisted.
+ */
 export interface CreateMembershipDto {
   patientId: string;
-  planId: string;
+  schemeId: string;
   startDate: string;
-  paymentMethod: string;
+  endDate?: string;
+  corporateName?: string;
+  employeeId?: string;
 }
 
+/**
+ * Mirrors the API's CreateMembershipSchemeDto. The old shape — tier,
+ * monthlyFee, annualFee, familyMembers — described a plan model that does not
+ * exist: membership_schemes has none of those columns, and the DTO rejects
+ * them outright while requiring `code` and `type`, which were never sent. The
+ * "Add Plan" button therefore could not create a plan, and GET plans returns
+ * an empty list to match.
+ */
 export interface CreatePlanDto {
+  code: string;
   name: string;
-  tier: 'basic' | 'silver' | 'gold' | 'platinum';
-  monthlyFee: number;
-  annualFee: number;
-  discountPercent: number;
-  familyMembers: number;
-  benefits: string[];
+  type: 'regular' | 'vip' | 'staff' | 'corporate' | 'insurance' | 'charity';
+  description?: string;
+  discountPercent?: number;
+  creditLimit?: number;
+  requiresApproval?: boolean;
+  validDays?: number;
+  isActive?: boolean;
+  benefits?: Record<string, unknown>;
+  facilityId?: string;
 }
 
 export const membershipService = {

@@ -88,6 +88,25 @@ export interface SubmitRadiologyReportDto {
   recommendation?: string;
 }
 
+
+/**
+ * What POST /orders/:id/complete actually accepts.
+ *
+ * It was typed SubmitLabResultsDto | SubmitRadiologyReportDto, neither of
+ * which the endpoint takes — the radiology callers only escaped it by passing
+ * no body at all. The result payload is open (it varies by order type and is
+ * stored as jsonb), so the API validates only that it is an object, under the
+ * single key `resultData`.
+ *
+ * Note for anyone reading the backend: there are two classes named
+ * CompleteOrderDto. orders.dto.ts declares {resultSummary, notes} and is not
+ * imported by the controller; complete-order.dto.ts declares {resultData} and
+ * is the real one.
+ */
+export interface CompleteOrderPayload {
+  resultData?: Record<string, unknown>;
+}
+
 export const ordersService = {
   // Create a new order
   create: async (data: CreateOrderDto): Promise<Order> => {
@@ -139,7 +158,7 @@ export const ordersService = {
   },
 
   // Complete an order with results
-  complete: async (id: string, resultData: SubmitLabResultsDto | SubmitRadiologyReportDto): Promise<Order> => {
+  complete: async (id: string, resultData?: CompleteOrderPayload): Promise<Order> => {
     const response = await api.post<Order>(`/orders/${id}/complete`, resultData);
     return response.data;
   },
