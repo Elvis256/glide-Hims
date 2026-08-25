@@ -26,10 +26,10 @@ What it costs, all found by sending `{}` to every mutation route:
 
 BLIND SPOTS -- read before trusting a clean run:
 
-  * An `interface` used as a @Body() type looks like a class here and is NOT
-    reported. It has the identical failure mode. Only a class with validator
-    decorators is actually checked; this script cannot tell the difference
-    between `class CreateFooDto` with decorators and one without.
+  * An interface or type alias IS now reported: any named @Body() type with no
+    matching `export class` anywhere under src/ is flagged as erased. What is
+    still NOT checked is whether a real class carries validator decorators --
+    a class with none passes this scan and validates nothing.
   * A class DTO with no class-validator decorators on its properties passes
     this scan and validates nothing.
   * @Body('field') single-property extraction is not examined, and it is
@@ -46,12 +46,43 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent / 'src' / 'modules'
 
 
+CLASS_NAMES = {
+    name
+    for f in (ROOT.parent).rglob('*.ts')
+    for name in re.findall(r'export class (\w+)', f.read_text(errors='ignore'))
+}
+
+
 def main() -> int:
     findings = []
     for path in sorted(ROOT.rglob('*.controller.ts')):
-        src = re.sub(r'//.*|/\*.*?\*/', '', path.read_text(), flags=re.S)
-        for m in re.finditer(r'@Body\(\s*\)\s*(\w+)\s*:\s*(any\b|\{)', src):
-            kind = 'any' if m.group(2) == 'any' else 'inline type'
+        # Two passes, and the order and flags matter. Stripping both patterns
+        # together under re.S made `//.*` match from the first line comment to
+        # the end of the file — so this scanner saw only each controller's
+        # imports and reported "every @Body() names a class" while 39 handlers
+        # took `any`. A scanner that lies is worse than no scanner.
+        src = re.sub(r'/\*.*?\*/', '', path.read_text(), flags=re.S)
+        src = re.sub(r'//[^\n]*', '', src)
+        for m in re.finditer(r'@Body\(\s*\)\s*(\w+)\s*:\s*([A-Za-z_][\w.]*|\{)', src):
+            typ = m.group(2)
+            if typ == '{':
+                kind = 'inline type'
+            elif typ in ('any', 'object', 'Object'):
+                kind = typ
+            elif typ in CLASS_NAMES:
+                continue  # a real class; decorators are a separate question
+            elif typ in ('Partial', 'Record', 'Pick', 'Omit'):
+                kind = f'{typ}<> (erased)'
+            elif typ[0].isupper():
+                # Named, but no `export class` anywhere declares it — so it is
+                # an interface or type alias. Both vanish at compile time and
+                # leave the pipe with `Object` to validate against, which it
+                # cannot. POST /patients/:id/notes was exactly this: it named
+                # CreateNoteDto, validated nothing, and persisted whatever it
+                # was sent.
+                kind = 'interface/type alias (erased)'
+            else:
+                continue
             line = src[: m.start()].count('\n') + 1
             findings.append((path.relative_to(ROOT.parent.parent), line, m.group(1), kind))
 
