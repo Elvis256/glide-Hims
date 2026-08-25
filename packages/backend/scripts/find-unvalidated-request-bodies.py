@@ -58,13 +58,19 @@ CLASS_NAMES = {
 
 def main() -> int:
     findings = []
+    allowed = []
     for path in sorted(ROOT.rglob('*.controller.ts')):
         # Two passes, and the order and flags matter. Stripping both patterns
         # together under re.S made `//.*` match from the first line comment to
         # the end of the file — so this scanner saw only each controller's
         # imports and reported "every @Body() names a class" while 39 handlers
         # took `any`. A scanner that lies is worse than no scanner.
-        src = re.sub(r'/\*.*?\*/', '', path.read_text(), flags=re.S)
+        raw_src = path.read_text()
+        # Blank the comments out rather than deleting them, so line numbers
+        # still line up with the file on disk. Deleting them shifted every
+        # reported line and broke the exception-marker lookup below, which
+        # reads the real source around the match.
+        src = re.sub(r'/\*.*?\*/', lambda m: '\n' * m.group(0).count('\n'), raw_src, flags=re.S)
         src = re.sub(r'//[^\n]*', '', src)
         for m in re.finditer(r'@Body\(\s*\)\s*(\w+)\s*:\s*([A-Za-z_][\w.]*|\{)', src):
             typ = m.group(2)
@@ -87,10 +93,25 @@ def main() -> int:
             else:
                 continue
             line = src[: m.start()].count('\n') + 1
+            # A deliberate exception is declared in the source, next to the
+            # parameter, and must say why. Some bodies genuinely are open —
+            # a jsonb payload whose shape varies by record type cannot be
+            # given a DTO, because `whitelist` would strip it to {}. Silently
+            # tolerating those is what lets real gaps hide among them.
+            preceding = raw_src.splitlines()[max(0, line - 10) : line]
+            if any('unvalidated-body:' in l for l in preceding):
+                allowed.append((path.relative_to(ROOT.parent.parent), line, m.group(1)))
+                continue
             findings.append((path.relative_to(ROOT.parent.parent), line, m.group(1), kind))
 
+    if allowed:
+        print(f'{len(allowed)} declared exception(s), each with a stated reason:')
+        for rel, line, name in allowed:
+            print(f'    {rel}:{line} {name}')
+        print()
+
     if not findings:
-        print('find-unvalidated-request-bodies: every @Body() names a class.')
+        print('find-unvalidated-request-bodies: every @Body() the pipe can check, it checks.')
         return 0
 
     by_file: dict = {}

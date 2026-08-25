@@ -50,6 +50,12 @@ export class ComplianceController {
     // computing something wrong as it is bad input, so this is guarded at the
     // parameter instead of by loosening that rule for everyone.
     @Param('type', new ParseEnumPipe(COMPLIANCE_RECORD_TYPES)) type: ComplianceRecordType,
+    // unvalidated-body: the compliance payload is a jsonb document whose shape
+    // is defined by `type`, which IS validated above against the enum. Giving
+    // it a DTO would be worse than leaving it open — `whitelist` strips any
+    // property the class does not declare, so a per-type payload would arrive
+    // as {}. The record type is the guard; the payload is stored verbatim by
+    // design.
     @Body() payload: Record<string, any>,
     @CurrentUser() user: any,
   ) {

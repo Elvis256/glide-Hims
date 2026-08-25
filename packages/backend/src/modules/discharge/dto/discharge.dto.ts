@@ -1,3 +1,4 @@
+import { PartialType } from '@nestjs/swagger';
 import {
   IsString,
   IsOptional,
@@ -353,3 +354,10 @@ export class DischargeSummaryFilterDto {
   @IsDateString()
   toDate?: string;
 }
+
+/**
+ * `Partial<CreateDischargeSummaryDto>` is a mapped type: it does not exist at runtime, so a @Body()
+ * declared with it gave the ValidationPipe nothing to check. PartialType()
+ * builds a real class with the same optional fields.
+ */
+export class UpdateDischargeSummaryDto extends PartialType(CreateDischargeSummaryDto) {}

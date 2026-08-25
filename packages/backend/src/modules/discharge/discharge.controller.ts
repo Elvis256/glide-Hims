@@ -12,7 +12,11 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { DischargeService } from './discharge.service';
-import { CreateDischargeSummaryDto, DischargeSummaryFilterDto } from './dto/discharge.dto';
+import {
+  CreateDischargeSummaryDto,
+  DischargeSummaryFilterDto,
+  UpdateDischargeSummaryDto,
+} from './dto/discharge.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { RequireModule } from '../auth/decorators/module.decorator';
 import { ModuleGuard } from '../auth/guards/module.guard';
@@ -85,7 +89,7 @@ export class DischargeController {
   @AuthWithPermissions('discharge.update')
   async update(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: Partial<CreateDischargeSummaryDto>,
+    @Body() dto: UpdateDischargeSummaryDto,
     @Request() req: any,
   ) {
     return this.dischargeService.update(id, dto, req.user?.tenantId);

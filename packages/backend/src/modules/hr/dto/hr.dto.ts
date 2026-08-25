@@ -18,7 +18,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { EmploymentType, Gender, MaritalStatus } from '../../../database/entities/employee.entity';
 import { MAX_MONEY, NUMBER_OPTS } from '../../../common/constants/validation.constants';
 
@@ -1290,3 +1290,10 @@ export class OffboardStaffDto {
   @IsBoolean()
   deactivateAccount?: boolean;
 }
+
+/**
+ * `Partial<CreateShiftDefinitionDto>` is a mapped type: it does not exist at runtime, so a @Body()
+ * declared with it gave the ValidationPipe nothing to check. PartialType()
+ * builds a real class with the same optional fields.
+ */
+export class UpdateShiftDefinitionDto extends PartialType(CreateShiftDefinitionDto) {}
