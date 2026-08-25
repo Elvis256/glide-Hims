@@ -13,6 +13,8 @@ import {
   ValidatorConstraint,
   ValidatorConstraintInterface,
   ValidationArguments,
+  Max,
+  MaxLength,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -217,6 +219,28 @@ export class CreateCurrencyDto {
   @IsOptional()
   @IsNumber()
   exchangeRate?: number;
+
+  /**
+   * CurrenciesPage collects both of these — decimalPlaces is a number input the
+   * admin edits and then sees rendered in the table, country sits beside it.
+   * They were not declared here, and under forbidNonWhitelisted an undeclared
+   * property does not get dropped, it rejects the entire request: "Add
+   * Currency" could never save. Currencies are persisted into the
+   * finance_currencies settings blob rather than a table, so accepting them
+   * needs no migration.
+   */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(8)
+  decimalPlaces?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  country?: string;
 }
 
 export class UpdateCurrencyDto {
