@@ -17,6 +17,7 @@ import {
 import { formatCurrency } from '../../lib/currency';
 import { storesService } from '../../services/stores';
 import { useFacilityId } from '../../lib/facility';
+import { isOutbound } from '../../services/stores';
 
 export default function ConsumptionReportsPage() {
   const facilityId = useFacilityId();
@@ -37,7 +38,7 @@ export default function ConsumptionReportsPage() {
     staleTime: 60000,
   });
 
-  const outMovements = useMemo(() => movements.filter(m => m.type === 'out'), [movements]);
+  const outMovements = useMemo(() => movements.filter(isOutbound), [movements]);
 
   const topItems = useMemo(() => {
     const map = new Map<string, { itemId: string; count: number; qty: number }>();
@@ -62,7 +63,7 @@ export default function ConsumptionReportsPage() {
     totalValue: 0,
     totalBudget: 0,
     overBudget: 0,
-    departments: new Set(outMovements.map(m => m.reason?.split(' ')[2] || 'Unknown')).size,
+    departments: new Set(outMovements.map(m => m.notes?.split(' ')[2] || 'Unknown')).size,
   }), [outMovements]);
 
   return (
@@ -288,10 +289,10 @@ export default function ConsumptionReportsPage() {
               <tbody className="divide-y">
                 {filteredRecords.map((record) => (
                   <tr key={record.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 font-mono text-blue-600 text-sm">{record.reference || record.id.slice(0, 8)}</td>
+                    <td className="px-4 py-3 font-mono text-blue-600 text-sm">{record.referenceId || record.id.slice(0, 8)}</td>
                     <td className="px-4 py-3 text-gray-900">{record.itemId}</td>
                     <td className="px-4 py-3 text-red-600">{Math.abs(record.quantity)}</td>
-                    <td className="px-4 py-3 text-gray-600 text-sm">{record.reason || '—'}</td>
+                    <td className="px-4 py-3 text-gray-600 text-sm">{record.notes || '—'}</td>
                     <td className="px-4 py-3 text-gray-600 text-sm">{new Date(record.createdAt).toLocaleDateString()}</td>
                   </tr>
                 ))}

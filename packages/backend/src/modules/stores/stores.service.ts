@@ -866,6 +866,9 @@ export class StoresService {
       .createQueryBuilder('sl')
       .leftJoinAndSelect('sl.item', 'item')
       .leftJoinAndSelect('sl.store', 'store')
+      // Who moved the stock is part of the ledger's point. Without this join
+      // the movement screens can only show a bare uuid, so they showed nothing.
+      .leftJoinAndSelect('sl.createdBy', 'createdBy')
       .where('sl.deletedAt IS NULL')
       .andWhere('item.deletedAt IS NULL')
       .orderBy('sl.createdAt', 'DESC')

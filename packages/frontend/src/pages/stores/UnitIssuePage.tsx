@@ -21,6 +21,7 @@ import { CURRENCY_SYMBOL } from '../../lib/currency';
 import { storesService } from '../../services/stores';
 import { facilitiesService } from '../../services/facilities';
 import { useFacilityId } from '../../lib/facility';
+import { isOutbound, isInbound, movementActor } from '../../services/stores';
 
 interface IssueItem {
   id: string;
@@ -60,8 +61,8 @@ export default function UnitIssuePage() {
     staleTime: 30000,
   });
 
-  const issuedHistory = useMemo(() => movements.filter(m => m.type === 'out'), [movements]);
-  const pendingRequests = useMemo(() => movements.filter(m => m.type === 'in' && m.reason?.toLowerCase().includes('request')), [movements]);
+  const issuedHistory = useMemo(() => movements.filter(isOutbound), [movements]);
+  const pendingRequests = useMemo(() => movements.filter(m => isInbound(m) && m.notes?.toLowerCase().includes('request')), [movements]);
 
   const issueMutation = useMutation({
     mutationFn: (items: { itemId: string; quantity: number; reason: string }[]) =>
@@ -378,12 +379,12 @@ export default function UnitIssuePage() {
                   issuedHistory.map((movement) => (
                     <tr key={movement.id} className="hover:bg-gray-50">
                       <td className="px-4 py-3">
-                        <span className="font-mono text-blue-600">{movement.reference || movement.id.slice(0, 8)}</span>
+                        <span className="font-mono text-blue-600">{movement.referenceId || movement.id.slice(0, 8)}</span>
                       </td>
                       <td className="px-4 py-3 text-gray-900">{itemNameMap[movement.itemId] || movement.itemId.slice(0, 8)}</td>
                       <td className="px-4 py-3 text-red-600">{movement.quantity}</td>
-                      <td className="px-4 py-3 text-gray-600">{movement.reason || '—'}</td>
-                      <td className="px-4 py-3 text-gray-600">{movement.performedBy}</td>
+                      <td className="px-4 py-3 text-gray-600">{movement.notes || '—'}</td>
+                      <td className="px-4 py-3 text-gray-600">{movementActor(movement) || '—'}</td>
                       <td className="px-4 py-3 text-gray-600">{new Date(movement.createdAt).toLocaleDateString()}</td>
                     </tr>
                   ))
