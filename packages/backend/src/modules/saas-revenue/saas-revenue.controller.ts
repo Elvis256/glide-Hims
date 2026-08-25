@@ -36,6 +36,20 @@ import {
   InitCheckoutDto,
   CreateManualInvoiceDto,
 } from './dtos';
+import {
+  UpdateSubscriptionDto,
+  CancelSubscriptionDto,
+  RefundPaymentDto,
+  PaymentProofNotesDto,
+  VerifyPaymentDto,
+  SendInvoiceEmailDto,
+  UpdateVendorBillingDto,
+  UpdateDunningRulesDto,
+  UpdateVatSettingsDto,
+  UpdateEmailTemplateDto,
+  RevertEmailTemplateDto,
+  PreviewEmailTemplateDto,
+} from './dto/saas-billing.dto';
 
 function ensureAdmin(req: any) {
   if (!req.user?.isSystemAdmin) throw new ForbiddenException('System admin only');
@@ -159,8 +173,7 @@ export class SaasRevenueController {
   updateSub(
     @Req() req: any,
     @Param('id') id: string,
-    @Body()
-    dto: { billingEmail?: string | null; billingCurrency?: string | null; autoRenew?: boolean },
+    @Body() dto: UpdateSubscriptionDto,
   ) {
     ensureAdmin(req);
     return this.svc.updateSubscription(id, dto || {}, req.user?.id);
@@ -176,7 +189,7 @@ export class SaasRevenueController {
   cancel(
     @Req() req: any,
     @Param('id') id: string,
-    @Body() body: { atPeriodEnd?: boolean; reason?: string },
+    @Body() body: CancelSubscriptionDto,
   ) {
     ensureAdmin(req);
     return this.svc.cancelSubscription(id, body?.atPeriodEnd ?? true, body?.reason, req.user?.id);
@@ -246,7 +259,7 @@ export class SaasRevenueController {
   refundPayment(
     @Req() req: any,
     @Param('id') id: string,
-    @Body() dto: { amountMinor?: number; reason?: string },
+    @Body() dto: RefundPaymentDto,
   ) {
     ensureAdmin(req);
     return this.svc.refundPayment(id, dto || {}, req.user?.id);
@@ -265,7 +278,7 @@ export class SaasRevenueController {
     @Req() req: any,
     @Param('id') id: string,
     @UploadedFile() file: Express.Multer.File,
-    @Body() body: { notes?: string },
+    @Body() body: PaymentProofNotesDto,
   ) {
     ensureAdmin(req);
     if (!file) throw new BadRequestException('File is required');
@@ -320,14 +333,14 @@ export class SaasRevenueController {
   verifyPayment(
     @Req() req: any,
     @Param('id') id: string,
-    @Body() dto: { status: 'verified' | 'rejected'; notes?: string },
+    @Body() dto: VerifyPaymentDto,
   ) {
     ensureAdmin(req);
     return this.svc.verifyPayment(id, dto || ({} as any), req.user?.id);
   }
 
   @Post('invoices/:id/send-email')
-  sendInv(@Req() req: any, @Param('id') id: string, @Body() body: { to?: string }) {
+  sendInv(@Req() req: any, @Param('id') id: string, @Body() body: SendInvoiceEmailDto) {
     ensureAdmin(req);
     return this.svc.sendInvoiceEmail(id, body?.to);
   }
@@ -348,7 +361,7 @@ export class SaasRevenueController {
   }
 
   @Put('billing-settings')
-  updateBillingSettings(@Req() req: any, @Body() dto: any) {
+  updateBillingSettings(@Req() req: any, @Body() dto: UpdateVendorBillingDto) {
     ensureAdmin(req);
     return this.svc.updateVendorBilling(dto || {});
   }
@@ -361,7 +374,7 @@ export class SaasRevenueController {
   }
 
   @Put('dunning-rules')
-  updateDunningRules(@Req() req: any, @Body() dto: any) {
+  updateDunningRules(@Req() req: any, @Body() dto: UpdateDunningRulesDto) {
     ensureAdmin(req);
     return this.svc.updateDunningRules(dto || {});
   }
@@ -374,7 +387,7 @@ export class SaasRevenueController {
   }
 
   @Put('vat-rules')
-  updateVatRules(@Req() req: any, @Body() dto: any) {
+  updateVatRules(@Req() req: any, @Body() dto: UpdateVatSettingsDto) {
     ensureAdmin(req);
     return this.svc.updateVatSettings(dto || {});
   }
@@ -413,7 +426,7 @@ export class SaasRevenueController {
   async putEmailTemplate(
     @Req() req: any,
     @Param('key') key: string,
-    @Body() body: { subject: string; body: string },
+    @Body() body: UpdateEmailTemplateDto,
     @Query('tenantId') tenantId?: string,
   ) {
     ensureAdmin(req);
@@ -444,7 +457,7 @@ export class SaasRevenueController {
   async revertEmailTemplate(
     @Req() req: any,
     @Param('key') key: string,
-    @Body() body: { versionIndex: number },
+    @Body() body: RevertEmailTemplateDto,
     @Query('tenantId') tenantId?: string,
   ) {
     ensureAdmin(req);
@@ -462,7 +475,7 @@ export class SaasRevenueController {
   async previewEmailTemplate(
     @Req() req: any,
     @Param('key') key: string,
-    @Body() body: { subject?: string; body?: string },
+    @Body() body: PreviewEmailTemplateDto,
     @Query('tenantId') tenantId?: string,
   ) {
     ensureAdmin(req);
