@@ -21,6 +21,15 @@ import { Auth } from '../auth/decorators/auth.decorator';
 import { Public } from '../auth/decorators/public.decorator';
 import { withSystemContext } from '../../common/context/tenant-context';
 import { ValidateLicenseDto } from './dto/validate-license.dto';
+import {
+  GenerateLicenseRequestDto,
+  ActivateLicenseDto,
+  BatchExtendLicensesDto,
+  UpdateLicenseDto,
+  ExtendLicenseDaysDto,
+  RotateLicenseDto,
+  GraceExtensionDto,
+} from './dto/licensing.dto';
 
 @ApiTags('Licensing')
 @Controller('license')
@@ -73,7 +82,7 @@ export class LicenseController {
   @Post('generate')
   @Auth()
   @ApiOperation({ summary: 'Generate a new license key' })
-  async generateLicense(@Body() dto: GenerateLicenseDto, @Request() req: any) {
+  async generateLicense(@Body() dto: GenerateLicenseRequestDto, @Request() req: any) {
     this.requireSystemAdmin(req);
     const license = await this.licenseService.generateLicense(dto);
 
@@ -139,7 +148,7 @@ export class LicenseController {
   @Post('activate')
   @Auth()
   @ApiOperation({ summary: 'Activate a license key for the current tenant' })
-  async activateLicense(@Body() body: { licenseKey: string }, @Request() req: any) {
+  async activateLicense(@Body() body: ActivateLicenseDto, @Request() req: any) {
     const tenantId = req.user?.tenantId;
     const isAdmin =
       req.user?.isSystemAdmin ||
@@ -225,7 +234,7 @@ export class LicenseController {
   @Post('batch/extend')
   @Auth()
   @ApiOperation({ summary: 'Batch extend licenses expiring within N days' })
-  async batchExtend(@Body() body: { days: number; withinDays: number }, @Request() req: any) {
+  async batchExtend(@Body() body: BatchExtendLicensesDto, @Request() req: any) {
     this.requireSystemAdmin(req);
     if (!body?.days || !body?.withinDays) {
       throw new HttpException('Both "days" and "withinDays" are required', HttpStatus.BAD_REQUEST);
@@ -311,17 +320,7 @@ export class LicenseController {
   @ApiOperation({ summary: 'Update an existing license (modules, limits, tier, expiry)' })
   async updateLicense(
     @Param('licenseKey') licenseKey: string,
-    @Body()
-    body: {
-      licenseType?: 'trial' | 'standard' | 'professional' | 'enterprise';
-      maxUsers?: number;
-      maxFacilities?: number;
-      enabledModules?: string[];
-      features?: Record<string, boolean>;
-      expiresAt?: string;
-      organizationName?: string;
-      email?: string;
-    },
+    @Body() body: UpdateLicenseDto,
     @Request() req: any,
   ) {
     this.requireSystemAdmin(req);
@@ -384,7 +383,7 @@ export class LicenseController {
   @ApiOperation({ summary: 'Extend license validity' })
   async extendLicense(
     @Param('licenseKey') licenseKey: string,
-    @Body() body: { days: number },
+    @Body() body: ExtendLicenseDaysDto,
     @Request() req: any,
   ) {
     this.requireSystemAdmin(req);
@@ -403,7 +402,7 @@ export class LicenseController {
   @ApiOperation({ summary: 'Bind license to hardware ID' })
   async bindToHardware(
     @Param('licenseKey') licenseKey: string,
-    @Body() body: { hardwareId: string },
+    @Body() body: RotateLicenseDto,
     @Request() req: any,
   ) {
     this.requireSystemAdmin(req);
@@ -455,7 +454,7 @@ export class LicenseController {
   @ApiOperation({ summary: 'Reissue / extend a standalone license' })
   async reissueLicense(
     @Param('id') id: string,
-    @Body() body: { extensionDays?: number },
+    @Body() body: GraceExtensionDto,
     @Request() req: any,
   ) {
     this.requireSystemAdmin(req);
