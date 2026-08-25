@@ -5,6 +5,11 @@ import { AuthWithPermissions } from '../../auth/decorators/auth.decorator';
 import { CreateWebhookDto, UpdateWebhookDto } from '../dto/webhook.dto';
 import { validateWebhookUrl } from '../utils/url-validator';
 import { v4 as uuidv4 } from 'uuid';
+import {
+  CreateAdminEmailTemplateDto,
+  UpdateAdminEmailTemplateDto,
+  UpdateSsoConfigDto,
+} from '../dto/admin-bodies.dto';
 
 const WEBHOOKS = 'integrations.webhooks';
 const EMAIL_TPL = 'integrations.email_templates';
@@ -95,7 +100,7 @@ export class IntegrationsController {
 
   @Post('email-templates')
   @AuthWithPermissions('settings.update')
-  async createEmailTpl(@Body() dto: any, @Request() req: any) {
+  async createEmailTpl(@Body() dto: CreateAdminEmailTemplateDto, @Request() req: any) {
     const list = await readArray(this.settings, EMAIL_TPL, req.user?.tenantId);
     const item = {
       id: uuidv4(),
@@ -112,7 +117,7 @@ export class IntegrationsController {
 
   @Patch('email-templates/:id')
   @AuthWithPermissions('settings.update')
-  async updateEmailTpl(@Param('id') id: string, @Body() dto: any, @Request() req: any) {
+  async updateEmailTpl(@Param('id') id: string, @Body() dto: UpdateAdminEmailTemplateDto, @Request() req: any) {
     const list = await readArray(this.settings, EMAIL_TPL, req.user?.tenantId);
     const idx = list.findIndex((w) => w.id === id);
     if (idx < 0) return { success: false };
@@ -144,7 +149,7 @@ export class IntegrationsController {
 
   @Post('sso')
   @AuthWithPermissions('settings.update')
-  async updateSso(@Body() dto: any, @Request() req: any) {
+  async updateSso(@Body() dto: UpdateSsoConfigDto, @Request() req: any) {
     return this.settings.upsert(SSO_CFG, dto, req.user?.tenantId);
   }
 }
