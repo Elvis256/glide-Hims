@@ -8,6 +8,7 @@ import {
   IsInt,
   Min,
   Max,
+  MaxLength,
 } from 'class-validator';
 import { DeploymentType, DeploymentStatus } from '../../database/entities/deployment.entity';
 
@@ -151,4 +152,74 @@ export class ToggleFeatureFlagDto {
   featureKey: string;
 
   isEnabled: boolean | string;
+}
+
+/**
+ * POST /deployments accepts two shapes and branches on them: a plain
+ * deployment record, or a provisioning request that is mapped onto
+ * ProvisionDeploymentDto. It was typed `any`, which hid the disagreement —
+ * the handler reads organizationName, tier, domain, maxUsers and notes, none
+ * of which CreateDeploymentDto declares, and tests `type === 'standalone'`,
+ * which is not a DeploymentType at all. Both shapes are declared here so the
+ * pipe can check whichever one arrives.
+ */
+export class CreateDeploymentBodyDto {
+  @IsOptional()
+  @IsUUID()
+  tenantId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  name?: string;
+
+  /** DeploymentType, widened by the provisioning path's 'standalone'. */
+  @IsOptional()
+  @IsEnum(['cloud', 'onpremise', 'hybrid', 'standalone'])
+  type?: DeploymentType | 'standalone';
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  description?: string;
+
+  @IsOptional()
+  @IsObject()
+  metadata?: Record<string, any>;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2048)
+  apiUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2048)
+  webhookUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  organizationName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  tier?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  domain?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(100000)
+  maxUsers?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  notes?: string;
 }

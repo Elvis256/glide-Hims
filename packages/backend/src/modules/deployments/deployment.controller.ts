@@ -38,7 +38,15 @@ import {
   ToggleFeatureFlagDto,
   ProvisionDeploymentDto,
   CreateUpdateRolloutDto,
+  CreateDeploymentBodyDto,
 } from './deployment.dto';
+import {
+  ReasonDto,
+  NotesDto,
+  ReportRolloutStatusDto,
+  ReportHealthMetricsDto,
+  CreateIncidentDto,
+} from './dto/deployment-bodies.dto';
 
 @Controller('deployments')
 @AuthWithPermissions('system.manage')
@@ -63,7 +71,7 @@ export class DeploymentController {
   // ============ DEPLOYMENT MANAGEMENT ============
 
   @Post()
-  async createDeployment(@Req() req: Request, @Body() dto: any) {
+  async createDeployment(@Req() req: Request, @Body() dto: CreateDeploymentBodyDto) {
     const isSysAdmin = this.isSystemAdmin(req);
     const isProvisioningRequest =
       dto?.type === 'hybrid' ||
@@ -74,10 +82,19 @@ export class DeploymentController {
       !!dto?.domain;
 
     if (isSysAdmin && isProvisioningRequest) {
+      // The branch is entered on ANY provisioning signal — a tier alone will
+      // do it — but provisioning needs an organisation and a type. Under
+      // `any` these could arrive undefined and be provisioned as such; say so
+      // instead.
+      if (!dto.organizationName || !dto.type) {
+        throw new BadRequestException(
+          'Provisioning a deployment requires organizationName and type.',
+        );
+      }
       const provisionDto: ProvisionDeploymentDto = {
         tenantId: dto.tenantId,
         organizationName: dto.organizationName,
-        type: dto.type,
+        type: dto.type as 'cloud' | 'hybrid' | 'standalone',
         tier: dto.tier,
         domain: dto.domain,
         maxUsers: typeof dto.maxUsers === 'string' ? parseInt(dto.maxUsers, 10) : dto.maxUsers,
@@ -160,7 +177,7 @@ export class DeploymentController {
   async cancelRollout(
     @Req() req: Request,
     @Param('rolloutId') rolloutId: string,
-    @Body() body: { reason?: string },
+    @Body() body: ReasonDto,
   ) {
     if (!this.isSystemAdmin(req)) throw new ForbiddenException('System admin access required');
     return this.updateService.cancelRollout(rolloutId, body?.reason);
@@ -178,16 +195,7 @@ export class DeploymentController {
   async reportRolloutResult(
     @Req() req: Request,
     @Param('rolloutId') rolloutId: string,
-    @Body()
-    body: {
-      licenseKey: string;
-      hardwareId?: string;
-      fromVersion?: string;
-      toVersion?: string;
-      status: 'started' | 'in_progress' | 'success' | 'failed' | 'rolled_back';
-      errorMessage?: string;
-      metadata?: Record<string, any>;
-    },
+    @Body() body: ReportRolloutStatusDto,
   ) {
     const ipAddress =
       ((req.headers['x-forwarded-for'] as string) || '').split(',')[0].trim() ||
@@ -468,7 +476,7 @@ export class DeploymentController {
   async updateNotes(
     @Req() req: Request,
     @Param('deploymentId') deploymentId: string,
-    @Body() body: { notes?: string },
+    @Body() body: NotesDto,
   ) {
     if (!this.isSystemAdmin(req)) throw new ForbiddenException('System admin access required');
     return this.deploymentService.updateNotes(deploymentId, body?.notes ?? '');
@@ -497,7 +505,7 @@ export class DeploymentController {
     @Req() req: Request,
     @Param('deploymentId') deploymentId: string,
     @UploadedFile() file: Express.Multer.File,
-    @Body() body: { notes?: string },
+    @Body() body: NotesDto,
   ) {
     if (!this.isSystemAdmin(req)) throw new ForbiddenException('System admin access required');
     if (!file) throw new NotFoundException('No file provided');
@@ -540,15 +548,7 @@ export class DeploymentController {
   async recordHealthMetrics(
     @Req() req: Request,
     @Param('deploymentId') deploymentId: string,
-    @Body()
-    dto: {
-      cpuUsagePercent?: number;
-      memoryUsagePercent?: number;
-      diskUsagePercent?: number;
-      uptime?: number;
-      uptimePercentage?: number;
-      errorRatePercent?: number;
-    },
+    @Body() dto: ReportHealthMetricsDto,
   ) {
     const tenantId = this.getUserTenantId(req);
     return this.monitoringService.recordHealthMetrics(tenantId, deploymentId, dto);
@@ -570,7 +570,7 @@ export class DeploymentController {
   async createAlert(
     @Req() req: Request,
     @Param('deploymentId') deploymentId: string,
-    @Body() dto: { title: string; severity: string },
+    @Body() dto: CreateIncidentDto,
   ) {
     const tenantId = this.getUserTenantId(req);
     return this.monitoringService.createAlert(
