@@ -31,6 +31,7 @@ import {
 import { SurgeryStatus } from '../../database/entities/surgery-case.entity';
 import { RequireModule } from '../auth/decorators/module.decorator';
 import { ModuleGuard } from '../auth/guards/module.guard';
+import { SurgeryItemsDto } from './dto/surgery-bodies.dto';
 
 @ApiTags('Surgery / Theatre')
 @ApiBearerAuth()
@@ -205,7 +206,7 @@ export class SurgeryController {
   completeWhoPhase(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('phase') phase: string,
-    @Body() body: { items: Record<string, unknown> },
+    @Body() body: SurgeryItemsDto,
     @Request() req: any,
   ) {
     if (!['sign_in', 'time_out', 'sign_out'].includes(phase)) {
