@@ -27,6 +27,7 @@ import AccessDenied from '../../components/AccessDenied';
 import { storesService } from '../../services/stores';
 import { getApiErrorMessage } from '../../services/api';
 import type { StockMovement, StockAdjustmentDto, Drug } from '../../services/stores';
+import { movementActor } from '../../services/stores';
 import { formatCurrency } from '../../lib/currency';
 
 type ReturnReason = 'Wrong medication' | 'Adverse reaction' | 'Expired' | 'Damaged' | 'Other';
@@ -139,12 +140,12 @@ export default function ReturnsPage() {
   const returns: ReturnItem[] = useMemo(() => {
     if (!movementsData) return [];
     return movementsData
-      .filter((m: StockMovement) => m.type === 'in' || m.reason?.toLowerCase().includes('return'))
+      .filter((m: StockMovement) => m.movementType === 'return' || m.notes?.toLowerCase().includes('return'))
       .map((m: StockMovement) => {
         const itemInfo = itemNameMap[m.itemId];
         const unitCost = itemInfo?.unitCost || 0;
         // Extract patient name from reason like "Return: Expired - Patient: Deo - notes"
-        const reasonStr = m.reason || '';
+        const reasonStr = m.notes || '';
         const patientMatch = reasonStr.match(/Patient:\s*([^-]+)/i);
         const extractedPatient = patientMatch ? patientMatch[1].trim() : '';
         // Extract return reason
@@ -154,17 +155,17 @@ export default function ReturnsPage() {
         return {
           id: m.id,
           returnNumber: `RET-${m.id.slice(0, 6).toUpperCase()}`,
-          patientName: extractedPatient || m.performedBy || 'Unknown',
+          patientName: extractedPatient || movementActor(m) || 'Unknown',
           patientId: '',
           medication: itemInfo?.name || m.itemId.slice(0, 8),
           quantity: Math.abs(m.quantity),
-          batchNumber: m.reference || '',
+          batchNumber: m.batchNumber || '',
           reason: (matchedReason || 'Other') as ReturnReason,
           status: 'Processed' as ReturnStatus,
-          action: m.type === 'in' ? 'Return to Stock' as ReturnAction : 'Dispose' as ReturnAction,
+          action: m.movementType === 'return' ? 'Return to Stock' as ReturnAction : 'Dispose' as ReturnAction,
           refundAmount: Math.abs(m.quantity) * unitCost,
           returnDate: new Date(m.createdAt).toLocaleDateString(),
-          processedBy: m.performedBy,
+          processedBy: movementActor(m),
           notes: reasonStr,
         };
       });
