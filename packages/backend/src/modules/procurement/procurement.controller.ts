@@ -44,6 +44,7 @@ import { POStatus } from '../../database/entities/purchase-order.entity';
 import { GRNStatus } from '../../database/entities/goods-receipt.entity';
 import { RequireModule } from '../auth/decorators/module.decorator';
 import { ModuleGuard } from '../auth/guards/module.guard';
+import { CancelPurchaseOrderDto } from './dto/cancel-po.dto';
 
 @UseGuards(ModuleGuard)
 @RequireModule('stores')
@@ -265,7 +266,11 @@ export class ProcurementController {
 
   @Put('purchase-orders/:id/cancel')
   @AuthWithPermissions('procurement.update')
-  cancelPurchaseOrder(@Param('id') id: string, @Body() body: any, @Request() req: any) {
+  cancelPurchaseOrder(
+    @Param('id') id: string,
+    @Body() body: CancelPurchaseOrderDto,
+    @Request() req: any,
+  ) {
     return this.procurementService.cancelPurchaseOrder(
       id,
       req.user.id,

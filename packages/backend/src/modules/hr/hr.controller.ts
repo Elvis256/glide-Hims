@@ -78,6 +78,7 @@ import { DocumentType, DocumentStatus } from '../../database/entities/staff-docu
 import { SystemSettingsService } from '../system-settings/system-settings.service';
 import { RequireModule } from '../auth/decorators/module.decorator';
 import { ModuleGuard } from '../auth/guards/module.guard';
+import { UploadStaffDocumentDto, VerifyStaffDocumentDto } from './dto/hr-documents.dto';
 
 @ApiTags('HR & Payroll')
 @ApiBearerAuth()
@@ -894,16 +895,7 @@ export class HrController {
   async uploadStaffDocument(
     @Param('userId') userId: string,
     @UploadedFile() file: any,
-    @Body()
-    data: {
-      documentType: DocumentType;
-      documentName: string;
-      licenseNumber?: string;
-      issuingAuthority?: string;
-      issueDate?: string;
-      expiryDate?: string;
-      notes?: string;
-    },
+    @Body() data: UploadStaffDocumentDto,
     @Request() req: any,
   ) {
     if (!file) {
@@ -924,7 +916,7 @@ export class HrController {
   @ApiOperation({ summary: 'Verify staff document' })
   async verifyDocument(
     @Param('id') documentId: string,
-    @Body() data: { status: DocumentStatus },
+    @Body() data: VerifyStaffDocumentDto,
     @Request() req: any,
   ) {
     return this.hrService.verifyDocument(documentId, req.user.sub, data.status, req.user?.tenantId);

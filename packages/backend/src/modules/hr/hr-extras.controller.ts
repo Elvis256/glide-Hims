@@ -34,6 +34,7 @@ import {
   CreateLetterTemplateDto,
   UpdateLetterTemplateDto,
 } from './dto/hr-extras.dto';
+import { RenderLetterDto } from './dto/hr-documents.dto';
 
 @ApiTags('HR - PIP / Goals / Letters')
 @ApiBearerAuth()
@@ -218,7 +219,7 @@ export class HrExtrasController {
   @ApiOperation({ summary: 'Render letter against employee data (returns text)' })
   async renderLetter(
     @Param('id') id: string,
-    @Body() body: { employeeId?: string; variables?: Record<string, any> },
+    @Body() body: RenderLetterDto,
     @Request() req: any,
     @Res() res: any,
   ) {

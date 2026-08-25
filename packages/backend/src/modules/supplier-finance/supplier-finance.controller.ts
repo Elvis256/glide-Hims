@@ -18,6 +18,7 @@ import {
 } from './dto/supplier-finance.dto';
 import { RequireModule } from '../auth/decorators/module.decorator';
 import { ModuleGuard } from '../auth/guards/module.guard';
+import { CreateDebitFromGrnDto } from './dto/debit-from-grn.dto';
 
 @ApiTags('Supplier Finance')
 @ApiBearerAuth()
@@ -127,7 +128,7 @@ export class SupplierFinanceController {
   @ApiOperation({ summary: 'Create a debit note from a GRN with rejected items' })
   async createDebitFromGRN(
     @Param('grnId') grnId: string,
-    @Body() body: { reason?: any; reasonDetails?: string; notes?: string },
+    @Body() body: CreateDebitFromGrnDto,
     @CurrentUser() user: any,
     @Request() req: any,
   ) {

@@ -9,6 +9,7 @@ import { ModuleGuard } from '../auth/guards/module.guard';
 import { withSystemContext } from '../../common/context/tenant-context';
 import { InitiatePaymentRequest } from './payment-gateway.types';
 import { PaymentWebhookDto } from './dto/webhook.dto';
+import { InitiatePaymentDto } from './dto/initiate-payment.dto';
 
 @ApiTags('payment-gateway')
 @RequireModule('billing')
@@ -30,7 +31,7 @@ export class PaymentGatewayController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Initiate a card or mobile-money payment via the gateway' })
   async initiate(
-    @Body() body: InitiatePaymentRequest & { provider?: string },
+    @Body() body: InitiatePaymentDto,
     @Request() req: any,
   ) {
     return this.service.initiate(body.provider, { ...body, tenantId: req.user?.tenantId });

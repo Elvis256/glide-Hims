@@ -46,10 +46,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent / 'src' / 'modules'
 
 
+# `export` is optional. A DTO declared `class FooDto {}` beside the controller
+# that uses it is a perfectly good class — it exists at runtime and validates —
+# and indexing only exported ones reported three of them as erased types.
 CLASS_NAMES = {
     name
     for f in (ROOT.parent).rglob('*.ts')
-    for name in re.findall(r'export class (\w+)', f.read_text(errors='ignore'))
+    for name in re.findall(r'^\s*(?:export\s+)?(?:abstract\s+)?class (\w+)', f.read_text(errors='ignore'), re.M)
 }
 
 
