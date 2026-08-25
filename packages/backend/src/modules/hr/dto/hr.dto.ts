@@ -1203,6 +1203,18 @@ export class UpdateStaffDto {
   @IsString()
   emergencyContactPhone?: string;
 
+  /**
+   * employees.emergency_contact_relationship exists and CreateEmployeeDto
+   * accepts it — only the update path did not, so editing a staff member and
+   * saving their emergency contact relationship was rejected outright rather
+   * than the field being ignored.
+   */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  emergencyContactRelationship?: string;
+
   @IsOptional()
   @IsNumber()
   @Min(0)
