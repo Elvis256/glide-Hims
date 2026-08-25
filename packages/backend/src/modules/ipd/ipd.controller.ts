@@ -33,6 +33,7 @@ import {
 import { RequireModule } from '../auth/decorators/module.decorator';
 import { RequireFacilityAccess } from '../auth/decorators/facility-access.decorator';
 import { ModuleGuard } from '../auth/guards/module.guard';
+import { ReserveBedDto, SetExpectedDischargeDto } from './dto/ipd-bodies.dto';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -82,7 +83,7 @@ export class IpdController {
   @ApiOperation({ summary: 'Reserve a bed (TTL-bounded hold for a planned admission)' })
   reserveBed(
     @Param('id') id: string,
-    @Body() body: { holdHours?: number; reason?: string },
+    @Body() body: ReserveBedDto,
     @Request() req: any,
   ) {
     validateUuid(id, 'bed id');
@@ -235,7 +236,7 @@ export class IpdController {
   @ApiOperation({ summary: 'Set or clear the planned discharge date for an admission' })
   setExpectedDischarge(
     @Param('id') id: string,
-    @Body() body: { expectedDischargeDate: string | null },
+    @Body() body: SetExpectedDischargeDto,
     @Request() req: any,
   ) {
     validateUuid(id);
