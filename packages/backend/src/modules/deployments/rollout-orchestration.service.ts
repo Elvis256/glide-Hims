@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThan } from 'typeorm';
 import { UpdateRollout, UpdateRolloutStatus } from '../../database/entities/update-rollout.entity';
@@ -134,7 +134,7 @@ export class RolloutOrchestrationService {
     });
 
     if (!rollout) {
-      throw new Error('Rollout not found');
+      throw new NotFoundException('Rollout not found');
     }
 
     // Get deployments with current version
@@ -176,7 +176,7 @@ export class RolloutOrchestrationService {
     });
 
     if (!rollout) {
-      throw new Error('Rollout not found');
+      throw new NotFoundException('Rollout not found');
     }
 
     // Estimate timing: assume 10 deployments per hour

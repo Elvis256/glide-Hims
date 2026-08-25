@@ -394,7 +394,7 @@ export default function WritePrescriptionPage() {
                 <p className="font-medium">{patient.fullName}</p>
                 <p className="text-gray-600">
                   {patientAge ? `${patientAge}yo` : ''} {patient.gender} 
-                  {patientWeight(patient) && <> • <Weight className="w-3 h-3 inline" /> {patient.weight}kg</>}
+                  {patientWeight(patient) && <> • <Weight className="w-3 h-3 inline" /> {patientWeight(patient)}kg</>}
                 </p>
                 <p className="text-xs text-gray-500">MRN: {patient.mrn}</p>
                 

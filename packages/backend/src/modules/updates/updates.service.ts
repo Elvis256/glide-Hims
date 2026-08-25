@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
@@ -107,7 +107,7 @@ export class UpdatesService {
     });
 
     if (!appVersion) {
-      throw new Error(`Version ${version} not found`);
+      throw new NotFoundException(`Version ${version} not found`);
     }
 
     appVersion.isLatest = true;

@@ -13,6 +13,7 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthWithPermissions } from '../../auth/decorators/auth.decorator';
 import { ApiKeyService } from '../services/api-key.service';
+import { CreateApiKeyDto, UpdateApiKeyDto } from '../dto/api-key.dto';
 
 @ApiTags('Admin - API Keys')
 @ApiBearerAuth()
@@ -30,14 +31,7 @@ export class ApiKeyController {
   @AuthWithPermissions('system.manage')
   @ApiOperation({ summary: 'Create API key (returns raw key once)' })
   async create(
-    @Body()
-    dto: {
-      name: string;
-      scopes: string[];
-      rateLimitPerHour?: number;
-      expiresInDays?: number;
-      ipWhitelist?: string;
-    },
+    @Body() dto: CreateApiKeyDto,
     @Request() req: any,
   ) {
     this.requireSystemAdmin(req);
@@ -78,14 +72,7 @@ export class ApiKeyController {
   @ApiOperation({ summary: 'Update API key' })
   async update(
     @Param('id') id: string,
-    @Body()
-    dto: {
-      name?: string;
-      scopes?: string[];
-      rateLimitPerHour?: number;
-      isActive?: boolean;
-      ipWhitelist?: string;
-    },
+    @Body() dto: UpdateApiKeyDto,
     @Request() req: any,
   ) {
     this.requireSystemAdmin(req);

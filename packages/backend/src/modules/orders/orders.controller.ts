@@ -11,6 +11,7 @@ import { OrderType, OrderStatus, OrderPriority } from '../../database/entities/o
 import { RequireModule } from '../auth/decorators/module.decorator';
 import { RequireFacilityAccess } from '../auth/decorators/facility-access.decorator';
 import { ModuleGuard } from '../auth/guards/module.guard';
+import { CompleteOrderDto } from './dto/complete-order.dto';
 
 @UseGuards(ModuleGuard)
 @RequireModule('doctors')
@@ -111,7 +112,11 @@ export class OrdersController {
 
   @Post(':id/complete')
   @AuthWithPermissions('orders.update')
-  async completeOrder(@Param('id') id: string, @Body() resultData: any, @Request() req: any) {
+  async completeOrder(
+    @Param('id') id: string,
+    @Body() resultData: CompleteOrderDto,
+    @Request() req: any,
+  ) {
     return this.ordersService.completeOrder(id, resultData, req.user.id, req.user?.tenantId);
   }
 

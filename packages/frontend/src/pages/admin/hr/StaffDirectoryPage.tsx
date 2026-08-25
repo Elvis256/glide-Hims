@@ -875,7 +875,7 @@ function StaffDirectoryPageContent() {
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-gray-600 font-mono">{emp.employeeNumber || emp.employeeCode}</td>
+                    <td className="px-4 py-3 text-gray-600 font-mono">{emp.employeeNumber}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <Building2 className="h-4 w-4 text-gray-400" />
@@ -1182,7 +1182,7 @@ function StaffDirectoryPageContent() {
               </div>
               <div>
                 <h3 className="text-lg font-semibold">{selectedStaff.fullName}</h3>
-                <p className="text-gray-500">{selectedStaff.employeeNumber || selectedStaff.employeeCode}</p>
+                <p className="text-gray-500">{selectedStaff.employeeNumber}</p>
               </div>
             </div>
 

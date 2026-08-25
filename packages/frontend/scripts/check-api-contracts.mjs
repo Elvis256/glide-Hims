@@ -58,12 +58,22 @@ const ADAPTED = new Set(['billing.ts']);
  * two payloads share almost no fields. Keying on the bare name reported the
  * stores type as broken when it was exactly right.
  */
-const FAC = process.env.FACILITY_ID || '';
+/**
+ * Placeholders, not values. ENDPOINTS is built at module load — before login —
+ * so anything interpolated here is whatever the environment happened to carry.
+ * FACILITY_ID defaulted to the empty string, so six endpoints were probed as
+ * `?facilityId=` , came back 400 on a malformed uuid, and were reported as
+ * "endpoint 400" every run. Nobody had ever checked those six contracts.
+ * These are substituted after login, from the API itself, so the script needs
+ * no environment beyond a password.
+ */
+const FAC = '{{FAC}}';
+const ADMISSION = '{{ADMISSION}}';
 const ENDPOINTS = {
   'ipd.ts:Ward': 'ipd/wards',
   'ipd.ts:Bed': 'ipd/beds',
   'ipd.ts:Admission': 'ipd/admissions?status=admitted',
-  'ipd.ts:MedicationAdministration': `ipd/admissions/${process.env.ADMISSION_ID || ''}/medications`,
+  'ipd.ts:MedicationAdministration': `ipd/admissions/${ADMISSION}/medications`,
   'facilities.ts:Facility': 'facilities',
   'insurance.ts:InsurancePolicy': 'insurance/policies?limit=1',
   'insurance.ts:InsuranceProvider': 'insurance/providers',
@@ -74,10 +84,22 @@ const ENDPOINTS = {
   'supplier-finance.ts:PaymentVoucher': `supplier-finance/payments?facilityId=${FAC}`,
   'supplier-finance.ts:CreditNote': `supplier-finance/credit-notes?facilityId=${FAC}`,
   'encounters.ts:Encounter': 'encounters?limit=1',
-  'prescriptions.ts:Prescription': 'prescriptions?limit=1',
+  // /prescriptions/queue, not /prescriptions. The queue FLATTENS patient,
+  // patientId, doctor and doctorId onto the prescription; the list nests the
+  // patient under encounter.patient instead. The interface describes the
+  // flattened shape, so probing the list reported five fields as missing that
+  // the queue sends. Two endpoints, two shapes — the caveat in this file's
+  // header, in practice.
+  'prescriptions.ts:Prescription': 'prescriptions/queue',
   'inventory.ts:InventoryItem': 'inventory/items?limit=1',
   'stores.ts:InventoryItem': 'stores/inventory?limit=1',
-  'hr.ts:Employee': 'hr/employees?limit=1',
+  // BOTH, because Employee is a union of two shapes and neither endpoint
+  // satisfies it alone: /hr/staff is the user-joined view (fullName, username,
+  // roles, facility, lastLoginAt) and /hr/employees is the employees table
+  // (firstName, lastName, nationalId, bank details). Probing either one alone
+  // reports the other's fields as missing — six one way, sixteen the other.
+  // A field is only a finding when NO sampled endpoint sends it.
+  'hr.ts:Employee': ['hr/staff?limit=1', 'hr/employees?limit=1'],
   'radiology.ts:ImagingOrder': `radiology/orders?facilityId=${FAC}`,
   'lab.ts:LabTest': 'lab/tests',
   'patients.ts:Patient': 'patients?limit=1',
@@ -108,6 +130,63 @@ const login = await fetch(`${API}/auth/login`, {
 const cookie = (login.headers.getSetCookie?.() || []).join('; ');
 if (!login.ok) { console.error('login failed:', login.status); process.exit(1); }
 
+/** Ask the API for the ids the probes need, rather than guessing them. */
+async function firstId(path) {
+  try {
+    const r = await fetch(`${API}/${path}`, { headers: { cookie } });
+    if (!r.ok) return null;
+    const b = await r.json();
+    const rows = Array.isArray(b?.data) ? b.data : b?.data?.data;
+    return Array.isArray(rows) && rows[0]?.id ? rows[0].id : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Pick an id whose dependent endpoint actually returns rows.
+ *
+ * Taking simply the first admitted admission is a coin flip: only 3 of the 6
+ * carry medication administrations, so the probe kept landing on an empty one
+ * and reporting MedicationAdministration as EMPTY — which reads as "no data
+ * to seed" when the table in fact holds 23 rows. Try each candidate against
+ * the endpoint that needs it and keep the first that proves something.
+ */
+async function idThatPopulates(listPath, dependentPath, limit = 8) {
+  const rows = await allRows(listPath);
+  for (const row of rows.slice(0, limit)) {
+    if (!row?.id) continue;
+    const probe = await allRows(dependentPath.replace('<id>', row.id));
+    if (probe.length) return row.id;
+  }
+  return rows[0]?.id ?? null;
+}
+
+async function allRows(path) {
+  try {
+    const r = await fetch(`${API}/${path}`, { headers: { cookie } });
+    if (!r.ok) return [];
+    const b = await r.json();
+    const rows = Array.isArray(b?.data) ? b.data : b?.data?.data;
+    return Array.isArray(rows) ? rows : [];
+  } catch {
+    return [];
+  }
+}
+
+const resolved = {
+  '{{FAC}}': process.env.FACILITY_ID || (await firstId('facilities')),
+  '{{ADMISSION}}':
+    process.env.ADMISSION_ID ||
+    (await idThatPopulates(
+      'ipd/admissions?status=admitted',
+      'ipd/admissions/<id>/medications',
+    )),
+};
+for (const [token, value] of Object.entries(resolved)) {
+  if (!value) console.log(`  note: could not resolve ${token} — probes needing it will be skipped`);
+}
+
 let problems = 0;
 for (const file of readdirSync(SERVICES).filter((f) => f.endsWith('.ts'))) {
   if (ADAPTED.has(file)) continue;
@@ -117,18 +196,43 @@ for (const file of readdirSync(SERVICES).filter((f) => f.endsWith('.ts'))) {
     if (wantFile !== file) continue;
     const fields = interfaceFields(src, name);
     if (!fields) continue;
-    const res = await fetch(`${API}/${path}`, { headers: { cookie } });
-    if (!res.ok) { console.log(`  ${file} ${name}: endpoint ${res.status}`); continue; }
-    const json = await res.json();
-    const d = json.data ?? json;
-    const rows = Array.isArray(d) ? d : (Array.isArray(d?.data) ? d.data : [d]);
-    const row = rows[0];
-    if (!row || typeof row !== 'object') { console.log(`  ${file} ${name}: EMPTY — proves nothing`); continue; }
-    const keys = new Set(Object.keys(row));
-    const missing = fields.filter((f) => !keys.has(f));
-    if (missing.length) {
+    // A key may name several endpoints. The interface is then a union of their
+    // shapes, and a field is only a finding when none of them sends it.
+    const paths = Array.isArray(path) ? path : [path];
+    const seen = new Set();
+    let sampled = 0;
+    let lastStatus = null;
+    let skipReason = null;
+    for (const one of paths) {
+      let url = one;
+      let unresolved = null;
+      for (const [token, value] of Object.entries(resolved)) {
+        if (url.includes(token)) {
+          if (!value) { unresolved = token; break; }
+          url = url.split(token).join(value);
+        }
+      }
+      if (unresolved) { skipReason = `${unresolved} unresolved`; continue; }
+      const r = await fetch(`${API}/${url}`, { headers: { cookie } });
+      if (!r.ok) { lastStatus = r.status; continue; }
+      const b = await r.json();
+      const d = b?.data ?? b;
+      const rows = Array.isArray(d) ? d : Array.isArray(d?.data) ? d.data : [d];
+      const row = rows[0];
+      if (!row || typeof row !== 'object') continue;
+      sampled++;
+      for (const k of Object.keys(row)) seen.add(k);
+    }
+    if (sampled === 0) {
+      const why = skipReason ? `skipped — ${skipReason}`
+        : lastStatus ? `endpoint ${lastStatus}` : 'EMPTY — proves nothing';
+      console.log(`  ${file} ${name}: ${why}`);
+      continue;
+    }
+    const absent = fields.filter((f) => !seen.has(f));
+    if (absent.length) {
       problems++;
-      console.log(`  ${file} ${name} declares fields the payload lacks: ${missing.join(', ')}`);
+      console.log(`  ${file} ${name} declares fields the payload lacks: ${absent.join(', ')}`);
     }
   }
 }

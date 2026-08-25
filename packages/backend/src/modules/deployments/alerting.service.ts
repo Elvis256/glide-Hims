@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import {
@@ -159,7 +159,7 @@ export class AlertingService {
     });
 
     if (!alert) {
-      throw new Error('Alert not found');
+      throw new NotFoundException('Alert not found');
     }
 
     if (alert.status === AlertStatus.OPEN) {
@@ -180,7 +180,7 @@ export class AlertingService {
     });
 
     if (!alert) {
-      throw new Error('Alert not found');
+      throw new NotFoundException('Alert not found');
     }
 
     alert.status = AlertStatus.ACKNOWLEDGED;

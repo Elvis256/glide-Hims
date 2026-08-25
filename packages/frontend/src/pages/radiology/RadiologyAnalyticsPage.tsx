@@ -20,7 +20,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { formatCurrency } from '../../lib/currency';
-import { radiologyService } from '../../services/radiology';
+import { radiologyService, imagingStaffName } from '../../services/radiology';
 import { useFacilityId } from '../../lib/facility';
 
 interface ModalityStats {
@@ -171,7 +171,9 @@ export default function RadiologyAnalyticsPage() {
     orders.forEach(order => {
       // imaging_orders has performedBy (joined User), not "assignedTo" — the
       // old field doesn't exist, which pinned every study to "Unassigned".
-      const name = (order as any).performedBy?.fullName || order.assignedTo || 'Unassigned';
+      // The relation also has to be loaded server-side: getOrders/getWorklist
+      // joined only orderedBy, so performedBy arrived undefined here too.
+      const name = imagingStaffName(order.performedBy) || order.assignedTo || 'Unassigned';
       if (!statsByRadiologist[name]) statsByRadiologist[name] = { studies: 0, tatTotal: 0, tatCount: 0 };
       statsByRadiologist[name].studies += 1;
       const completedTime = order.completedAt || order.performedAt;

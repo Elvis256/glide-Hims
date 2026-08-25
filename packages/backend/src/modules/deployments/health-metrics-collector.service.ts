@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { DeploymentHealth, HealthStatus } from '../../database/entities/deployment-health.entity';
@@ -25,7 +25,7 @@ export class HealthMetricsCollectorService {
     });
 
     if (!deployment) {
-      throw new Error('Deployment not found');
+      throw new NotFoundException('Deployment not found');
     }
 
     // Simulate metrics collection

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between } from 'typeorm';
 import { ChartOfAccount, AccountType } from '../../database/entities/chart-of-account.entity';
@@ -84,7 +84,7 @@ export class GLAnalyticsService {
     });
 
     if (!account) {
-      throw new Error(`Account ${accountId} not found`);
+      throw new NotFoundException(`Account ${accountId} not found`);
     }
 
     // Parse period strings (YYYY-MM) and compute proper month boundaries.
@@ -297,7 +297,7 @@ export class GLAnalyticsService {
     });
 
     if (!account) {
-      throw new Error(`Account ${accountId} not found`);
+      throw new NotFoundException(`Account ${accountId} not found`);
     }
 
     const startDate = new Date(`${period}-01`);

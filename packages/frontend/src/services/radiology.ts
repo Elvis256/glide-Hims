@@ -219,3 +219,18 @@ export type RadiologyOrder = ImagingOrder;
 export type RadiologyResult = ImagingResult;
 
 export default radiologyService;
+
+/**
+ * The API sends staff on an imaging order as a relation object, never as a
+ * flat display string. Two readers used `order.assignedTo` and
+ * `order.doctor?.fullName`; the orders payload carries neither, so the results
+ * page showed no radiologist at all and "Dr. Unknown" for every referrer.
+ * `orderedBy` and `performedBy` are the fields that actually arrive.
+ */
+export function imagingStaffName(
+  p?: { fullName?: string; firstName?: string; lastName?: string } | null,
+): string | undefined {
+  if (!p) return undefined;
+  const name = p.fullName?.trim() || [p.firstName, p.lastName].filter(Boolean).join(' ').trim();
+  return name || undefined;
+}

@@ -204,6 +204,7 @@ export class RadiologyService {
       .leftJoinAndSelect('imgOrder.patient', 'patient')
       .leftJoinAndSelect('imgOrder.modality', 'modality')
       .leftJoinAndSelect('imgOrder.orderedBy', 'orderedBy')
+      .leftJoinAndSelect('imgOrder.performedBy', 'performedBy')
       .where('imgOrder.facilityId = :facilityId', { facilityId });
 
     qb.andWhere('imgOrder.tenantId = :tenantId', { tenantId: requireTenantId(tenantId) });
@@ -242,7 +243,7 @@ export class RadiologyService {
     where.tenantId = requireTenantId(tenantId);
     return this.orderRepo.find({
       where,
-      relations: ['patient', 'modality', 'orderedBy'],
+      relations: ['patient', 'modality', 'orderedBy', 'performedBy'],
       order: {
         priority: 'ASC', // STAT first
         orderedAt: 'ASC',
