@@ -20,6 +20,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
     let status: number;
     let message: string | object;
+    let details: unknown;
     let error: string;
 
     if (exception instanceof HttpException) {
@@ -29,6 +30,15 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       if (typeof exceptionResponse === 'object' && exceptionResponse !== null) {
         message = (exceptionResponse as any).message || exception.message;
         error = (exceptionResponse as any).error || HttpStatus[status];
+        // main.ts builds { message: 'Validation failed', details: [...] } with
+        // one entry per failing field, and this filter used to read only the
+        // message — so every validation failure in the product arrived as a
+        // bare "Validation failed" with no indication of which field or why.
+        // A user saw a form refuse to save and had nothing to act on; so did
+        // whoever was debugging it. The details are the caller's own input
+        // echoed back with the constraint it broke, so there is nothing here
+        // to withhold.
+        details = (exceptionResponse as any).details;
       } else {
         message = exceptionResponse;
         error = HttpStatus[status] || 'Error';
@@ -94,6 +104,8 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       statusCode: status,
       error,
       message,
+      // Omitted entirely rather than sent as null, so clients can test for it.
+      ...(details === undefined ? {} : { details }),
       timestamp: new Date().toISOString(),
       path: request.url,
       requestId,
