@@ -79,3 +79,17 @@ wildcard.key
 *.pem
 packages/frontend/.build-stamp
 packages/backend/uploads
+
+# Key material, by extension rather than by path. The two private keys that
+# reached this repository's history did so from paths that are now listed
+# above — but only after the fact. `*.pem` was already covered; these were not,
+# so a .key outside those two directories, or a PKCS#12 bundle anywhere, was
+# still committable. wildcard.key is a real RSA key living in this working
+# tree; it has never been committed, and that should stay true by rule rather
+# than by luck.
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+!**/*.public.key
