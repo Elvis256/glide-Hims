@@ -6,7 +6,8 @@ export interface InsuranceProvider {
   id: string;
   name: string;
   code: string;
-  type: 'private' | 'government' | 'corporate';
+  /** Server field is providerType; `type` was never sent. */
+  providerType: 'private' | 'government' | 'corporate';
   contactPerson?: string;
   phone?: string;
   email?: string;

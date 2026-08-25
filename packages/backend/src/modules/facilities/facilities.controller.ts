@@ -52,6 +52,12 @@ export class FacilitiesController {
       phone: facility.contact?.phone || '',
       email: facility.contact?.email || '',
       logo: settings.logo || '',
+      // Set on the Institution Profile page, which writes it to this same
+      // settings blob. PrintReceiptPage and the HR/payroll PDFs have always
+      // rendered `TIN: {inst.taxId}` behind a truthiness guard and
+      // FacilityPublicInfo declared taxId required, but no branch here ever
+      // returned it — so the TIN line silently never printed on a receipt.
+      taxId: settings.taxId || undefined,
     };
   }
 

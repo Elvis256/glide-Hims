@@ -133,14 +133,21 @@ export interface InvoiceQueryParams {
   limit?: number;
 }
 
+/**
+ * What /billing/revenue/daily actually returns: money collected, split by the
+ * method it came in through. The old shape — date, totalRevenue, invoiceCount,
+ * byType — was never sent by this endpoint. It has no caller today, so nothing
+ * broke; the pages showing "total revenue" read it from /analytics instead.
+ */
 export interface DailyRevenue {
-  date: string;
-  totalRevenue: number;
-  cashRevenue: number;
-  insuranceRevenue: number;
-  invoiceCount: number;
+  totalCollected: number;
+  cashAmount: number;
+  mobileMoneyAmount: number;
+  cardAmount: number;
+  bankTransferAmount: number;
+  insuranceAmount: number;
+  otherAmount: number;
   paymentCount: number;
-  byType: Record<string, number>;
   byMethod: Record<string, number>;
 }
 

@@ -82,7 +82,6 @@ export interface TodayStats {
   pendingLab: number;
   pendingPharmacy: number;
   averageWaitMinutes: number;
-  byDepartment: Record<string, number>;
   departmentBreakdown: Record<string, number>;
 }
 

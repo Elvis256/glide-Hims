@@ -495,6 +495,25 @@ export interface ImmunizationSchedule {
   updatedAt: string;
 }
 
+
+/**
+ * A row of the postnatal-care due list.
+ *
+ * This endpoint was typed as PostnatalVisit[], which it has never returned: a
+ * row here is a summary built around a delivery, and does not even carry an
+ * `id`. Nothing consumes it yet, which is the only reason the mismatch was
+ * harmless — the same wrong-type-on-a-list pattern is what left the pharmacy
+ * returns screen filtering on a field the API does not send.
+ */
+export interface PncDueListEntry {
+  delivery: DeliveryOutcome;
+  patient?: { id: string; fullName?: string; mrn?: string };
+  /** Days since delivery, used to decide which visits are due. */
+  daysPostpartum: number;
+  dueVisits: string[];
+  completedVisits: string[];
+}
+
 export const maternityService = {
   // ANC Registration
   anc: {
@@ -561,7 +580,7 @@ export const maternityService = {
       api.get<PostnatalVisit>(`/maternity/pnc/visits/${id}`),
 
     getDueList: (facilityId: string) =>
-      api.get<PostnatalVisit[]>('/maternity/pnc/due-list', { params: { facilityId } }),
+      api.get<PncDueListEntry[]>('/maternity/pnc/due-list', { params: { facilityId } }),
   },
 
   // Baby Wellness
