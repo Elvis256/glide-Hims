@@ -33,6 +33,7 @@ import { CurrentUser } from './decorators/current-user.decorator';
 import { Public } from './decorators/public.decorator';
 import { RateLimitGuard } from './guards/rate-limit.guard';
 import { AuditLogService } from '../../common/interceptors/audit-log.service';
+import { StartImpersonationDto } from './dto/impersonate.dto';
 
 interface AuthenticatedRequest extends Request {
   user?: { id: string; tenantId?: string; facilityId?: string; roles?: string[]; permissions?: string[]; isSystemAdmin?: boolean; };
@@ -263,7 +264,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'System admin: start impersonating a tenant' })
   async startImpersonation(
-    @Body() body: { tenantId: string; reason?: string },
+    @Body() body: StartImpersonationDto,
     @CurrentUser('id') userId: string,
     @Req() req: AuthenticatedRequest,
     @Res({ passthrough: true }) res: Response,
