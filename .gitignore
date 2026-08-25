@@ -93,3 +93,7 @@ packages/backend/uploads
 *.jks
 *.keystore
 !**/*.public.key
+
+# SBOM output. The workflow generates this per run and uploads it as a build
+# artifact; ci-local.sh writes it to the same path. Generated, not source.
+compliance/evidence/releases/
