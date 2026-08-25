@@ -10,7 +10,9 @@ export interface InstitutionInfo {
   phone: string;
   email: string;
   logo: string;
-  taxId: string;
+  /** Absent until it is set on the Institution Profile page. Every reader
+   *  already guards it; the TIN line is simply omitted when unset. */
+  taxId?: string;
 }
 
 export interface EmployeeData {

@@ -572,7 +572,7 @@ function PricingDrawer({
                     <div key={prov.id} className="flex items-center gap-3 p-3 border rounded-lg hover:bg-gray-50">
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-medium text-gray-800 truncate">{prov.name}</div>
-                        <div className="text-xs text-gray-400">{prov.code} · {prov.type}</div>
+                        <div className="text-xs text-gray-400">{prov.code} · {prov.providerType}</div>
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="text-xs text-gray-400">{CURRENCY_SYMBOL}</span>

@@ -222,7 +222,8 @@ export interface HRDashboard {
   presentToday: number;
   absentToday?: number;
   pendingLeaveRequests: number;
-  departmentBreakdown: Record<string, number>;
+  /** Not sent by /hr/dashboard today; every reader guards it. */
+  departmentBreakdown?: Record<string, number>;
 }
 
 export interface StaffDocument {

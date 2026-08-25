@@ -81,7 +81,8 @@ export interface FacilityPublicInfo {
   phone: string;
   email: string;
   logo: string;
-  taxId: string;
+  /** Absent until EFRIS is configured; the receipt simply omits the TIN. */
+  taxId?: string;
 }
 
 export const facilitiesService = {
