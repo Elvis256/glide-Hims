@@ -31,7 +31,11 @@ set -Eeuo pipefail
 REPO="${REPO:-/root/glide-Hims/current}"
 BRANCH="${BRANCH:-main}"
 PM2_APP="${PM2_APP:-glide-hims-backend}"
-HEALTH_URL="${HEALTH_URL:-http://localhost:3001/api/v1/health}"
+# Derived from the app's own .env below, not guessed. A hardcoded :3001 (a dev
+# port; production listens on 3000) made the health loop silently never pass,
+# so a deploy that left the backend errored still exited 0. A health check that
+# cannot fail is worse than none.
+HEALTH_URL="${HEALTH_URL:-}"
 CHECK_ONLY=0
 [ "${1:-}" = "--check" ] && CHECK_ONLY=1
 
@@ -43,6 +47,18 @@ trap 'echo; echo "Stopped at line $LINENO. Nothing further was attempted."; echo
 
 cd "$REPO" || die "no repo at $REPO"
 
+# Single-instance lock. Two of these running at once took production down for
+# four minutes: `nest build` clears dist before compiling, so the second run
+# deleted the output the first had just produced, pm2 restarted into a missing
+# dist/main.js and gave up after 11 attempts. Concurrency is not a theoretical
+# risk here — it is the observed failure.
+LOCK="/tmp/glide-deploy.lock"
+exec 9>"$LOCK" || die "cannot open $LOCK"
+if ! flock -n 9; then
+  die "another deploy is already running (holding $LOCK). Wait for it to finish; do NOT run two at once."
+fi
+echo $$ >&9
+
 # ---------------------------------------------------------------- preflight --
 
 step "Preflight"
@@ -50,6 +66,13 @@ step "Preflight"
 command -v pnpm >/dev/null || die "pnpm not on PATH"
 command -v pm2  >/dev/null || die "pm2 not on PATH"
 log "node $(node -v), pnpm $(pnpm -v)"
+
+if [ -z "$HEALTH_URL" ]; then
+  APP_PORT=$(grep -hE '^PORT=' packages/backend/.env 2>/dev/null | head -1 | cut -d= -f2 | tr -d '[:space:]')
+  [ -n "$APP_PORT" ] || die "no PORT in packages/backend/.env and no HEALTH_URL given; refusing to guess"
+  HEALTH_URL="http://localhost:${APP_PORT}/api/v1/health"
+fi
+log "health endpoint: $HEALTH_URL"
 
 FREE_MB=$(df -Pm . | awk 'NR==2 {print $4}')
 [ "$FREE_MB" -ge 3000 ] || die "only ${FREE_MB}MB free; a build needs headroom"
@@ -63,15 +86,22 @@ git fetch --quiet origin "$BRANCH" || die "fetch failed"
 BEFORE=$(git rev-parse HEAD)
 TARGET=$(git rev-parse "origin/$BRANCH")
 
+# Being at the target commit does NOT mean the deploy is done. The code can be
+# pulled while dist is still the old build and migrations are still pending —
+# which is exactly the state a merge outside this script leaves behind, and the
+# reason the first production run of this script did nothing useful. The job is
+# to make the RUNNING system match origin/main, not merely to pull.
+ALREADY_AT_TARGET=0
 if [ "$BEFORE" = "$TARGET" ]; then
-  log "already at origin/$BRANCH ($(git rev-parse --short HEAD)); nothing to deploy"
-  exit 0
+  ALREADY_AT_TARGET=1
+  log "already at origin/$BRANCH ($(git rev-parse --short HEAD)) — still rebuilding, migrating and restarting"
 fi
 
-git merge-base --is-ancestor "$BEFORE" "$TARGET" \
-  || die "HEAD is not an ancestor of origin/$BRANCH — this would not be a fast-forward. Resolve by hand."
-
-log "$(git rev-list --count "$BEFORE".."$TARGET") commits to apply: $(git rev-parse --short "$BEFORE") -> $(git rev-parse --short "$TARGET")"
+if [ "$ALREADY_AT_TARGET" = "0" ]; then
+  git merge-base --is-ancestor "$BEFORE" "$TARGET" \
+    || die "HEAD is not an ancestor of origin/$BRANCH — this would not be a fast-forward. Resolve by hand."
+  log "$(git rev-list --count "$BEFORE".."$TARGET") commits to apply: $(git rev-parse --short "$BEFORE") -> $(git rev-parse --short "$TARGET")"
+fi
 
 # Refuse to discard real local work. Files that differ from upstream ONLY in
 # the sense that upstream has since caught up are fine; files whose contents
@@ -116,8 +146,12 @@ bash scripts/backup.sh predeploy || die "backup failed — deploying without one
 # --------------------------------------------------------------------- pull --
 
 step "Fast-forward"
-git merge --ff-only "origin/$BRANCH" || die "fast-forward refused"
-log "HEAD now $(git rev-parse --short HEAD)"
+if [ "$ALREADY_AT_TARGET" = "1" ]; then
+  log "nothing to fast-forward"
+else
+  git merge --ff-only "origin/$BRANCH" || die "fast-forward refused"
+  log "HEAD now $(git rev-parse --short HEAD)"
+fi
 
 # ------------------------------------------------------------------ install --
 
