@@ -358,12 +358,24 @@ export class DeploymentController {
 
   @Get('alerts')
   async listAlerts(@Req() req: Request) {
+    // Same split as listDeployments: the platform inbox spans tenants, a tenant
+    // user sees only their own. Alerts carry no tenant column, so the scoping
+    // happens on the owning deployment inside the service.
+    if (this.isSystemAdmin(req)) {
+      // The alerts join reaches through `deployments`, which is RLS-protected.
+      // Without the system context the policy scopes the join to the admin's own
+      // tenant and the platform-wide inbox silently shows only their own alerts.
+      return withSystemContext(() => this.monitoringService.getAllAlerts());
+    }
     const tenantId = this.getUserTenantId(req);
     return this.monitoringService.getAlerts(tenantId);
   }
 
   @Put('alerts/:alertId/resolve')
   async resolveAlert(@Req() req: Request, @Param('alertId') alertId: string) {
+    if (this.isSystemAdmin(req)) {
+      return withSystemContext(() => this.monitoringService.resolveAnyAlert(alertId));
+    }
     const tenantId = this.getUserTenantId(req);
     return this.monitoringService.resolveAlert(tenantId, alertId);
   }

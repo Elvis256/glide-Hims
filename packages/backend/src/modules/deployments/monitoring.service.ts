@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, SelectQueryBuilder } from 'typeorm';
 import { DeploymentHealth, HealthStatus } from '../../database/entities/deployment-health.entity';
 import {
   DeploymentAlert,
@@ -88,9 +88,30 @@ export class MonitoringService {
   }
 
   async resolveAlert(tenantId: string, alertId: string): Promise<DeploymentAlert> {
-    const alert = await this.alertRepository.findOne({
-      where: { id: alertId },
-    });
+    // deployment_alerts has no tenant_id of its own — tenancy is reachable only
+    // through the deployment it belongs to. Without this join any caller who can
+    // reach the endpoint could resolve any other tenant's alert by id.
+    const alert = await this.alertRepository
+      .createQueryBuilder('a')
+      .innerJoin('a.deployment', 'd')
+      .where('a.id = :alertId', { alertId })
+      .andWhere('d.tenantId = :tenantId', { tenantId })
+      .getOne();
+
+    if (!alert) {
+      throw new NotFoundException('Alert not found');
+    }
+
+    alert.status = AlertStatus.RESOLVED;
+    return this.alertRepository.save(alert);
+  }
+
+  /**
+   * Resolve without a tenant filter. Platform system admins only — the caller
+   * is responsible for the isSystemAdmin check (see DeploymentController).
+   */
+  async resolveAnyAlert(alertId: string): Promise<DeploymentAlert> {
+    const alert = await this.alertRepository.findOne({ where: { id: alertId } });
 
     if (!alert) {
       throw new NotFoundException('Alert not found');
@@ -158,10 +179,38 @@ export class MonitoringService {
     deploymentId?: string,
     filters?: { severity?: AlertSeverity; status?: AlertStatus },
   ): Promise<DeploymentAlert[]> {
-    const query = this.alertRepository.createQueryBuilder('a');
+    // Scoped by the owning deployment's tenant: an alert row carries no tenant
+    // of its own, so an unjoined query returns every tenant's alerts.
+    const query = this.alertRepository
+      .createQueryBuilder('a')
+      .innerJoinAndSelect('a.deployment', 'd')
+      .where('d.tenantId = :tenantId', { tenantId });
 
+    return this.applyAlertFilters(query, deploymentId, filters);
+  }
+
+  /**
+   * Every tenant's alerts, for the platform-wide alerts inbox. System admins
+   * only — the caller is responsible for the isSystemAdmin check.
+   */
+  async getAllAlerts(
+    deploymentId?: string,
+    filters?: { severity?: AlertSeverity; status?: AlertStatus },
+  ): Promise<DeploymentAlert[]> {
+    const query = this.alertRepository
+      .createQueryBuilder('a')
+      .innerJoinAndSelect('a.deployment', 'd');
+
+    return this.applyAlertFilters(query, deploymentId, filters);
+  }
+
+  private applyAlertFilters(
+    query: SelectQueryBuilder<DeploymentAlert>,
+    deploymentId?: string,
+    filters?: { severity?: AlertSeverity; status?: AlertStatus },
+  ): Promise<DeploymentAlert[]> {
     if (deploymentId) {
-      query.where('a.deploymentId = :deploymentId', { deploymentId });
+      query.andWhere('a.deploymentId = :deploymentId', { deploymentId });
     }
 
     if (filters?.severity) {
