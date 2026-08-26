@@ -203,12 +203,38 @@ fi
 PENDING=$(git diff --name-only "$BEFORE" "$TARGET" -- packages/backend/src/database/migrations | wc -l)
 log "migration files touched by this deploy: $PENDING"
 
+# Does anything that affects the RUNNING app actually change? Three of this
+# week's deploys moved only scripts and config, and each one still rebuilt both
+# packages, ran migrations with none pending, and restarted the backend — a
+# service interruption bought with nothing. Migrations live under
+# packages/backend/src, so this covers them too.
+APP_CHANGED=$(git diff --name-only "$BEFORE" "$TARGET" \
+  -- 'packages/backend/src' 'packages/frontend/src' 'packages/backend/package.json' \
+     'packages/frontend/package.json' 'package.json' 'pnpm-lock.yaml' | wc -l)
+log "files affecting the running app: $APP_CHANGED"
+
 if [ "$CHECK_ONLY" = "1" ]; then
   echo; log "--check: preflight passed, nothing changed"
   exit 0
 fi
 
 # ------------------------------------------------------------------- backup --
+
+# A deploy that changes no application source runs no migrations, so there is
+# nothing for a backup to protect against and nothing to rebuild. Fast-forward
+# the files and stop — no backup, no install, no build, no restart, no service
+# interruption. This check sits BEFORE the backup deliberately: taking one, and
+# failing the deploy if it fails, is the right call only when the database is
+# actually at risk.
+if [ "$APP_CHANGED" = "0" ]; then
+  step "Files only"
+  if [ "$ALREADY_AT_TARGET" = "0" ]; then
+    git merge --ff-only "$TARGET" || die "fast-forward refused"
+  fi
+  log "no application source or dependency changed — skipped backup, build, migrations and restart"
+  log "updated $(git rev-parse --short "$BEFORE") -> $(git rev-parse --short HEAD) (files only)"
+  exit 0
+fi
 
 step "Backup"
 bash scripts/backup.sh predeploy || die "backup failed — deploying without one is not worth it"
