@@ -104,7 +104,7 @@ export class DeploymentController {
         tier: dto.tier,
         domain: dto.domain,
         maxUsers: typeof dto.maxUsers === 'string' ? parseInt(dto.maxUsers, 10) : dto.maxUsers,
-        notes: dto.notes,
+          notes: dto.notes,
       };
       return this.deploymentService.provisionDeployment(provisionDto);
     }
@@ -118,7 +118,10 @@ export class DeploymentController {
   @Get()
   async listDeployments(@Req() req: Request) {
     if (this.isSystemAdmin(req)) {
-      return this.deploymentService.listAllDeployments();
+      // `deployments` is RLS-protected, so the cross-tenant list needs the
+      // system context or the policy scopes it back to the admin's own tenant
+      // and the platform deployment list silently shows a subset.
+      return withSystemContext(() => this.deploymentService.listAllDeployments());
     }
     const tenantId = this.getUserTenantId(req);
     return this.deploymentService.listDeployments(tenantId);
@@ -141,18 +144,23 @@ export class DeploymentController {
     if (!dto.appVersionId && !dto.version) {
       throw new NotFoundException('appVersionId or version is required');
     }
-    return this.updateService.createRollout({
-      appVersionId: dto.appVersionId,
-      versionString: dto.version,
-      strategy: dto.strategy,
-      startDate: dto.startDate,
-      endDate: dto.endDate,
-      autoRollbackOnError: dto.autoRollbackOnError,
-      errorThresholdPercentage: dto.errorThresholdPercentage,
+    // Sizes its phases from a count of every ACTIVE deployment, which RLS
+    // would otherwise narrow to this admin's own tenant — a "10% phase" then
+    // means 10% of one hospital.
+    return withSystemContext(() =>
+      this.updateService.createRollout({
+        appVersionId: dto.appVersionId,
+        versionString: dto.version,
+        strategy: dto.strategy,
+        startDate: dto.startDate,
+        endDate: dto.endDate,
+        autoRollbackOnError: dto.autoRollbackOnError,
+        errorThresholdPercentage: dto.errorThresholdPercentage,
       notes: dto.notes,
-      actorUserId: (req.user as any)?.id,
-      triggeredBy: 'manual',
-    });
+        actorUserId: (req.user as any)?.id,
+        triggeredBy: 'manual',
+      }),
+    );
   }
 
   @Get('rollouts/:rolloutId/status')
@@ -220,7 +228,9 @@ export class DeploymentController {
   @Get('rollouts/:rolloutId/reports')
   async listRolloutReports(@Req() req: Request, @Param('rolloutId') rolloutId: string) {
     if (!this.isSystemAdmin(req)) throw new ForbiddenException('System admin access required');
-    return this.updateService.listRolloutReports(rolloutId);
+    // Labels each report with its deployment name by joining `deployments`;
+    // without the system context other tenants' rows resolve to no name.
+    return withSystemContext(() => this.updateService.listRolloutReports(rolloutId));
   }
 
   @Get('rollouts/:rolloutId/summary')
