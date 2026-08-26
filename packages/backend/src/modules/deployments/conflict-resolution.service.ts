@@ -89,6 +89,7 @@ export class ConflictResolutionEngine {
       if (conflict.severity === 'low') {
         // Automatically resolve low-severity conflicts using MERGE strategy
         const resolution = await this.resolveConflict(
+          tenantId,
           conflict.local.id,
           conflict.remote.id,
           ConflictResolutionStrategy.MERGE,
@@ -111,17 +112,20 @@ export class ConflictResolutionEngine {
    * Manually resolve a conflict
    */
   async resolveConflict(
+    tenantId: string,
     localChangesetId: string,
     remoteChangesetId: string,
     strategy: ConflictResolutionStrategy,
     reason: string,
   ): Promise<any> {
+    // Scoped by tenant: these ids arrive from the caller, and an unscoped
+    // lookup would let one tenant rewrite another's changeset metadata by id.
     const local = await this.changesetRepository.findOne({
-      where: { id: localChangesetId },
+      where: { id: localChangesetId, tenantId },
     });
 
     const remote = await this.changesetRepository.findOne({
-      where: { id: remoteChangesetId },
+      where: { id: remoteChangesetId, tenantId },
     });
 
     if (!local || !remote) {
@@ -160,7 +164,27 @@ export class ConflictResolutionEngine {
    */
   async getUnresolvedConflicts(tenantId: string): Promise<any[]> {
     const conflicts = await this.detectConflicts(tenantId);
-    return conflicts.filter((c) => c.isConflict);
+
+    // detectConflicts is purely structural — same entity, opposing operations,
+    // under a second apart — so it re-reports a pair every time regardless of
+    // whether anyone has already resolved it. Without this the queue never
+    // empties: an operator resolves a conflict and it is still sitting there on
+    // the next refresh. resolveConflict stamps both sides, so either side
+    // carrying the stamp means the pair is done.
+    const resolvedIds = new Set(
+      (
+        await this.changesetRepository.find({
+          where: { tenantId },
+          select: ['id', 'metadata'],
+        })
+      )
+        .filter((cs) => cs.metadata?.conflictResolution)
+        .map((cs) => cs.id),
+    );
+
+    return conflicts.filter(
+      (c) => c.isConflict && !resolvedIds.has(c.local.id) && !resolvedIds.has(c.remote.id),
+    );
   }
 
   /**
