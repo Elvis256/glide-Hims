@@ -28,6 +28,10 @@ import { UpdateManagementService } from './update-management.service';
 import { FeatureFlagService } from './feature-flag.service';
 import { ReplicationService } from './replication.service';
 import { MonitoringService } from './monitoring.service';
+import {
+  ConflictResolutionEngine,
+  ConflictResolutionStrategy,
+} from './conflict-resolution.service';
 import { BackupService } from '../backup/backup.service';
 import { Public } from '../auth/decorators/public.decorator';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
@@ -46,6 +50,7 @@ import {
   ReportRolloutStatusDto,
   ReportHealthMetricsDto,
   CreateIncidentDto,
+  ResolveSyncConflictDto,
 } from './dto/deployment-bodies.dto';
 
 @Controller('deployments')
@@ -58,6 +63,7 @@ export class DeploymentController {
     private replicationService: ReplicationService,
     private monitoringService: MonitoringService,
     private backupService: BackupService,
+    private conflictEngine: ConflictResolutionEngine,
   ) {}
 
   private getUserTenantId(req: Request): string {
@@ -354,6 +360,37 @@ export class DeploymentController {
   async getReplicationHistory(@Req() req: Request) {
     const tenantId = this.getUserTenantId(req);
     return this.replicationService.getReplicationHistory(tenantId);
+  }
+
+  // ---- Master-data sync conflicts (Phase 2-4 epic, surface 3) -------------
+  // ConflictResolutionEngine had no HTTP surface at all; the epic's endpoint
+  // table pointed at /sync/conflicts, which belongs to the unrelated
+  // offline-sync controller. Only the methods backed by real changeset queries
+  // are exposed — detect3WayConflict, autoResolve, escalateConflict and
+  // applyStrategy return hardcoded values and are deliberately left off.
+
+  @Get('sync-conflicts')
+  async listSyncConflicts(@Req() req: Request) {
+    const tenantId = this.getUserTenantId(req);
+    return this.conflictEngine.getUnresolvedConflicts(tenantId);
+  }
+
+  @Get('sync-conflicts/history')
+  async listSyncConflictHistory(@Req() req: Request) {
+    const tenantId = this.getUserTenantId(req);
+    return this.conflictEngine.getConflictHistory(tenantId);
+  }
+
+  @Put('sync-conflicts/resolve')
+  async resolveSyncConflict(@Req() req: Request, @Body() dto: ResolveSyncConflictDto) {
+    const tenantId = this.getUserTenantId(req);
+    return this.conflictEngine.resolveConflict(
+      tenantId,
+      dto.localChangesetId,
+      dto.remoteChangesetId,
+      dto.strategy as ConflictResolutionStrategy,
+      dto.reason ?? 'Resolved from the system-admin conflicts queue',
+    );
   }
 
   @Get('alerts')
