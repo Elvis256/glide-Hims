@@ -51,6 +51,21 @@ esac
 DEPLOY_WINDOW_START="${DEPLOY_WINDOW_START:-1}"
 DEPLOY_WINDOW_END="${DEPLOY_WINDOW_END:-5}"
 
+# What the poller is allowed to deploy TO.
+#
+#   tag     (default) the newest tag matching DEPLOY_TAG_PATTERN. Merging to
+#           main no longer ships anything; tagging does. "This code is on main"
+#           and "this goes to patients" become separate decisions, and the tag
+#           records who made the second one and when.
+#   branch  the tip of origin/$BRANCH — continuous deployment. Every merge
+#           reaches production unattended, inside the window, with nobody
+#           watching at 02:00.
+#
+# Default is tag because this is a hospital's system. Set DEPLOY_GATE=branch to
+# opt into the other behaviour deliberately rather than by omission.
+DEPLOY_GATE="${DEPLOY_GATE:-tag}"
+DEPLOY_TAG_PATTERN="${DEPLOY_TAG_PATTERN:-deploy-*}"
+
 # In --if-changed the common case is "nothing moved", and that runs every few
 # minutes from cron. Preflight chatter on every quiet run buries the one line
 # that matters, so output stays suppressed until there is something to report.
@@ -100,7 +115,21 @@ CUR_BRANCH=$(git rev-parse --abbrev-ref HEAD)
 
 git fetch --quiet origin "$BRANCH" || die "fetch failed"
 BEFORE=$(git rev-parse HEAD)
-TARGET=$(git rev-parse "origin/$BRANCH")
+
+if [ "$IF_CHANGED" = "1" ] && [ "$DEPLOY_GATE" = "tag" ]; then
+  git fetch --quiet --tags --force origin 2>/dev/null || true
+  # Newest matching tag by commit date, and it must be on the branch — a tag
+  # pointing at something never merged is not a release, it is a mistake.
+  DEPLOY_TAG=$(git tag --list "$DEPLOY_TAG_PATTERN" --sort=-creatordate --merged "origin/$BRANCH" 2>/dev/null | head -1)
+  if [ -z "$DEPLOY_TAG" ]; then
+    # Nothing has been marked for release. Silence: this is the normal state
+    # between releases, not a problem to report every five minutes.
+    exit 0
+  fi
+  TARGET=$(git rev-parse "${DEPLOY_TAG}^{commit}")
+else
+  TARGET=$(git rev-parse "origin/$BRANCH")
+fi
 
 # Being at the target commit does NOT mean the deploy is done. The code can be
 # pulled while dist is still the old build and migrations are still pending —
@@ -127,12 +156,20 @@ if [ "$IF_CHANGED" = "1" ] && [ "$ALREADY_AT_TARGET" = "0" ]; then
     exit 0
   fi
   speak
-  log "origin/$BRANCH moved: $(git rev-parse --short "$BEFORE") -> $(git rev-parse --short "$TARGET"); deploying"
+  if [ -n "${DEPLOY_TAG:-}" ]; then
+    log "release tag $DEPLOY_TAG -> $(git rev-parse --short "$TARGET"); deploying from $(git rev-parse --short "$BEFORE")"
+  else
+    log "origin/$BRANCH moved: $(git rev-parse --short "$BEFORE") -> $(git rev-parse --short "$TARGET"); deploying"
+  fi
 fi
 
 if [ "$ALREADY_AT_TARGET" = "0" ]; then
+  # Name the actual target. With tag gating this check most often fires because
+  # someone tagged a commit OLDER than what production is running, which would
+  # be a rollback rather than a fast-forward — and a message blaming
+  # "origin/$BRANCH" sends them to look at the wrong thing entirely.
   git merge-base --is-ancestor "$BEFORE" "$TARGET" \
-    || die "HEAD is not an ancestor of origin/$BRANCH — this would not be a fast-forward. Resolve by hand."
+    || die "$(git rev-parse --short "$BEFORE") is not an ancestor of ${DEPLOY_TAG:-origin/$BRANCH} ($(git rev-parse --short "$TARGET")) — that would be a rollback, not a fast-forward. Deploying backwards is deliberate work: do it by hand."
   log "$(git rev-list --count "$BEFORE".."$TARGET") commits to apply: $(git rev-parse --short "$BEFORE") -> $(git rev-parse --short "$TARGET")"
 fi
 
@@ -182,7 +219,7 @@ step "Fast-forward"
 if [ "$ALREADY_AT_TARGET" = "1" ]; then
   log "nothing to fast-forward"
 else
-  git merge --ff-only "origin/$BRANCH" || die "fast-forward refused"
+  git merge --ff-only "$TARGET" || die "fast-forward refused"
   log "HEAD now $(git rev-parse --short HEAD)"
 fi
 
