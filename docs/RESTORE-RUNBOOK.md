@@ -24,9 +24,18 @@ If a restore "succeeds" and the database is empty, this is why.
 
 ## Trap 2 — `uuid_generate_v4()` must exist BEFORE the restore
 
-Production has the `uuid-ossp` extension. The offsite machine does not and
-cannot: `libossp-uuid.so.16` is absent, so `CREATE EXTENSION "uuid-ossp"`
-fails.
+Production has the `uuid-ossp` extension. This machine could not load it until
+2026-08-26 — `libossp-uuid.so.16` was absent, so `CREATE EXTENSION "uuid-ossp"`
+failed.
+
+**That is now fixed here** (see step 5): the library was fetched with
+`apt-get download libossp-uuid16`, unpacked with `dpkg-deb -x`, and its
+`libossp-uuid*.so.16*` files copied into `/home/avis/opt/pgsql/lib-compat` —
+the private dir Postgres already needs to start, on `LD_LIBRARY_PATH` in the
+systemd unit. No sudo, no restart. `CREATE EXTENSION "uuid-ossp"` now succeeds.
+
+Keep reading anyway. **The trap still applies to any other restore host**, and
+it is the failure you will meet at 3am on a machine nobody prepared.
 
 Almost every table declares `DEFAULT uuid_generate_v4()`, so when that function
 is missing, every one of those `CREATE TABLE` statements fails too:
@@ -38,8 +47,8 @@ is missing, every one of those `CREATE TABLE` statements fails too:
 **2861 errors, 28 of 338 tables restored.** It reads exactly like a corrupt
 archive. It is one missing extension, cascading.
 
-Create a shim in `public` before restoring and the same archive restores
-cleanly with 2 errors — just the extension itself, which nothing then needs.
+Make `uuid_generate_v4()` exist before restoring — the real extension where it
+loads, a shim where it does not — and the same archive restores cleanly.
 
 ---
 
@@ -63,12 +72,18 @@ sha256sum restored.sql | awk '{print $1}'      # these must match
 # 4. Confirm the archive is readable before touching any database.
 pg_restore --list restored.sql | wc -l          # expect ~3700 entries
 
-# 5. Create the target database and the uuid shim (Trap 2).
+# 5. Create the target database and make uuid_generate_v4() exist (Trap 2).
+#    Prefer the real extension; fall back to a shim only where it cannot load.
 createdb -h 127.0.0.1 -p 5433 -U avis glide_restored
 psql -h 127.0.0.1 -p 5433 -U avis -d glide_restored -c \
+  'CREATE EXTENSION IF NOT EXISTS "uuid-ossp";' \
+  || psql -h 127.0.0.1 -p 5433 -U avis -d glide_restored -c \
   "CREATE OR REPLACE FUNCTION public.uuid_generate_v4() RETURNS uuid
-     LANGUAGE sql VOLATILE AS \$\$
-     SELECT md5(random()::text||clock_timestamp()::text)::uuid \$\$;"
+     LANGUAGE sql VOLATILE AS \$\$ SELECT gen_random_uuid() \$\$;"
+#    gen_random_uuid() is built into Postgres 13+ and returns a real v4 UUID.
+#    The older md5(random()||clock_timestamp())::uuid shim does not — it has no
+#    version or variant bits — which is fine for restoring but wrong to leave
+#    behind in a database that then generates its own ids.
 
 # 6. Restore.
 pg_restore -h 127.0.0.1 -p 5433 -U glide_hims_app -d glide_restored \
