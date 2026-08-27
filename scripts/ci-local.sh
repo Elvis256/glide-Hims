@@ -69,12 +69,20 @@ job_schema_check() {
   # shellcheck disable=SC2064
   trap "psql -h '$host' -p '$port' -U '$su' -d postgres -tAc 'DROP DATABASE IF EXISTS $db' >/dev/null 2>&1" RETURN
 
-  # uuid-ossp cannot load on this machine (no libossp-uuid), so provide the
-  # same shim the dev database uses. The migration chain creates its own too;
-  # this only covers anything that runs before it.
+  # Make uuid_generate_v4() exist before anything that runs ahead of the
+  # migration chain (the chain creates its own too). Prefer the real extension:
+  # uuid-ossp loads here as of 2026-08-26, once libossp-uuid16 was unpacked into
+  # pgsql/lib-compat. Fall back to a shim on a host where it still cannot load.
+  #
+  # The shim uses gen_random_uuid(), built into Postgres 13+. The older
+  # md5(random()||clock_timestamp())::uuid is not a v4 uuid at all — it has no
+  # version or variant bits — which passes a schema check but is wrong to leave
+  # in a database that then generates its own ids.
   psql -h "$host" -p "$port" -U "$su" -d "$db" -q -c \
+    'CREATE EXTENSION IF NOT EXISTS "uuid-ossp";' >/dev/null 2>&1 \
+  || psql -h "$host" -p "$port" -U "$su" -d "$db" -q -c \
     "CREATE OR REPLACE FUNCTION uuid_generate_v4() RETURNS uuid LANGUAGE sql VOLATILE AS \$\$
-       SELECT md5(random()::text||clock_timestamp()::text)::uuid \$\$;" >/dev/null 2>&1
+       SELECT gen_random_uuid() \$\$;" >/dev/null 2>&1
 
   DB_HOST="$host" DB_PORT="$port" DB_NAME="$db" \
   DB_USERNAME="$su" DB_PASSWORD="" \
