@@ -28,6 +28,10 @@ import { UpdateManagementService } from './update-management.service';
 import { FeatureFlagService } from './feature-flag.service';
 import { ReplicationService } from './replication.service';
 import { MonitoringService } from './monitoring.service';
+import {
+  ConflictResolutionEngine,
+  ConflictResolutionStrategy,
+} from './conflict-resolution.service';
 import { BackupService } from '../backup/backup.service';
 import { Public } from '../auth/decorators/public.decorator';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
@@ -46,6 +50,7 @@ import {
   ReportRolloutStatusDto,
   ReportHealthMetricsDto,
   CreateIncidentDto,
+  ResolveSyncConflictDto,
 } from './dto/deployment-bodies.dto';
 
 @Controller('deployments')
@@ -58,6 +63,7 @@ export class DeploymentController {
     private replicationService: ReplicationService,
     private monitoringService: MonitoringService,
     private backupService: BackupService,
+    private conflictEngine: ConflictResolutionEngine,
   ) {}
 
   private getUserTenantId(req: Request): string {
@@ -98,7 +104,7 @@ export class DeploymentController {
         tier: dto.tier,
         domain: dto.domain,
         maxUsers: typeof dto.maxUsers === 'string' ? parseInt(dto.maxUsers, 10) : dto.maxUsers,
-        notes: dto.notes,
+          notes: dto.notes,
       };
       return this.deploymentService.provisionDeployment(provisionDto);
     }
@@ -112,7 +118,10 @@ export class DeploymentController {
   @Get()
   async listDeployments(@Req() req: Request) {
     if (this.isSystemAdmin(req)) {
-      return this.deploymentService.listAllDeployments();
+      // `deployments` is RLS-protected, so the cross-tenant list needs the
+      // system context or the policy scopes it back to the admin's own tenant
+      // and the platform deployment list silently shows a subset.
+      return withSystemContext(() => this.deploymentService.listAllDeployments());
     }
     const tenantId = this.getUserTenantId(req);
     return this.deploymentService.listDeployments(tenantId);
@@ -135,18 +144,23 @@ export class DeploymentController {
     if (!dto.appVersionId && !dto.version) {
       throw new NotFoundException('appVersionId or version is required');
     }
-    return this.updateService.createRollout({
-      appVersionId: dto.appVersionId,
-      versionString: dto.version,
-      strategy: dto.strategy,
-      startDate: dto.startDate,
-      endDate: dto.endDate,
-      autoRollbackOnError: dto.autoRollbackOnError,
-      errorThresholdPercentage: dto.errorThresholdPercentage,
+    // Sizes its phases from a count of every ACTIVE deployment, which RLS
+    // would otherwise narrow to this admin's own tenant — a "10% phase" then
+    // means 10% of one hospital.
+    return withSystemContext(() =>
+      this.updateService.createRollout({
+        appVersionId: dto.appVersionId,
+        versionString: dto.version,
+        strategy: dto.strategy,
+        startDate: dto.startDate,
+        endDate: dto.endDate,
+        autoRollbackOnError: dto.autoRollbackOnError,
+        errorThresholdPercentage: dto.errorThresholdPercentage,
       notes: dto.notes,
-      actorUserId: (req.user as any)?.id,
-      triggeredBy: 'manual',
-    });
+        actorUserId: (req.user as any)?.id,
+        triggeredBy: 'manual',
+      }),
+    );
   }
 
   @Get('rollouts/:rolloutId/status')
@@ -214,7 +228,9 @@ export class DeploymentController {
   @Get('rollouts/:rolloutId/reports')
   async listRolloutReports(@Req() req: Request, @Param('rolloutId') rolloutId: string) {
     if (!this.isSystemAdmin(req)) throw new ForbiddenException('System admin access required');
-    return this.updateService.listRolloutReports(rolloutId);
+    // Labels each report with its deployment name by joining `deployments`;
+    // without the system context other tenants' rows resolve to no name.
+    return withSystemContext(() => this.updateService.listRolloutReports(rolloutId));
   }
 
   @Get('rollouts/:rolloutId/summary')
@@ -356,14 +372,57 @@ export class DeploymentController {
     return this.replicationService.getReplicationHistory(tenantId);
   }
 
+  // ---- Master-data sync conflicts (Phase 2-4 epic, surface 3) -------------
+  // ConflictResolutionEngine had no HTTP surface at all; the epic's endpoint
+  // table pointed at /sync/conflicts, which belongs to the unrelated
+  // offline-sync controller. Only the methods backed by real changeset queries
+  // are exposed — detect3WayConflict, autoResolve, escalateConflict and
+  // applyStrategy return hardcoded values and are deliberately left off.
+
+  @Get('sync-conflicts')
+  async listSyncConflicts(@Req() req: Request) {
+    const tenantId = this.getUserTenantId(req);
+    return this.conflictEngine.getUnresolvedConflicts(tenantId);
+  }
+
+  @Get('sync-conflicts/history')
+  async listSyncConflictHistory(@Req() req: Request) {
+    const tenantId = this.getUserTenantId(req);
+    return this.conflictEngine.getConflictHistory(tenantId);
+  }
+
+  @Put('sync-conflicts/resolve')
+  async resolveSyncConflict(@Req() req: Request, @Body() dto: ResolveSyncConflictDto) {
+    const tenantId = this.getUserTenantId(req);
+    return this.conflictEngine.resolveConflict(
+      tenantId,
+      dto.localChangesetId,
+      dto.remoteChangesetId,
+      dto.strategy as ConflictResolutionStrategy,
+      dto.reason ?? 'Resolved from the system-admin conflicts queue',
+    );
+  }
+
   @Get('alerts')
   async listAlerts(@Req() req: Request) {
+    // Same split as listDeployments: the platform inbox spans tenants, a tenant
+    // user sees only their own. Alerts carry no tenant column, so the scoping
+    // happens on the owning deployment inside the service.
+    if (this.isSystemAdmin(req)) {
+      // The alerts join reaches through `deployments`, which is RLS-protected.
+      // Without the system context the policy scopes the join to the admin's own
+      // tenant and the platform-wide inbox silently shows only their own alerts.
+      return withSystemContext(() => this.monitoringService.getAllAlerts());
+    }
     const tenantId = this.getUserTenantId(req);
     return this.monitoringService.getAlerts(tenantId);
   }
 
   @Put('alerts/:alertId/resolve')
   async resolveAlert(@Req() req: Request, @Param('alertId') alertId: string) {
+    if (this.isSystemAdmin(req)) {
+      return withSystemContext(() => this.monitoringService.resolveAnyAlert(alertId));
+    }
     const tenantId = this.getUserTenantId(req);
     return this.monitoringService.resolveAlert(tenantId, alertId);
   }

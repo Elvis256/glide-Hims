@@ -39,6 +39,8 @@ const SystemRevenuePage = lazy(() => import('../pages/system/SystemRevenuePage')
 const SystemComplianceCenterPage = lazy(() => import('../pages/system/SystemComplianceCenterPage'));
 const SystemSecurityPage = lazy(() => import('../pages/system/SystemSecurityPage'));
 const SystemDocsPage = lazy(() => import('../pages/system/SystemDocsPage'));
+const SystemAlertsPage = lazy(() => import('../pages/system/SystemAlertsPage'));
+const SystemSyncConflictsPage = lazy(() => import('../pages/system/SystemSyncConflictsPage'));
 
 export default function SystemRoutes() {
   return (
@@ -48,6 +50,8 @@ export default function SystemRoutes() {
       <Route path="deployments" element={<SystemDeploymentsPage />} />
       <Route path="deployments/:deploymentId" element={<SystemDeploymentDetailPage />} />
       <Route path="rollouts" element={<SystemRolloutsPage />} />
+      <Route path="alerts" element={<SystemAlertsPage />} />
+      <Route path="sync-conflicts" element={<SystemSyncConflictsPage />} />
       <Route path="audit-logs" element={<SystemAuditLogsPage />} />
       <Route path="saas-audit" element={<SystemSaasAuditPage />} />
       <Route path="users" element={<SystemUsersPage />} />

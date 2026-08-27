@@ -6,6 +6,7 @@ import {
   IsObject,
   IsOptional,
   IsString,
+  IsUUID,
   Max,
   MaxLength,
   Min,
@@ -134,4 +135,33 @@ export class CreateIncidentDto {
   @ApiProperty({ enum: ['minor', 'moderate', 'major', 'critical'] })
   @IsIn(['minor', 'moderate', 'major', 'critical'])
   severity: string;
+}
+
+const CONFLICT_STRATEGIES = ['KEEP_LOCAL', 'TAKE_REMOTE', 'MERGE', 'MANUAL'] as const;
+
+/**
+ * Body for resolving one sync conflict. A conflict is a PAIR of changesets, so
+ * both ids are required — resolving names the two rows whose metadata gets the
+ * resolution stamped on it. The tenant is taken from the caller, never the body.
+ */
+export class ResolveSyncConflictDto {
+  @ApiProperty({ description: 'Changeset id of the local side of the conflict' })
+  @IsString()
+  @IsUUID()
+  localChangesetId: string;
+
+  @ApiProperty({ description: 'Changeset id of the remote side of the conflict' })
+  @IsString()
+  @IsUUID()
+  remoteChangesetId: string;
+
+  @ApiProperty({ enum: CONFLICT_STRATEGIES })
+  @IsIn(CONFLICT_STRATEGIES)
+  strategy: (typeof CONFLICT_STRATEGIES)[number];
+
+  @ApiPropertyOptional({ description: 'Why this resolution was chosen — kept in changeset metadata' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  reason?: string;
 }

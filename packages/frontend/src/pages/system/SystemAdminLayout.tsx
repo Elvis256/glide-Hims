@@ -36,6 +36,8 @@ import {
   Handshake,
   ListChecks,
   DollarSign,
+  BellRing,
+  GitMerge,
 } from 'lucide-react';
 
 const sidebarItems = [
@@ -43,6 +45,8 @@ const sidebarItems = [
   { name: 'SaaS Organizations', href: '/system/tenants', icon: Building2 },
   { name: 'Deployments', href: '/system/deployments', icon: Server },
   { name: 'Rollouts', href: '/system/rollouts', icon: Rocket },
+  { name: 'Alerts Inbox', href: '/system/alerts', icon: BellRing },
+  { name: 'Sync Conflicts', href: '/system/sync-conflicts', icon: GitMerge },
   { name: 'System Users', href: '/system/users', icon: Users },
   { name: 'Support Requests', href: '/system/support-requests', icon: LifeBuoy },
   { name: 'Leads', href: '/system/leads', icon: Mail },
